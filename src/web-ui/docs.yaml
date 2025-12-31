@@ -1,0 +1,1354 @@
+openapi: 3.0.3
+info:
+  title: Admin API
+  version: 1.0.0
+
+paths:
+  /api:
+    get:
+      summary: Получить состояние всех торговых ботов и риск-карту
+      description: Возвращает информацию о состоянии ботов, их позициях и риск-профиле
+      responses:
+        '200':
+          description: Успешный ответ с данными о ботах
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotsStatusResponse'
+              example:
+                bots:
+                  - bot: binance_bot
+                    account: 35822956
+                    exchange: binance
+                    started: "2025-10-20 08:30:15"
+                    last_alive: "2025-10-24 12:45:33"
+                    matched_orders: 127
+                    funds_usage: 85.3
+                    restarts: 2
+                    exceptions: 0
+                    errors: 5
+                    last_error_raw: "~C9115:23:42 Rate limit exceeded~C00"
+                    last_error: "15:23:42 Rate limit exceeded"
+                    pid: "12345"
+                    position_coef: 0.8
+                    trade_enabled: true
+                    background_color: "rgb(50,100,150)"
+                  - bot: bot_bitmex_main
+                    account: 12345678
+                    exchange: bitmex
+                    started: "2025-10-19 14:20:00"
+                    last_alive: "2025-10-24 12:45:30"
+                    matched_orders: 89
+                    funds_usage: 72.1
+                    restarts: 0
+                    exceptions: 1
+                    errors: 2
+                    last_error_raw: ""
+                    last_error: ""
+                    pid: "54321"
+                    position_coef: 1.0
+                    trade_enabled: false
+                    background_color: null
+                risk_mapping:
+                  - pair_id: 1
+                    symbol: BTCUSDT
+                    positions:
+                      binance_bot: "0.5"
+                      bot_bitmex_main: "-0.3"
+                    summary: "0.2"
+                    volume: 16000.5
+                    background_color: "#FFD700"
+                    is_light_color: true
+                  - pair_id: 2
+                    symbol: ETHUSDT
+                    positions:
+                      binance_bot: "10.5"
+                      bot_bitmex_main: null
+                    summary: "10.5"
+                    volume: 25000.0
+                    background_color: "#00CED1"
+                    is_light_color: true
+                volumes:
+                  long: 125340.75
+                  short: 98234.50
+                is_admin: false
+                is_trader: false
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Rights restricted to view"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "DB inaccessible"
+                config_error:
+                  value:
+                    error: "wrong pairs_map"
+
+  /api/chart:
+    get:
+      summary: Получить данные графика баланса
+      description: Возвращает временной ряд балансов торгового аккаунта с учетом депозитов/выводов
+      parameters:
+        - name: exchange
+          in: query
+          description: Название биржи
+          required: false
+          schema:
+            type: string
+            default: bitmex
+            example: binance
+        - name: account_id
+          in: query
+          description: ID торгового аккаунта
+          required: false
+          schema:
+            type: integer
+            default: 0
+            example: 35822956
+      responses:
+        '200':
+          description: Успешный ответ с данными графика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+              example:
+                success: true
+                data:
+                  - timestamp: 1759190511000
+                    value: -5132.61
+                  - timestamp: 1759190575000
+                    value: -5131.74
+                metadata:
+                  exchange: binance
+                  account_id: 35822956
+                  from_date: "2025-09-30 00:00"
+                  to_date: "2025-10-02 23:59:03"
+                  points_count: 5
+                  currency: USD
+                statistics:
+                  start_value: -5132.61
+                  end_value: -3746.85
+                  min_value: -5329.8585
+                  max_value: -3642.4915
+                  gain_percent: -27
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "Database connection failed"
+                fetch_error:
+                  value:
+                    error: "Failed to fetch balance data"
+                no_data:
+                  value:
+                    error: "No data found"
+                    data: []
+
+  /api/dashboard:
+    get:
+      summary: Получить детальную информацию о торговом боте
+      description: Возвращает информацию об активных и лимитных ордерах, позициях бота
+      parameters:
+        - name: bot
+          in: query
+          description: Название бота
+          required: true
+          schema:
+            type: string
+            example: binance_bot
+        - name: account
+          in: query
+          description: ID торгового аккаунта
+          required: true
+          schema:
+            type: integer
+            example: 35822956
+        - name: exchange
+          in: query
+          description: Название биржи (опционально, берется из конфига бота)
+          required: false
+          schema:
+            type: string
+            example: binance
+      responses:
+        '200':
+          description: Успешный ответ с данными о боте
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+              example:
+                bot: binance_bot
+                account_id: 35822956
+                exchange: binance
+                is_admin: false
+                is_trader: false
+                active_orders:
+                  - id: 12345
+                    ts: "2025-10-24 12:30:15"
+                    host_id: "host1"
+                    batch_id: 987
+                    signal_id: 456
+                    pair: BTCUSDT
+                    pair_id: 1
+                    price: 68500.5
+                    amount: 0.5
+                    matched: 0.3
+                    buy: true
+                    comment: "market making"
+                limit_orders:
+                  - id: 54321
+                    ts: "2025-10-24 12:35:20"
+                    host_id: "host1"
+                    batch_id: 988
+                    signal_id: 457
+                    pair: ETHUSDT
+                    pair_id: 2
+                    price: 3250.75
+                    amount: -2.5
+                    matched: 0
+                    buy: false
+                    comment: "limit order"
+                positions:
+                  - ts: "2025-10-24 12:40:00"
+                    pair_id: 1
+                    pair: BTCUSDT
+                    current: 1500.5
+                    target: 2000.0
+                    last_price: 68500.5
+                    rpnl: 125.75
+                    upnl: 342.50
+                    offset: 0
+        '400':
+          description: Отсутствуют обязательные параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Parameters missing: bot, account_id"
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Rights restricted"
+                rights: "none"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "DB inaccessible"
+                config_error:
+                  value:
+                    error: "Bot config damaged in DB"
+                    bot: "binance_bot"
+
+  /api/update-offset:
+    post:
+      summary: Обновить смещение позиции
+      description: Изменяет значение offset для позиции торгового бота по конкретной паре
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - exchange
+                - account
+                - pair_id
+                - offset
+              properties:
+                exchange:
+                  type: string
+                  description: Название биржи
+                  example: binance
+                account:
+                  type: integer
+                  description: ID торгового аккаунта
+                  example: 35822956
+                pair_id:
+                  type: integer
+                  description: ID торговой пары
+                  example: 1
+                offset:
+                  type: number
+                  format: float
+                  description: Новое значение смещения позиции
+                  example: 100.5
+      responses:
+        '200':
+          description: Успешное обновление смещения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateOffsetResponse'
+              example:
+                account_id: 35822956
+                pair_id: 1
+                offset: 100.5
+                exchange: binance
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Missing required fields: exchange, account, pair_id, offset"
+        '403':
+          description: Недостаточно прав или доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                access_denied:
+                  value:
+                    error: "Access denied for 192.168.1.100"
+                insufficient_rights:
+                  value:
+                    error: "Insufficient rights"
+        '404':
+          description: Запись не найдена или бот не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                bot_not_found:
+                  value:
+                    error: "Bot configuration not found for binance_bot"
+                no_rows_affected:
+                  value:
+                    error: "Position not found for specified account and pair_id"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Only POST method allowed"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "Database connection failed"
+                query_error:
+                  value:
+                    error: "Update query failed: Table doesn't exist"
+
+  /api/cancel-order:
+    post:
+      summary: Отменить ордер
+      description: Создает задачу на отмену ордера для торгового бота
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - bot
+                - order_id
+              properties:
+                bot:
+                  type: string
+                  description: Название бота
+                  example: binance_bot
+                order_id:
+                  type: integer
+                  description: ID ордера (должен быть больше 1000)
+                  example: 12345
+      responses:
+        '200':
+          description: Задача на отмену успешно создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelOrderResponse'
+              example:
+                bot: binance_bot
+                order_id: 12345
+                tasks_scheduled: 1
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  value:
+                    error: "Missing required fields: bot, order_id"
+                invalid_order_id:
+                  value:
+                    error: "Invalid order_id: must be greater than 1000"
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Rights restricted to view"
+        '404':
+          description: Ордер не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Order 12345 not found"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Only POST method allowed"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "DB inaccessible"
+                config_error:
+                  value:
+                    error: "Bot config damaged in DB. Bot: binance_bot"
+                task_error:
+                  value:
+                    error: "Failed to schedule cancel task"
+
+  /api/update-position-coef:
+    post:
+      summary: Обновить коэффициент позиции
+      description: Изменяет значение position_coef для торгового бота
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - bot
+                - position_coef
+              properties:
+                bot:
+                  type: string
+                  description: Название бота
+                  example: binance_bot
+                position_coef:
+                  type: number
+                  format: float
+                  description: Новое значение коэффициента позиции (от 0 до 1)
+                  minimum: 0
+                  maximum: 1
+                  example: 0.8
+      responses:
+        '200':
+          description: Успешное обновление коэффициента
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatePositionCoefResponse'
+              example:
+                bot: binance_bot
+                account_id: 35822956
+                position_coef: 0.8
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  value:
+                    error: "Missing required fields: bot, position_coef"
+                invalid_value:
+                  value:
+                    error: "Invalid position_coef: must be between 0 and 1"
+        '403':
+          description: Недостаточно прав или доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                access_denied:
+                  value:
+                    error: "Access denied for 192.168.1.100"
+                insufficient_rights:
+                  value:
+                    error: "Insufficient rights"
+        '404':
+          description: Бот или аккаунт не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                bot_not_found:
+                  value:
+                    error: "Bot configuration not found for binance_bot"
+                account_not_found:
+                  value:
+                    error: "Account not found for bot binance_bot"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Only POST method allowed"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "Database connection failed"
+                query_error:
+                  value:
+                    error: "Update query failed: Unknown column"
+
+  /api/update-trade-enabled:
+    post:
+      summary: Включить/выключить торговлю для бота
+      description: Изменяет значение trade_enabled для торгового бота
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - bot
+                - enabled
+              properties:
+                bot:
+                  type: string
+                  description: Название бота
+                  example: binance_bot
+                enabled:
+                  type: boolean
+                  description: Включить (true) или выключить (false) торговлю
+                  example: true
+      responses:
+        '200':
+          description: Успешное обновление статуса торговли
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateTradeEnabledResponse'
+              example:
+                bot: binance_bot
+                account_id: 35822956
+                trade_enabled: true
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  value:
+                    error: "Missing required fields: bot, enabled"
+                invalid_value:
+                  value:
+                    error: "Invalid enabled value: must be boolean"
+        '403':
+          description: Недостаточно прав или доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                access_denied:
+                  value:
+                    error: "Access denied for 192.168.1.100"
+                insufficient_rights:
+                  value:
+                    error: "Insufficient rights"
+        '404':
+          description: Бот или аккаунт не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                bot_not_found:
+                  value:
+                    error: "Bot configuration not found for binance_bot"
+                account_not_found:
+                  value:
+                    error: "Account not found for bot binance_bot"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Only POST method allowed"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "Database connection failed"
+                query_error:
+                  value:
+                    error: "Update query failed: Unknown column"
+                no_exchange:
+                  value:
+                    error: "No exchange defined for bot"
+                    bot: "binance_bot"
+
+  /api/last-errors:
+    get:
+      summary: Получить список последних ошибок бота
+      description: Возвращает последние 500 ошибок для указанного торгового бота с возможностью фильтрации по timestamp
+      parameters:
+        - name: bot
+          in: query
+          description: Название бота
+          required: true
+          schema:
+            type: string
+            default: bitmex_bot
+            example: binance_bot
+        - name: account
+          in: query
+          description: ID торгового аккаунта (если не указан, берется из конфига бота)
+          required: false
+          schema:
+            type: integer
+        - name: ts
+          in: query
+          description: Точный timestamp для фильтрации ошибок (возвращает только ошибки с этим timestamp)
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Успешный ответ со списком ошибок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastErrorsResponse'
+              example:
+                bot: binance_bot
+                account_id: 35822956
+                errors:
+                  - time: "2025-10-24 12:30:15"
+                    host: "host1"
+                    code: 1001
+                    message: "Rate limit exceeded"
+                    message_raw: "~C91Rate limit exceeded~C00"
+                    source: "order_manager.cpp:245"
+                  - time: "2025-10-24 11:15:22"
+                    host: "host2"
+                    code: 2003
+                    message: "FAILED_LOAD_ORDERS( 1): private API order returned 'no healthy upstream' for params {\"filter\":\"{\\\"orderID\\\":[]}\"} = NULL"
+                    message_raw: "~C91#FAILED_LOAD_ORDERS( 1):~C00 private API order returned '~C92no healthy upstream~C00' for params ~C92{\"filter\":\"{\\\"orderID\\\":[]}}\"}~C00 = ~C92NULL~C00"
+                    source: "bitmex_api.cpp:189"
+                  - time: "2025-10-24 10:05:33"
+                    host: "host1"
+                    code: 500
+                    message: "Connection timeout"
+                    message_raw: "~C91Connection timeout~C00"
+                    source: "network.cpp:56"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "bot binance_bot config not exists in DB"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                database_error:
+                  value:
+                    error: "DB inaccessible"
+                config_damaged:
+                  value:
+                    error: "bot binance_bot config damaged in DB"
+
+components:
+  schemas:
+    BotsStatusResponse:
+      type: object
+      required:
+        - bots
+        - risk_mapping
+        - volumes
+        - is_admin
+        - is_trader
+      properties:
+        bots:
+          type: array
+          description: Массив информации о ботах
+          items:
+            $ref: '#/components/schemas/BotInfo'
+        risk_mapping:
+          type: array
+          description: Матрица позиций по инструментам
+          items:
+            $ref: '#/components/schemas/RiskPosition'
+        volumes:
+          $ref: '#/components/schemas/Volumes'
+        is_admin:
+          type: boolean
+          description: Имеет ли пользователь права администратора
+          example: false
+        is_trader:
+          type: boolean
+          description: Имеет ли пользователь права трейдера
+          example: false
+
+    BotInfo:
+      type: object
+      required:
+        - bot
+        - account
+        - exchange
+        - started
+        - last_alive
+        - matched_orders
+        - funds_usage
+        - restarts
+        - exceptions
+        - errors
+        - last_error_raw
+        - last_error
+        - pid
+        - position_coef
+        - trade_enabled
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        account:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        exchange:
+          type: string
+          description: Название биржи
+          example: binance
+        started:
+          type: string
+          format: date-time
+          description: Время запуска бота
+          example: "2025-10-20 08:30:15"
+        last_alive:
+          type: string
+          format: date-time
+          description: Последнее время активности
+          example: "2025-10-24 12:45:33"
+        matched_orders:
+          type: integer
+          description: Количество исполненных ордеров за день
+          example: 127
+        funds_usage:
+          type: number
+          format: float
+          description: Использование средств в процентах
+          example: 85.3
+        restarts:
+          type: integer
+          description: Количество перезапусков за день
+          example: 2
+        exceptions:
+          type: integer
+          description: Количество исключений за день
+          example: 0
+        errors:
+          type: integer
+          description: Общее количество ошибок
+          example: 5
+        last_error_raw:
+          type: string
+          description: Последняя ошибка с цветовыми кодами
+          example: "~C9115:23:42 Rate limit exceeded~C00"
+        last_error:
+          type: string
+          description: Последняя ошибка без цветовых кодов
+          example: "15:23:42 Rate limit exceeded"
+        pid:
+          type: string
+          description: ID процесса
+          example: "12345"
+        position_coef:
+          type: number
+          format: float
+          description: Коэффициент позиции
+          example: 0.8
+        trade_enabled:
+          type: boolean
+          description: Включена ли торговля
+          example: true
+        background_color:
+          type: string
+          nullable: true
+          description: Цвет фона для отображения
+          example: "rgb(50,100,150)"
+
+    RiskPosition:
+      type: object
+      required:
+        - pair_id
+        - symbol
+        - positions
+        - summary
+        - volume
+      properties:
+        pair_id:
+          type: integer
+          description: ID торговой пары
+          example: 1
+        symbol:
+          type: string
+          description: Символ инструмента
+          example: BTCUSDT
+        positions:
+          type: object
+          description: Позиции по ботам (ключ - название бота, значение - количество или null)
+          additionalProperties:
+            type: string
+            nullable: true
+          example:
+            binance_bot: "0.5"
+            bot_bitmex_main: "-0.3"
+        summary:
+          type: string
+          description: Суммарная позиция
+          example: "0.2"
+        volume:
+          type: number
+          format: float
+          description: Объем позиции в USD
+          example: 16000.5
+        background_color:
+          type: string
+          nullable: true
+          description: Цвет фона для отображения
+          example: "#FFD700"
+        is_light_color:
+          type: boolean
+          description: Является ли цвет светлым
+          example: true
+
+    Volumes:
+      type: object
+      required:
+        - long
+        - short
+      properties:
+        long:
+          type: number
+          format: float
+          description: Объем длинных позиций в USD
+          example: 125340.75
+        short:
+          type: number
+          format: float
+          description: Объем коротких позиций в USD
+          example: 98234.50
+
+    DashboardResponse:
+      type: object
+      required:
+        - bot
+        - account_id
+        - exchange
+        - is_admin
+        - is_trader
+        - active_orders
+        - limit_orders
+        - positions
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        exchange:
+          type: string
+          description: Название биржи
+          example: binance
+        is_admin:
+          type: boolean
+          description: Имеет ли пользователь права администратора
+          example: false
+        is_trader:
+          type: boolean
+          description: Имеет ли пользователь права трейдера
+          example: false
+        active_orders:
+          type: array
+          description: Массив активных ордеров
+          items:
+            $ref: '#/components/schemas/Order'
+        limit_orders:
+          type: array
+          description: Массив лимитных ордеров
+          items:
+            $ref: '#/components/schemas/Order'
+        positions:
+          type: array
+          description: Массив позиций
+          items:
+            $ref: '#/components/schemas/Position'
+
+    Order:
+      type: object
+      required:
+        - id
+        - ts
+        - host_id
+        - batch_id
+        - signal_id
+        - pair
+        - pair_id
+        - price
+        - amount
+        - matched
+        - buy
+        - comment
+      properties:
+        id:
+          type: integer
+          description: ID ордера
+          example: 12345
+        ts:
+          type: string
+          format: date-time
+          description: Время создания/обновления ордера
+          example: "2025-10-24 12:30:15"
+        host_id:
+          type: string
+          description: ID хоста
+          example: "host1"
+        batch_id:
+          type: integer
+          description: ID пакета
+          example: 987
+        signal_id:
+          type: integer
+          description: ID сигнала
+          example: 456
+        pair:
+          type: string
+          description: Торговая пара
+          example: BTCUSDT
+        pair_id:
+          type: integer
+          description: ID торговой пары
+          example: 1
+        price:
+          type: number
+          format: float
+          description: Цена ордера
+          example: 68500.5
+        amount:
+          type: number
+          format: float
+          description: Количество (положительное для покупки, отрицательное для продажи)
+          example: 0.5
+        matched:
+          type: number
+          format: float
+          description: Исполненное количество (положительное для покупки, отрицательное для продажи)
+          example: 0.3
+        buy:
+          type: boolean
+          description: Является ли ордер покупкой
+          example: true
+        comment:
+          type: string
+          description: Комментарий к ордеру
+          example: "market making"
+
+    Position:
+      type: object
+      required:
+        - ts
+        - pair_id
+        - pair
+        - current
+        - target
+        - last_price
+        - rpnl
+        - upnl
+        - offset
+      properties:
+        ts:
+          type: string
+          format: date-time
+          description: Время обновления позиции
+          example: "2025-10-24 12:40:00"
+        pair_id:
+          type: integer
+          description: ID торговой пары
+          example: 1
+        pair:
+          type: string
+          description: Торговая пара
+          example: BTCUSDT
+        current:
+          type: number
+          format: float
+          description: Текущая позиция (в базовой валюте)
+          example: 1500.5
+        target:
+          type: number
+          format: float
+          description: Целевая позиция (в базовой валюте)
+          example: 2000.0
+        last_price:
+          type: number
+          format: float
+          description: Последняя цена инструмента
+          example: 68500.5
+        rpnl:
+          type: number
+          format: float
+          description: Реализованная прибыль/убыток
+          example: 125.75
+        upnl:
+          type: number
+          format: float
+          description: Нереализованная прибыль/убыток
+          example: 342.50
+        offset:
+          type: number
+          format: float
+          description: Смещение позиции
+          example: 0
+
+    ChartResponse:
+      type: object
+      required:
+        - success
+        - data
+        - metadata
+        - statistics
+      properties:
+        success:
+          type: boolean
+          description: Статус успешности запроса
+          example: true
+        data:
+          type: array
+          description: Массив точек данных для графика
+          items:
+            $ref: '#/components/schemas/DataPoint'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        statistics:
+          $ref: '#/components/schemas/Statistics'
+
+    DataPoint:
+      type: object
+      required:
+        - timestamp
+        - value
+      properties:
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp в миллисекундах (JavaScript формат)
+          example: 1759190511000
+        value:
+          type: number
+          format: float
+          description: Значение баланса в USD с учетом депозитов/выводов
+          example: -5132.61
+
+    Metadata:
+      type: object
+      required:
+        - exchange
+        - account_id
+        - from_date
+        - points_count
+        - currency
+      properties:
+        exchange:
+          type: string
+          description: Название биржи
+          example: binance
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        from_date:
+          type: string
+          format: date-time
+          description: Начальная дата выборки данных
+          example: "2025-09-30 00:00"
+        to_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Конечная дата выборки данных
+          example: "2025-10-02 23:59:03"
+        points_count:
+          type: integer
+          description: Количество точек данных в ответе
+          example: 5
+        currency:
+          type: string
+          description: Валюта баланса
+          example: USD
+
+    Statistics:
+      type: object
+      required:
+        - start_value
+        - end_value
+        - min_value
+        - max_value
+        - gain_percent
+      properties:
+        start_value:
+          type: number
+          format: float
+          description: Начальное значение баланса
+          example: -5132.61
+        end_value:
+          type: number
+          format: float
+          description: Конечное значение баланса
+          example: -3746.85
+        min_value:
+          type: number
+          format: float
+          description: Минимальное значение с padding 5%
+          example: -5329.8585
+        max_value:
+          type: number
+          format: float
+          description: Максимальное значение с padding 5%
+          example: -3642.4915
+        gain_percent:
+          type: number
+          format: float
+          description: Процент изменения баланса
+          example: -27
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Описание ошибки
+          example: "Database connection failed"
+        data:
+          type: array
+          description: Пустой массив данных (только для ошибки "No data found")
+          items: {}
+
+    LastErrorsResponse:
+      type: object
+      required:
+        - bot
+        - account_id
+        - errors
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        errors:
+          type: array
+          description: Массив ошибок (может быть пустым)
+          items:
+            $ref: '#/components/schemas/BotError'
+
+    BotError:
+      type: object
+      required:
+        - time
+        - host
+        - code
+        - message
+        - message_raw
+        - source
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Время возникновения ошибки
+          example: "2025-10-24 12:30:15"
+        host:
+          type: string
+          description: ID хоста, на котором произошла ошибка
+          example: "host1"
+        code:
+          type: integer
+          description: Код ошибки
+          example: 1001
+        message:
+          type: string
+          description: Текст ошибки без цветовых кодов
+          example: "Rate limit exceeded"
+        message_raw:
+          type: string
+          description: Исходное сообщение ошибки с цветовыми кодами (~C91, ~C92, ~C00 и т.д.)
+          example: "~C91Rate limit exceeded~C00"
+        source:
+          type: string
+          description: Источник ошибки (файл и строка в коде)
+          example: "order_manager.cpp:245"
+
+    UpdateOffsetResponse:
+      type: object
+      required:
+        - account_id
+        - pair_id
+        - offset
+        - exchange
+      properties:
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        pair_id:
+          type: integer
+          description: ID торговой пары
+          example: 1
+        offset:
+          type: number
+          format: float
+          description: Новое значение смещения
+          example: 100.5
+        exchange:
+          type: string
+          description: Название биржи
+          example: binance
+    CancelOrderResponse:
+      type: object
+      required:
+        - bot
+        - order_id
+        - tasks_scheduled
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        order_id:
+          type: integer
+          description: ID отмененного ордера
+          example: 12345
+        tasks_scheduled:
+          type: integer
+          description: Количество созданных задач (обычно 1)
+          example: 1
+
+    UpdatePositionCoefResponse:
+      type: object
+      required:
+        - bot
+        - account_id
+        - position_coef
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        position_coef:
+          type: number
+          format: float
+          description: Новое значение коэффициента позиции
+          example: 0.8
+
+    UpdateTradeEnabledResponse:
+      type: object
+      required:
+        - bot
+        - account_id
+        - trade_enabled
+      properties:
+        bot:
+          type: string
+          description: Название бота
+          example: binance_bot
+        account_id:
+          type: integer
+          description: ID торгового аккаунта
+          example: 35822956
+        trade_enabled:
+          type: boolean
+          description: Новое состояние торговли
+          example: true

@@ -1,0 +1,30 @@
+:root {
+  --text-color: #eee;
+  --back-color: #323232;
+}
+
+table {
+  border-color: #f3f4a3;  
+}
+th, td {
+  border-color: #ffffa0;
+         color: #efe;
+}
+
+a, a:link {
+  color: #83f3f4;
+}
+a:visited {
+  color: #338899;
+}
+a:hover {
+  color: #f3f3a0;
+}
+
+body {
+  color-scheme: dark;         
+}
+
+.cl00 {
+  color: #eee;
+}

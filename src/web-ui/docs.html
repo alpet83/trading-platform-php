@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3.52.5/swagger-ui.css" />
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@3.52.5/swagger-ui-bundle.js"></script>
+<script>
+    let isSpecUpdated = false;
+    const ui = SwaggerUIBundle({
+        url: './docs.yaml',
+        dom_id: '#swagger-ui',
+        onComplete: function() {
+            if (!isSpecUpdated) {
+                const spec = ui.specSelectors.specJson().toJS();
+                spec.servers = [
+                    { url: window.location.origin, description: 'Server' }
+                ];
+                ui.specActions.updateSpec(JSON.stringify(spec));
+
+                isSpecUpdated = true;
+            }
+        }
+    });
+</script>
+</body>
+</html>
