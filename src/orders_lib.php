@@ -835,24 +835,24 @@
             $p_max = ceil($size / $limit) * $limit;
             // разбивка таблиц на партиции
 
-            if (false == strpos($code, "PARTITION p$p_max") && $size > $limit)  try {           
-            $parts = [];
-            $id = $limit;
-            while ($id <= $p_max) {                
-                $parts []= "PARTITION p$id VALUES LESS THAN ($id) ENGINE = InnoDB";
-                $id += $limit;
-            }  
-            $parts []= "PARTITION p_newest VALUES LESS THAN (MAXVALUE) ENGINE = InnoDB";
-            $count = count($parts);           
-            $core->LogMsg("~C96#TABLE_SPLIT:~C00 size = %d, parts = %d", $size, $count);
-            $query = "ALTER TABLE `$table_name`  PARTITION BY RANGE (id) PARTITIONS $count\n (";
-            $query .= implode(",\n  ", $parts).");\n"; 
-            $core->LogMsg("~C91#WARN:~C00 trying parititioning table with query:\n %s", $query); 
-            $mysqli->try_query($query);
-            // 
-            } catch (Exception $E) {
-            $core->LogError("~C91#WARN:~C00 failed to partition table $table_name: %s", $E->getMessage());  
-            }      
+            if (false == strpos($code, "PARTITION p$p_max") && $size > $limit)  
+                try {           
+                    $parts = [];
+                    $id = $limit;
+                    while ($id <= $p_max) {                
+                        $parts []= "PARTITION p$id VALUES LESS THAN ($id) ENGINE = InnoDB";
+                        $id += $limit;
+                    }  
+                    $parts []= "PARTITION p_newest VALUES LESS THAN (MAXVALUE) ENGINE = InnoDB";
+                    $count = count($parts);           
+                    $core->LogMsg("~C96#TABLE_SPLIT:~C00 size = %d, parts = %d", $size, $count);
+                    $query = "ALTER TABLE `$table_name`  PARTITION BY RANGE (id) PARTITIONS $count\n (";
+                    $query .= implode(",\n  ", $parts).");\n"; 
+                    $core->LogMsg("~C91#WARN:~C00 trying parititioning table with query:\n %s", $query); 
+                    $mysqli->try_query($query);                
+                } catch (Exception $E) {
+                    $core->LogError("~C91#WARN:~C00 failed to partition table $table_name: %s", $E->getMessage());  
+                }      
             
         }  
         else
@@ -999,7 +999,7 @@
 
     public function offsetUnset(mixed $offset): void {
       if ($this->verbosity > 1) 
-          $this->trade_core->LogOrder("~C92#DBG:~C00 Unset order #%d from list %s", $offset, $this->Name());
+          $this->TradeCore()->LogOrder("~C92#DBG:~C00 Unset order #%d from list %s", $offset, $this->Name());
       unset($this->orders[$offset]);
     }
 

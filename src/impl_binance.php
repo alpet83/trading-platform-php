@@ -24,7 +24,7 @@
         protected $last_load = ['orders' => 0, 'tickers' => 0, 'positions' => 0];
 
         // protected $exchange = 'Binance';    
-        public function  __construct($core) {
+        public function  __construct(object $core) {
           parent::__construct($core);
           $this->exchange = 'Binance';
 
@@ -32,8 +32,7 @@
           $this->apiKey = trim ($key);
           $this->secretKey = file('.binance.key');
           $this->public_api = 'https://api.binance.com/';
-          $this->private_api = 'https://api2.binance.com/';
-          
+          $this->private_api = 'https://api2.binance.com/';          
         }
 
         public function  Initialize() {

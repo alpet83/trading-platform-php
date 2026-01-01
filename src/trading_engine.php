@@ -98,22 +98,23 @@ class TradingEngine {
 
 
 
-    public function  __construct($core) {
-      $this->trade_core = $core;
+    public function  __construct(object $core) {
+        assert ($core instanceof TradingCore);
+        $this->trade_core = $core;
     }
 
     public function get_btc_price(string $ts = 'now'): float {
-       throw new Exception('TradingEngine.get_btc_price not implemented');
+        throw new Exception('TradingEngine.get_btc_price not implemented');
     }
 
     public function sqli(string $kind = ''): ?mysqli_ex {
-      $mysqli = $this->TradeCore()->CheckDBConnection($kind);
-      if (is_null($mysqli) && '' == $kind)
-          throw new Exception("TradingEngine.sqli(): no main DB connection");
-      return $mysqli;    
+        $mysqli = $this->TradeCore()->CheckDBConnection($kind);
+        if (is_null($mysqli) && '' == $kind)
+            throw new Exception("TradingEngine.sqli(): no main DB connection");
+        return $mysqli;    
     }
     public function Cleanup() {
-      $this->SetLastError('');
+        $this->SetLastError('');
     }
 
     public function MarketMaker(int $pair_id, bool $create_not_exists = false): ?MarketMaker {
@@ -168,7 +169,7 @@ class TradingEngine {
 
       if (is_array($accounts) && count($accounts) > 0) { 
           $this->account_id = $accounts[0];
-          $this->TradeCore()->LogMsg("#DBG: assigned default account_id %d", $this->account_id);
+          $this->LogMsg("#DBG: assigned default account_id %d", $this->account_id);
       }    
       else    
           throw new Exception("In table '$config_table' not found exchange parameter.");
@@ -659,7 +660,9 @@ class TradingEngine {
 
 
     public function LogMsg() {
-        $this->TradeCore()->LogEngine(...func_get_args());
+        $core = $this->TradeCore();
+        if ($core instanceof TradingCore)
+            $core->LogEngine(...func_get_args());
     }
 
     public function  LoadCMCPrices() {
@@ -991,17 +994,17 @@ class TradingEngine {
         return $res;
     }
 
-    public function  LimitAmountByCost(int $pair_id, float $qty, float $max_cost, bool $notify = true) { // стоимость принимается как в долларах, так и в битках
+    public function  LimitAmountByCost(int $pair_id, float $amount, float $max_cost, bool $notify = true) { // стоимость принимается как в долларах, так и в битках
         $tinfo = $this->TickerInfo($pair_id);
         if (!$tinfo)
             return 0;
-        $cost = abs($qty) * $tinfo->last_price;
-        $result = $qty;
+        $cost = abs($amount) * $tinfo->last_price;
+        $result = $amount;
         if ($cost > $max_cost) {
             $result = $max_cost / $tinfo->last_price;
             if ($notify)
                 $this->TradeCore()->LogMsg ("~C91#WARN:~C00 due cost %7.5f > max cost limit %7.5f, quantity reduced from %s, to %s", 
-                       $cost, $max_cost, $tinfo->FormatQty($qty, Y), $tinfo->FormatQty($result, Y));
+                       $cost, $max_cost, $tinfo->FormatQty($amount, Y), $tinfo->FormatQty($result, Y));
         }
         return $result;
     }    
@@ -1516,43 +1519,44 @@ class TradingEngine {
         return $checked;
     }
 
-    public function  TradeCore(): ?TradingCore {
-      return $this->trade_core;
+    public function  TradeCore(): TradingCore {
+        assert(!is_null($this->trade_core), "FATAL: TradeCore is null in TradingEngine");
+        return $this->trade_core;
     }
 
     public function  TickerInfo($pair): ?TickerInfo {
-      $pair_id = $pair;
-      if (is_string($pair) && isset($this->pairs_map_rev[$pair]))
-          $pair_id = $this->pairs_map_rev[$pair];
+        $pair_id = $pair;
+        if (is_string($pair) && isset($this->pairs_map_rev[$pair]))
+            $pair_id = $this->pairs_map_rev[$pair];
 
-      if (isset($this->pairs_info[$pair_id]))
-          return $this->pairs_info[$pair_id];
+        if (isset($this->pairs_info[$pair_id]))
+            return $this->pairs_info[$pair_id];
 
-      foreach ($this->pairs_info as $tinfo)
-        if (isset($tinfo->source_pair_id) && $tinfo->source_pair_id == $pair_id)  
-            return $tinfo;
-      return null;
+        foreach ($this->pairs_info as $tinfo)
+            if (isset($tinfo->source_pair_id) && $tinfo->source_pair_id == $pair_id)  
+                return $tinfo;
+        return null;
     }
 
     public function FindTicker(string $base): ?TickerInfo {
-      foreach ($this->pairs_info as $pair_id => $tinfo) {
-        $pair = $tinfo->pair;
-        if ($base === "#$pair_id")
-           return $tinfo;
-        $pos = strpos($pair, $base);
-        if ($pos < 1 && $pos !== false)
-           return $tinfo;
-      }
-      return null;  
+        foreach ($this->pairs_info as $pair_id => $tinfo) {
+            $pair = $tinfo->pair;
+            if ($base === "#$pair_id")
+            return $tinfo;
+            $pos = strpos($pair, $base);
+            if ($pos < 1 && $pos !== false)
+            return $tinfo;
+        }
+        return null;  
     }
 
 
 
     public function SyncDB() {
-      $this->archive_orders->SaveToDB();
-      $this->matched_orders->SaveToDB();
-      $this->pending_orders->SaveToDB();
-      $this->other_orders->SaveToDB();
+        $this->archive_orders->SaveToDB();
+        $this->matched_orders->SaveToDB();
+        $this->pending_orders->SaveToDB();
+        $this->other_orders->SaveToDB();
     }
 
     public function TableName(string $suffix, bool $check_exists = true, mysqli_ex $mysqli = null): string {

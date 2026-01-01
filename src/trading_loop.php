@@ -127,12 +127,13 @@
             throw new ErrorException($msg);
         }
 
-        protected function SetupLimits(TradingContext $ctx) {
+        protected function SetupLimits(TradingContext $ctx, bool $zero_cross_allowed) {
             $engine = $this->Engine();
             $ti = $ctx->tinfo;
             $price = $ti->last_price;
             $pair_id = $ti->pair_id;
             $config = $this->configuration;
+            $ctx->allow_zero_cross = $zero_cross_allowed;
 
             $ctx->price = $price = $ti->mid_spread > 0 ? $ti->mid_spread : $ti->last_price; // reference price is last
             assert ($price > 0, "Price is zero for pair $pair_id");
@@ -169,11 +170,11 @@
             // настройка умных переменных с заданием базовых лимитов. Все лимиты должны быть заданы до последнего изменения переменной
             
             // no changes as start
-            $ctx->get_var('target_pos')
-                // опциональный ограничитель: не пересекать ноль при смене позиции, необходим некоторым биржам для маржинальных позиций
-                ->constrain('zero_cross', 'Position zero cross', 0)
-                ->constrain('max_abs', 'Position extremal limit', $extreme_amount,  $this->OnRiskAlert(...))
-                ->constrain('max_abs', 'Position configured limit', $ctx->max_pos, $this->OnPositionOverflow(...) );
+            $tp = $ctx->get_var('target_pos');
+            // опциональный ограничитель: не пересекать ноль при смене позиции, необходим некоторым биржам для маржинальных позиций
+
+            $tp->constrain('max_abs', 'Position extremal limit', $extreme_amount,  $this->OnRiskAlert(...))
+               ->constrain('max_abs', 'Position configured limit', $ctx->max_pos, $this->OnPositionOverflow(...) );
 
             $ctx->get_var('amount')                   // всегда ≥ 0
                 ->constrain('max_abs',  'Amount limit',  $ctx->max_amount(...));  
@@ -422,6 +423,7 @@
 
             $sig_ctx = new TradingContext($tinfo, $ctx->curr_pos); // альтернативный контекст, по данным сигнала
             
+            $this->SetupLimits($sig_ctx, true); // zero cross allowed for relative positions
             
             // obsolete: проверка выхода за общий лимит позиции
             if (0 != $minute % 5 && $trade_dir == signval($curr_pos) &&                   
@@ -440,6 +442,7 @@
                 if ($ctx->ext_sig_id != $ext_sig->id) { 
                     $ctx->batch (null);  // prevent reusing                               
                 }
+                $sig_ctx->name = 'sig#'.$ext_sig->id;
                 $engine->last_scale = '';  
                 
                 $po = $ext_sig->PendingOrders();
@@ -462,13 +465,6 @@
                 $cp_cost = $tinfo->QtyCost($cp_raw);
                 $cp = $ctx->cur_delta = $ext_sig->CurrentDeltaPos();   
                 $tp = $ctx->tgt_delta = $ext_sig->TargetDeltaPos();                           
-
-                if ( signval($cp) == -signval($tp) && abs($cp_cost) > $ctx->min_cost ) {             
-                    $this->LogMsg("~C33#SIGNAL_SPLIT:~C00 %s have opposite target, current qty %f have cost %.6f. Closing before ", strval($ext_sig), $cp_raw, $cp_cost); 
-                    $tp = 0; // сначала нужно закрыть позицию полностью, чтобы избежать резонанса избыточным исполнением
-                    $ctx->split_trade = true;
-                }  
-                
 
                 $pa = $ext_sig->PendingAmount();
                 $delta = $tp - $cp;                
@@ -535,7 +531,7 @@
                     
                     // all conditions OK, amount enough after limits
                     if ($sig_ctx->amount >= $sig_ctx->min_amount) {                        
-                        $ctx->update('target_pos', $virt_pos, 'assigned from signal');
+                        $ctx->update('target_pos', $virt_pos, 'assigned from signal #'.$ext_sig->id);
                         $ctx->target_pos_qty = $ctx->target_qty = $virt_qty;     
                         $ctx->split_trade &= ($ctx->target_pos == 0);  // сброс флага, если позиция не закроется
                         $this->LogMsg("~C93 #BIAS_DBG:~C00 assumed from signal %s = %s, virtual pos = %s", strval($ext_sig), 
@@ -621,6 +617,8 @@
             $debug_pair = $this->GetDebugPair();
             $ml = $engine->GetOrdersList('matched');
 
+            $zero_cross_allowed = $this->ConfigValue('allow_zero_cross', false); // some exchanges need this
+
             // PROCESSING: testing all positions
             // TODO: extract single position trade to function -----------------------------------------------------------------------------------------------------------------
             foreach ($trd_pos as $pair_id => $rec)
@@ -659,7 +657,7 @@
                 }
 
 
-                $this->SetupLimits($ctx);
+                $this->SetupLimits($ctx, $zero_cross_allowed); // TODO:
 
                 // Высчитывание сальдо позиции по всем сигналам, включая смещение администратора
                 if (!$this->CalcTargetPos($rec, $ctx, $stats)) {

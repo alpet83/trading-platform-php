@@ -27,7 +27,7 @@
         public    $server_time  =  0;
         public    $diver_time   = 0; // server to local time divergence
 
-        public function __construct($core) {
+        public function __construct(object $core) {
             parent::__construct($core);
             $this->exchange = 'Deribit';
             $env = getenv();
@@ -229,7 +229,7 @@
             return $value;  
         }
 
-        public function  LimitAmountByCost($pair_id, $amount, $max_cost) {
+        public function  LimitAmountByCost(int $pair_id, float $amount, float $max_cost, bool $notify = true) {
             $tinfo = $this->TickerInfo($pair_id);
             $core = $this->TradeCore();
             if (!$tinfo || 0 == $tinfo->last_price) {

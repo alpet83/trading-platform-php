@@ -75,8 +75,8 @@
 
 
 
-        public function __construct($core) {
-            parent::__construct($core);
+        public function __construct(object $core) {            
+            parent::__construct($core);                       
             $this->exchange = 'BitMEX';
             $env = getenv();
             if (isset($env['BMX_API_KEY'])) {
@@ -402,7 +402,7 @@
             return 0;
         }
 
-        public function  LimitAmountByCost($pair_id, $amount, $max_cost) {
+        public function  LimitAmountByCost(int $pair_id, float $amount, float $max_cost, bool $notify = true) {
             $tinfo = $this->TickerInfo($pair_id);
             $core = $this->TradeCore();
             if (!$tinfo || 0 == $tinfo->last_price) {
@@ -423,7 +423,8 @@
 
                 $amount = $this->QtyToAmount($pair_id, $price, -1, $qty);
                 $amount = $tinfo->FormatAmount($amount);
-                $this->LogMsg ("~C91#WARN:~C00 for %s due cost %.1f$ > max limit %d, price = %10f, amount reduced = %s from qty = %.5f", $tinfo->pair, $cost, $max_cost, $price, $amount, $qty);
+                if ($notify)
+                    $this->LogMsg ("~C91#WARN:~C00 for %s due cost %.1f$ > max limit %d, price = %10f, amount reduced = %s from qty = %.5f", $tinfo->pair, $cost, $max_cost, $price, $amount, $qty);
             }
             return $amount;
         }
@@ -1531,9 +1532,9 @@
                     }   
                 }
                 else { 
-                $this->sign_fails = 0;
-                $this->last_good_rqs[$full_path] = $pdump;
-                file_put_contents(__DIR__."/data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
+                    $this->sign_fails = 0;
+                    $this->last_good_rqs[$full_path] = $pdump;
+                    file_put_contents(__DIR__."/data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
                 }  
             }  
             return $result;
@@ -1545,9 +1546,11 @@
     final class BitMEXBOT extends TradingCore {
 
         public function  __construct() {
-            global $mysqli, $impl_name;
+            global $mysqli, $impl_name, $g_bot;
             $this->impl_name = $impl_name;
             parent::__construct();
+            assert (!is_null($g_bot));
+            assert (!is_null($this));
             $this->trade_engine = new BitMEXEngine($this);      
             $this->Initialize($mysqli); 
         }

@@ -1,5 +1,6 @@
 <?php
     require_once 'common.php';
+    require_once 'print_r_level.php';
 
     final class ValueConstraint {
         public ?BoundedValue $owner;
@@ -127,7 +128,7 @@
                 catch (Throwable $e) {
                     if (is_array($cb) && count($cb) > 1)
                         printf("Exception in onChange handler '%s' for %s - %s\n ", 
-                            var_export($cb[1], true), $this->name, $e->getMessage());
+                            printRLevel($cb[1], 1), $this->name, $e->getMessage());
                     else
                         printf("Exception in onChange handler '%s' for %s - %s\n ", 
                             gettype($cb).":".print_r($cb, true), $this->name, $e->getMessage());
@@ -184,7 +185,7 @@
         public function __get ( $key ) { // alternate access
             if (array_key_exists($key, $this->values))
                 return $this->values[$key];
-        return 0;  
+            return 0;  
         }
         public function __isset ( $key ) {
             return isset ($this->values[$key]);

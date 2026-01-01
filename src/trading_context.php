@@ -46,7 +46,7 @@
                     if ($newTarget == $context->target_pos) return;
                     $core = $context->core();                    
                     if ($context->verbosity > 1)
-                        $core->LogMsg("~C93 #DBG:~C00 TradingValue 'bias' changed to %.5f, with dir %d, setting target_pos to %.5f, source: %s", $bias, $dir, $newTarget, $source);
+                        $core->LogMsg("~C93 #DBG:~C00 TradingValue '%s.bias' changed to %.5f, with dir %d, setting target_pos to %.5f, source: %s", $context->name, $bias, $dir, $newTarget, $source);
                     $context->get_var('target_pos')->set($newTarget, source: 'bias→target_pos');                    
                 },
                 'amount' => function (float $value, float $old, string $source) { 
@@ -56,7 +56,7 @@
                     $core = $context->core();                    
                     $engine = $context->engine(); 
                     if ($context->verbosity > 1)
-                        $core->LogMsg("~C93 #DBG:~C00 TradingValue 'amount' changed to %.5f, source: %s", $value, $source);                    
+                        $core->LogMsg("~C93 #DBG:~C00 TradingValue '%s.amount' changed to %.5f, source: %s", $context->name, $value, $source);                    
                     
                     $qty = (0 == $value) ? 0 : $engine->AmountToQty($ti->pair_id, price: $context->price, btc_price: $context->btc_price, value: $value);                    
                     $context->get_var('qty')->set($qty, source: 'amount→qty');
@@ -64,11 +64,18 @@
                 'target_pos' => function (float $target_pos, float $old, string $source) { // target_pos → bias (абсолютное значение)
                     assert ($this instanceof TradingValue);
                     $context = $this->context();
+                    if (signval($target_pos) == -signval($context->curr_pos) && !$context->allow_zero_cross) {
+                        $context->split_trade = true;
+                        if ($context->verbosity > 1)
+                            $context->core()->LogMsg("~C93 #DBG:~C00 TradingValue '%s.target_pos' zero crossing protecion, setting target_pos to 0.0 instead %.5f, source: %s", $context->name, $target_pos, $source);                        
+                        return $context->update('target_pos', 0, source: 'zero_cross_protection');
+                    }
+                    
                     $delta = $target_pos - $context->curr_pos; // позитивное значение, если нужен лонг
                     $bias = abs($delta);
                     $core = $context->core();
                     if ($context->verbosity > 1)
-                        $core->LogMsg("~C93 #DBG:~C00 TradingValue 'target_pos' changed from %.5f to %.5f, setting bias to %.5f, source: %s", $old, $target_pos, $bias, $source);                    
+                        $core->LogMsg("~C93 #DBG:~C00 TradingValue '%s.target_pos' changed from %.5f to %.5f, setting bias to %.5f, source: %s", $context->name, $old, $target_pos, $bias, $source);                    
                     $context->get_var('bias')->set($bias, source: 'target_pos→bias');
                 },
                 'qty' => function (float $value, float $old, string $source) {                     
@@ -79,7 +86,7 @@
                     $decimals = $ti->is_btc_pair ? 7 : 2;
                     $cost = round($cost, $decimals);
                     if ($context->verbosity > 1)
-                        $core->LogMsg("~C93 #DBG:~C00 TradingValue 'qty' changed to %.5f, cost to %.{$decimals}f source: %s", $value, $cost, $source);
+                        $core->LogMsg("~C93 #DBG:~C00 TradingValue '%s.qty' changed to %.5f, cost to %.{$decimals}f source: %s", $context->name, $value, $cost, $source);
 
                     $context->get_var('cost')->set($cost, source: 'qty->cost');
                 },
@@ -126,6 +133,10 @@
         public int $pair_id = 0; // TODO: duplicate of tinfo->pair_id
 
         public ?ExternalSignal $ext_sig = null;
+
+        public  $name = 'saldo';
+
+        public  $allow_zero_cross = false; // target_pos может иметь отрицательный знак относительно curr_pos
 
         public function __construct(TickerInfo $ti, float $curr_position) {
             global $g_bot;

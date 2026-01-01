@@ -26,7 +26,7 @@
 
         public    $api_key_fails = 0;
 
-        public function  __construct($core) {
+        public function  __construct(object $core) {
             parent::__construct($core);
             $this->exchange = 'Bitfinex';
 

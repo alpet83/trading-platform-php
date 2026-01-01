@@ -42,9 +42,6 @@
         protected   $btc_history   = []; // map of date => price
         protected   $last_request  = '';
 
-        protected   $trade_core = null;
-
-
         protected   $last_nonce = 0;
         protected   $prev_nonce = 0;
         public      $curl_last_error = '';
@@ -101,7 +98,7 @@
         protected function ProcessRateLimit () {
             global $curl_resp_header; 
             if (strpos($curl_resp_header, 'ratelimit') === false) return;
-            $core = $this->trade_core;            
+            $core = $this->TradeCore();            
             $lines = explode("\n", $curl_resp_header);
             $rhdrs = [];      
 
@@ -203,10 +200,6 @@
 
             curl_close($ch);
             return $result;
-        }
-
-        public function  TradeCore(): ?TradingCore {
-            return $this->trade_core;
         }
 
         protected function set_btc_price(float $price) {

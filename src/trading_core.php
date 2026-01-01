@@ -190,9 +190,9 @@
                 break;
         }              
         $g_bot = $g_logger = $this;      
+        assert($g_bot instanceof TradingCore);
         $this->configuration = new TradeConfig($this);
-        $this->InitLogging();
-        
+        $this->InitLogging();       
 
         $this->LogMsg("PID file $fpid_name");
         $this->pid_file_name = $fpid_name;
