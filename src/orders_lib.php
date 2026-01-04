@@ -106,168 +106,168 @@
     
 
     public function __construct() {
-      $this->raw_set = array('id' => -1, 'host_id' => 0, 'predecessor' => 0, 'ts' => 0, 'ts_fix' => 0, 'account_id' => 0, 'pair_id' => 0, 'batch_id' => 0, 'signal_id' => 0,
-                             'avg_price' => 0, 'init_price' => 0, 'price' => 0, 'amount' => 0, 'buy' => true, 'matched' => 0,
-                             'order_no' => 0, 'status' => 'proto', 'flags' => 0, 'in_position' => 0, 'out_position' => 0, 'comment' => '_new', 'updated' => 0);
-      $this->ts = date_ms(SQL_TIMESTAMP);
-      $this->created = $this->ts;
-      $this->updated = $this->ts;        
-      // if ($this->amount > 10e9) throw new Exception("#ERROR: used amount too big for order: ".strval($this));
+        $this->raw_set = array('id' => -1, 'host_id' => 0, 'predecessor' => 0, 'ts' => 0, 'ts_fix' => 0, 'account_id' => 0, 'pair_id' => 0, 'batch_id' => 0, 'signal_id' => 0,
+                                'avg_price' => 0, 'init_price' => 0, 'price' => 0, 'amount' => 0, 'buy' => true, 'matched' => 0,
+                                'order_no' => 0, 'status' => 'proto', 'flags' => 0, 'in_position' => 0, 'out_position' => 0, 'comment' => '_new', 'updated' => 0);
+        $this->ts = date_ms(SQL_TIMESTAMP);
+        $this->created = $this->ts;
+        $this->updated = $this->ts;        
+        // if ($this->amount > 10e9) throw new Exception("#ERROR: used amount too big for order: ".strval($this));
     }
     public function __destruct() {
-       $core = active_bot();
-       if ($this->order_no > 0 && $core) {
-         if (is_null($this->owner) && !$this->IsFixed())
-            $core->LogError("~C91#WARN:~C00 active order instance %s destructed without owner", strval($this));         
-       }
+        $core = active_bot();
+        if ($this->order_no > 0 && $core) {
+            if (is_null($this->owner) && !$this->IsFixed())
+                $core->LogError("~C91#WARN:~C00 active order instance %s destructed without owner", strval($this));         
+        }
     }
 
     public function __get ( $key ) {
-      if (array_key_exists($key, $this->raw_set))
-          return $this->raw_set[$key];
-      if ('volume' == $key)  
-           return $this->amount * $this->price;          
-      if (method_exists($this, $key))  
-           return $this->$key();    
-      if (array_key_exists($key, $this->runtime))
-          return $this->runtime[$key];
-      return null;
+        if (array_key_exists($key, $this->raw_set))
+            return $this->raw_set[$key];
+        if ('volume' == $key)  
+            return $this->amount * $this->price;          
+        if (method_exists($this, $key))  
+            return $this->$key();    
+        if (array_key_exists($key, $this->runtime))
+            return $this->runtime[$key];
+        return null;
     }
     public function __isset ( $key ) {
-      return array_key_exists($key, $this->raw_set) || method_exists($this, $key) || array_key_exists($key, $this->runtime);
+        return array_key_exists($key, $this->raw_set) || method_exists($this, $key) || array_key_exists($key, $this->runtime);
     }
 
     public function __set ($key, $value) {
-      if (is_null($value)) {
-        $core = active_bot();
-        $core->LogError("Attempt set value $key to null in order ".strval($this));
-        return;
-      }
+        if (is_null($value)) {
+            $core = active_bot();
+            $core->LogError("Attempt set value $key to null in order ".strval($this));
+            return;
+        }
 
-      if ('status' === $key &&  $this->raw_set[$key] !== $value && $this->owner)      
-          $this->set_status($value, false);
+        if ('status' === $key &&  $this->raw_set[$key] !== $value && $this->owner)      
+            $this->set_status($value, false);
 
-      if (method_exists($this, 'set_'.$key)) {
-        $this->{'set_'.$key}($value);
-        return;
-      }           
+        if (method_exists($this, 'set_'.$key)) {
+            $this->{'set_'.$key}($value);
+            return;
+        }           
 
-      $nzp = ['id', 'pair_id', 'price', 'amount'];      
-      if (false !== array_search($key, $nzp) && $value <= 0) {
-        $core = active_bot();
-        $core->LogError("~C91#WARN:~C00 attempt set zero or negative value for %s in order %s from %s", $key, strval($this), format_backtrace());
-        return;
-      }
+        $nzp = ['id', 'pair_id', 'price', 'amount'];      
+        if (false !== array_search($key, $nzp) && $value <= 0) {
+            $core = active_bot();
+            $core->LogError("~C91#WARN:~C00 attempt set zero or negative value for %s in order %s from %s", $key, strval($this), format_backtrace());
+            return;
+        }
 
-      if ('in_position' == $key && 0 == $this->matched) 
-          $this->out_position = $value; // синхронизация, пока нет исполнения 
+        if ('in_position' == $key && 0 == $this->matched) 
+            $this->out_position = $value; // синхронизация, пока нет исполнения 
 
-      if ('matched' == $key) {                      
-          $this->out_position += ($value - $this->matched) * $this->TradeSign(); // delta-change
-      }    
-      if ('comment' == $key && strlen($value) > COMMENT_MAX_LEN) 
-           throw new Exception("ERROR: new comment too long for order: ".strval($this));
+        if ('matched' == $key) {                      
+            $this->out_position += ($value - $this->matched) * $this->TradeSign(); // delta-change
+        }    
+        if ('comment' == $key && strlen($value) > COMMENT_MAX_LEN) 
+            throw new Exception("ERROR: new comment too long for order: ".strval($this));
 
-      if (isset($this->raw_set[$key]))
-          $this->raw_set[$key] = $value;  // в этот набор сохранять только legacy параметры, они сохранятся в БД
-      else
-          $this->runtime[$key] = $value;      
+        if (isset($this->raw_set[$key]))
+            $this->raw_set[$key] = $value;  // в этот набор сохранять только legacy параметры, они сохранятся в БД
+        else
+            $this->runtime[$key] = $value;      
     }
 
     public function __debugInfo() { 
-      $owner = $this->owner ? $this->owner->Name() : 'none';
-      $res = ['info' => $this->__toString(), 'owner' => $owner, 'raw' => $this->raw_set];
-      return $res;
+        $owner = $this->owner ? $this->owner->Name() : 'none';
+        $res = ['info' => $this->__toString(), 'owner' => $owner, 'raw' => $this->raw_set];
+        return $res;
     }
 
 
     public function Cost() {
-      return $this->price * $this->qty;        
+        return $this->price * $this->qty;        
     }
     public function  GetList (): ?OrderList {
-      if ($this->owner instanceof OrderList)
-          return $this->owner;
-      return null;  
+        if ($this->owner instanceof OrderList)
+            return $this->owner;
+        return null;  
     }
     public function GetBlock(): ?OrdersBlock {
-      if ($this->owner instanceof OrdersBlock)
-          return $this->owner;
-      return null;  
+        if ($this->owner instanceof OrdersBlock)
+            return $this->owner;
+        return null;  
     }
 
     public function __toString() {
-      if (0 == strlen($this->pair)) {
-        $this->pair = '#'.$this->pair_id;
-        if ($this->owner) {
-           $core = $this->owner->TradeCore();
-           $pmap = $core->pairs_map;
-           $pid = $this->pair_id;
-           if (isset($pmap[$pid]))
-               $this->pair = $pmap[$pid];
-           else 
-               $core->LogMsg("~C91 #WARN:~C00 no entry in pairs_map for #$pid, may be external order?");
-        }    
-      }
-      $rest = $this->amount - $this->matched;
+        if (0 == strlen($this->pair)) {
+            $this->pair = '#'.$this->pair_id;
+            if ($this->owner) {
+            $core = $this->owner->TradeCore();
+            $pmap = $core->pairs_map;
+            $pid = $this->pair_id;
+            if (isset($pmap[$pid]))
+                $this->pair = $pmap[$pid];
+            else 
+                $core->LogMsg("~C91 #WARN:~C00 no entry in pairs_map for #$pid, may be external order?");
+            }    
+        }
+        $rest = $this->amount - $this->matched;
 
-      $ti = $this->ticker_info;
-      $amount = $ti ? $ti->FormatAmount($this->amount, Y, Y) : sprintf('%.5G', $this->amount);
-      $matched = $ti ? $ti->FormatAmount($this->matched, Y, Y) : sprintf('%.5G', $this->matched);      
-      $rest = $ti ? $ti->FormatAmount($rest, Y, Y) : sprintf('%.5f', $rest);
-      $res = sprintf('id#%d %s %s %s @ %5G st=%s, batch=%d, m=%s, r=%s, f:0x%03x, №%s', $this->id, $this->Side(), $this->pair,
-                       $amount, $this->price, $this->status, $this->batch_id, trim($matched), trim($rest), $this->flags, $this->order_no);
-      if ($this->owner)
-          $res .= ', owner:'.$this->owner->Name();                      
+        $ti = $this->ticker_info;
+        $amount = $ti ? $ti->FormatAmount($this->amount, Y, Y) : sprintf('%.5G', $this->amount);
+        $matched = $ti ? $ti->FormatAmount($this->matched, Y, Y) : sprintf('%.5G', $this->matched);      
+        $rest = $ti ? $ti->FormatAmount($rest, Y, Y) : sprintf('%.5f', $rest);
+        $res = sprintf('id#%d %s %s %s @ %5G st=%s, batch=%d, m=%s, r=%s, f:0x%03x, №%s', $this->id, $this->Side(), $this->pair,
+                        $amount, $this->price, $this->status, $this->batch_id, trim($matched), trim($rest), $this->flags, $this->order_no);
+        if ($this->owner)
+            $res .= ', owner:'.$this->owner->Name();                      
 
-      if ($this->signal_id > 0)
-         $res .= ", sig={$this->signal_id}";                      
-      if ($this->fork) 
-         $res .= ', fork';                      
+        if ($this->signal_id > 0)
+            $res .= ", sig={$this->signal_id}";                      
+        if ($this->fork) 
+            $res .= ', fork';                      
 
-      return $res;                       
+        return $res;                       
     }
 
 
     public function Elapsed(string $k = 'created') { // return elapsed ms from select timestamp
-      $ts = $this->$k;
-      if (is_string($ts))  
-         return time_ms()- strtotime_ms($ts);
-      if (is_numeric($ts))  
-         return time_ms() - $ts;
-      return false;  
+        $ts = $this->$k;
+        if (is_string($ts))  
+            return time_ms()- strtotime_ms($ts);
+        if (is_numeric($ts))  
+            return time_ms() - $ts;
+        return false;  
     }
 
     public function Export(): array {
-      return $this->raw_set;
+        return $this->raw_set;
     }
 
     public function IsFixed() {
-       // partially_filled or partial_filled is not fixed!             
-      if (false !== array_search($this->status, ARCHIVED_STATUSES)) return true;
-      $ff = $this->flags & OFLAG_FIXED;      
-      if ($ff) return true;
-      if (false !== array_search($this->status, PENDING_STATUSES)) return false;
-      if ($this->IsFilled()) return true;
-      // TODO: тут злостные костыли
-      $rest = $this->amount - $this->matched;
-      $epsilon = $this->amount * 0.0001;
-      if ($this->was_moved > 0)   
-          $epsilon = $rest;
-      $this->status_code = StatusCode($this->status);  
-      $code = $this->status_code;
-      $pending = $rest - $epsilon;
-      if (OrderStatusCode::FILLED == $code && $pending <= 0) return true; // TODO: epsilon from config      
+        // partially_filled or partial_filled is not fixed!             
+        if (false !== array_search($this->status, ARCHIVED_STATUSES)) return true;
+        $ff = $this->flags & OFLAG_FIXED;      
+        if ($ff) return true;
+        if (false !== array_search($this->status, PENDING_STATUSES)) return false;
+        if ($this->IsFilled()) return true;
+        // TODO: тут злостные костыли
+        $rest = $this->amount - $this->matched;
+        $epsilon = $this->amount * 0.0001;
+        if ($this->was_moved > 0)   
+            $epsilon = $rest;
+        $this->status_code = StatusCode($this->status);  
+        $code = $this->status_code;
+        $pending = $rest - $epsilon;
+        if (OrderStatusCode::FILLED == $code && $pending <= 0) return true; // TODO: epsilon from config      
 
-      if (OrderStatusCode::TOUCHED == $code && $pending > 0) 
-          return $this->onwer ? $this->owner->is_fixed : false;  // недобитки попадают в matched, из-за отмены например или смещения
+        if (OrderStatusCode::TOUCHED == $code && $pending > 0) 
+            return $this->onwer ? $this->owner->is_fixed : false;  // недобитки попадают в matched, из-за отмены например или смещения
 
-      if ($this->owner)
-          $this->owner->TradeCore()->LogError("~C91#WARN:~C00 unknown status for order %s %s, epsilon = %f, pending = %f, ff = 0x%x ", 
-                  strval($this), $this->comment, $epsilon, $pending, $ff);
+        if ($this->owner)
+            $this->owner->TradeCore()->LogError("~C91#WARN:~C00 unknown status for order %s %s, epsilon = %f, pending = %f, ff = 0x%x ", 
+                    strval($this), $this->comment, $epsilon, $pending, $ff);
 
-      if (OrderStatusCode::FILLED == $code && $rest > 0 && 0 == $this->was_moved)
-          $this->status = 'partially_filled';  
-      return false;
+        if (OrderStatusCode::FILLED == $code && $rest > 0 && 0 == $this->was_moved)
+            $this->status = 'partially_filled';  
+        return false;
     }
 
     public function SetFixedAuto() {
@@ -279,163 +279,163 @@
     }
 
     public function  Side() {
-      return $this->buy ? 'buy' : 'sell';
+        return $this->buy ? 'buy' : 'sell';
     }
 
     public function  SetList($order_list) {
-      if (!$this->registered) {
-        echo "#WARN: SetList called for order, with registered === false\n";
-        return false;
-      }
-      $this->owner = $order_list;
-      $order_list->Include($this);
-      return true;
+        if (!$this->registered) {
+            echo "#WARN: SetList called for order, with registered === false\n";
+            return false;
+        }
+        $this->owner = $order_list;
+        $order_list->Include($this);
+        return true;
     }
 
 
     public function  Import(array $record): int  {
-      if (isset($record['id']) && $record['id'] <= 0)  // proto value
-          unset($record['id']);
+        if (isset($record['id']) && $record['id'] <= 0)  // proto value
+            unset($record['id']);
 
-      if (isset($record['flags'])) {
-         $flags = $record['flags'];
-      	 $this->rising_pos = ($flags & OFLAG_RISING > 0);
-      }
-      if (isset($record['rising']))
-         $this->rising_pos = $record['rising'];
+        if (isset($record['flags'])) {
+            $flags = $record['flags'];
+            $this->rising_pos = ($flags & OFLAG_RISING > 0);
+        }
+        if (isset($record['rising']))
+            $this->rising_pos = $record['rising'];
 
-      if (isset($record['ext_signal']))
-         $this->signal_id = $record['ext_signal']; 
+        if (isset($record['ext_signal']))
+            $this->signal_id = $record['ext_signal']; 
 
-      if (isset($record['status']))         
-          if (!$this->VerifyStatus($record['status'])) 
-             $record['status'] = 'invalid';
+        if (isset($record['status']))         
+            if (!$this->VerifyStatus($record['status'])) 
+                $record['status'] = 'invalid';
 
-      $count = 0;   
-      foreach ($this->raw_set as $key => $value) // import only legacy params
-       if (isset($record[$key])) {
-           if ('status' == $key)
-              $this->set_status($record[$key], true);
-           else 
-              $this->$key = $record[$key]; // с прохождением проверок  
-           $count ++;
-       } // foreach if   
+        $count = 0;   
+        foreach ($this->raw_set as $key => $value) // import only legacy params
+        if (isset($record[$key])) {
+            if ('status' == $key)
+                $this->set_status($record[$key], true);
+            else 
+                $this->$key = $record[$key]; // с прохождением проверок  
+            $count ++;
+        } // foreach if   
 
-       $core = $this->owner ? $this->owner->trade_core : active_bot();       
-       $this->pair = $core->pairs_map[$this->pair_id] ?? "#$this->pair_id";
+        $core = $this->owner ? $this->owner->trade_core : active_bot();       
+        $this->pair = $core->pairs_map[$this->pair_id] ?? "#$this->pair_id";
 
-       $this->status_code = StatusCode($this->status);
-       if ($this->status_code == OrderStatusCode::ACTIVE && $this->flags & OFLAG_FIXED) {                  
-          $core->LogMsg("~C91#WARN:~C00 for order %s flags combination are wrong", strval($this));
-          $this->flags &= ~OFLAG_FIXED;           
-       }  
-       if (!isset($this->matched_prev))
-            $this->matched_prev = $this->matched; // for tracking changes start       
-       
-       return $count;
+        $this->status_code = StatusCode($this->status);
+        if ($this->status_code == OrderStatusCode::ACTIVE && $this->flags & OFLAG_FIXED) {                  
+            $core->LogMsg("~C91#WARN:~C00 for order %s flags combination are wrong", strval($this));
+            $this->flags &= ~OFLAG_FIXED;           
+        }  
+        if (!isset($this->matched_prev))
+                $this->matched_prev = $this->matched; // for tracking changes start       
+        
+        return $count;
     }
 
 
     public function IsCanceled(bool $check_matched = true) {
-      if ($check_matched && 0 == $this->matched && $this->IsFixed())
-          return true;        
-      return $this->status_code == OrderStatusCode::CANCELED;  
+        if ($check_matched && 0 == $this->matched && $this->IsFixed())
+            return true;        
+        return $this->status_code == OrderStatusCode::CANCELED;  
     }
 
     public function IsDirect(): bool {
-      return ($this->flags & OFLAG_DIRECT) != 0;
+        return ($this->flags & OFLAG_DIRECT) != 0;
     }
     public function IsFilled(): bool {
-      $res = ($this->matched == $this->amount) || ($this->status == 'filled');
-      if ($res)
-          $this->flags |= OFLAG_FIXED;
-      return $res;
+        $res = ($this->matched == $this->amount) || ($this->status == 'filled');
+        if ($res)
+            $this->flags |= OFLAG_FIXED;
+        return $res;
     }
     public function IsGrid(): bool {
-      return ($this->flags & OFLAG_GRID) != 0;
+        return ($this->flags & OFLAG_GRID) != 0;
     }
     public function IsLimit(): bool {
-      return ($this->flags & OFLAG_LIMIT) != 0;
+        return ($this->flags & OFLAG_LIMIT) != 0;
     }
     public function IsOutbound(): bool {
-      return ($this->flags & OFLAG_OUTBOUND) != 0;
+        return ($this->flags & OFLAG_OUTBOUND) != 0;
     }
 
     public function StatusCheck() {
-      $args = func_get_args();
-      foreach ($args as $st)
-        if ($this->status === $st)
-           return true;
-      return false;
+        $args = func_get_args();
+        foreach ($args as $st)
+            if ($this->status === $st)
+            return true;
+        return false;
     }
 
     public function Register(OrderList $order_list):bool {
-      $core = $order_list->TradeCore();
-      $mysqli = $core->mysqli;
-      $table = $order_list->TableName();
-      $prev_owner = 'none';
-      $new_owner = $order_list->Name();
+        $core = $order_list->TradeCore();
+        $mysqli = $core->mysqli;
+        $table = $order_list->TableName();
+        $prev_owner = 'none';
+        $new_owner = $order_list->Name();
 
-      if ($this->id <= 0) 
-         throw new Exception("#FATAL: try register order with wrong id: ".strval($this));
+        if ($this->id <= 0) 
+            throw new Exception("#FATAL: try register order with wrong id: ".strval($this));
 
-      if (!$this->IsFixed() && $this->batch_id == MM_BATCH_ID && !$order_list->mm)
-         throw new Exception(sprintf("#FATAL: try register active MM order %s in non MM-list: $new_owner", strval($this)));
+        if (!$this->IsFixed() && $this->batch_id == MM_BATCH_ID && !$order_list->mm)
+            throw new Exception(sprintf("#FATAL: try register active MM order %s in non MM-list: $new_owner", strval($this)));
 
-      if ($this->IsFixed() && false !== strpos($new_owner, 'pending')) {
-         log_cmsg("~C97#FATAL:~C00 try register fixed order in $new_owner: ".strval($this));
-         return false;
-      }  
-      
-      if (0 == $this->price || 0 == $this->amount)
-         throw new Exception("#FATAL: try register order with zero price or zero amount: ".strval($this).' '.$this->comment);
+        if ($this->IsFixed() && false !== strpos($new_owner, 'pending')) {
+            log_cmsg("~C97#FATAL:~C00 try register fixed order in $new_owner: ".strval($this));
+            return false;
+        }  
+        
+        if (0 == $this->price || 0 == $this->amount)
+            throw new Exception("#FATAL: try register order with zero price or zero amount: ".strval($this).' '.$this->comment);
 
-       if ($this->owner) 
-          $prev_owner = $this->owner->Name();
-       
-       $i_active = boolval($this->flags & OFLAG_ACTIVE);
-       $i_fixed = $this->IsFixed();    
-       $was_fixed = ( false !== strpos($prev_owner, 'archive') ||  false !== strpos($prev_owner, 'matched') ) && $i_fixed && !$i_active;  
-       $new_fixed =   false !== strpos( $new_owner, 'archive') ||   false !== strpos($new_owner, 'matched');  
-    
-       if ($was_fixed && $this->status != 'lost' && !$new_fixed ) {          
-          $fst = $i_fixed ? '~C31FIXED~C00' : '~C97PENDING~C00';                    
-          $core->LogError("~C91#WARN:~C00 Ignored attempt move %s order [%s] from fixed list %s => %s",  $fst, strval($this), $prev_owner, $new_owner);  
-          return false;
-       }     
+        if ($this->owner) 
+            $prev_owner = $this->owner->Name();
+        
+        $i_active = boolval($this->flags & OFLAG_ACTIVE);
+        $i_fixed = $this->IsFixed();    
+        $was_fixed = ( false !== strpos($prev_owner, 'archive') ||  false !== strpos($prev_owner, 'matched') ) && $i_fixed && !$i_active;  
+        $new_fixed =   false !== strpos( $new_owner, 'archive') ||   false !== strpos($new_owner, 'matched');  
+        
+        if ($was_fixed && $this->status != 'lost' && !$new_fixed ) {          
+            $fst = $i_fixed ? '~C31FIXED~C00' : '~C97PENDING~C00';                    
+            $core->LogError("~C91#WARN:~C00 Ignored attempt move %s order [%s] from fixed list %s => %s",  $fst, strval($this), $prev_owner, $new_owner);  
+            return false;
+        }     
 
-      if ($this->owner) {
-         if ($order_list != $this->owner)
-             $this->Unregister($this->owner, "List migration");
-         else 
-            return true; // already registered
-      }  
-      $info = $this->raw_set;
-      $clist  = array_keys($info);
-      $columns = implode(',', $clist);
+        if ($this->owner) {
+            if ($order_list != $this->owner)
+                $this->Unregister($this->owner, "List migration");
+            else 
+                return true; // already registered
+        }  
+        $info = $this->raw_set;
+        $clist  = array_keys($info);
+        $columns = implode(',', $clist);
 
-      $info['flags'] |= $this->rising_pos ? OFLAG_RISING : 0;
-      $info['comment'] = trim_comment($this->comment); 
+        $info['flags'] |= $this->rising_pos ? OFLAG_RISING : 0;
+        $info['comment'] = trim_comment($this->comment); 
 
-      $query = "INSERT IGNORE INTO `$table` ($columns)\n VALUES(\n";
-      $query .= $mysqli->pack_values($clist, $info).");";
+        $query = "INSERT IGNORE INTO `$table` ($columns)\n VALUES(\n";
+        $query .= $mysqli->pack_values($clist, $info).");";
 
-      if (!$mysqli->try_query($query)) {
-        $core->LogError("~C91#FAILED:~C00 cannot register order in database! Error: %s", $mysqli->error);
-        return false;
-      }
-      else {
-        if ('none' != $prev_owner) {
-            $line = sprintf(tss()." #REGISTERED: in %-15s from %-15s #%d %s %s \n", 
-                                    $new_owner, $prev_owner, $this->id, $this->order_no, $this->comment);
-            file_add_contents("data/orders-trace-{$this->account_id}.log", $line);   
-        }    
-        $order_list->total += $mysqli->affected_rows;
-        $this->registered = true;
-        $this->SetList($order_list);        
-        $core->LogOrder('~C93#DBG:~C00 order #%d:%d was registered in table %s, prev-list was %s, affected rows %d, total orders = %d', $this->id, $this->batch_id, $table, $prev_owner, $mysqli->affected_rows, $order_list->total);
-      }
-      return true;
+        if (!$mysqli->try_query($query)) {
+            $core->LogError("~C91#FAILED:~C00 cannot register order in database! Error: %s", $mysqli->error);
+            return false;
+        }
+        else {
+            if ('none' != $prev_owner) {
+                $line = sprintf(tss()." #REGISTERED: in %-15s from %-15s #%d %s %s \n", 
+                                        $new_owner, $prev_owner, $this->id, $this->order_no, $this->comment);
+                file_add_contents("data/orders-trace-{$this->account_id}.log", $line);   
+            }    
+            $order_list->total += $mysqli->affected_rows;
+            $this->registered = true;
+            $this->SetList($order_list);        
+            $core->LogOrder('~C93#DBG:~C00 order #%d:%d was registered in table %s, prev-list was %s, affected rows %d, total orders = %d', $this->id, $this->batch_id, $table, $prev_owner, $mysqli->affected_rows, $order_list->total);
+        }
+        return true;
     }
 
     public function SaveToDB() {      
@@ -511,43 +511,43 @@
     }
 
     public function Unregister(?OrderList $order_list = null, $context = false) {
-      $id = $this->id;
-      if (!$order_list)
-          $order_list = $this->GetList();
-      if (!$order_list) 
-          return false;
+        $id = $this->id;
+        if (!$order_list)
+            $order_list = $this->GetList();
+        if (!$order_list) 
+            return false;
 
-      $core = $order_list->TradeCore();
-      $mysqli = $core->mysqli;
-      
-      $in_list = isset($order_list[$id]);
+        $core = $order_list->TradeCore();
+        $mysqli = $core->mysqli;
+        
+        $in_list = isset($order_list[$id]);
 
-      if ($this->owner === $order_list) {
-          $this->registered = false;
-          $this->owner = null; // prevent recurion in Exclude
-      }     
-      elseif ($this->owner) 
-          $core->LogMsg("~C91#WARN:~C00 order #%d has owner %s, but trying unregister from %s, in_list = %d ", $id, $this->owner->Name(), $order_list->Name(), $in_list);
-
-
-      $ctx = $context ? $context : 'child->Unregister';    
-      if ($in_list)
-          $order_list->Exclude($this, $ctx);
+        if ($this->owner === $order_list) {
+            $this->registered = false;
+            $this->owner = null; // prevent recurion in Exclude
+        }     
+        elseif ($this->owner) 
+            $core->LogMsg("~C91#WARN:~C00 order #%d has owner %s, but trying unregister from %s, in_list = %d ", $id, $this->owner->Name(), $order_list->Name(), $in_list);
 
 
-      $table = $order_list->TableName();    
-      $acc_id = intval($this->account_id);
-      $res = $mysqli->try_query("DELETE FROM `$table` WHERE (id = $id) AND (account_id = $acc_id); -- Unregister: $ctx"); //  
-      if ($context)
-      	 $core->LogOrder("Unregister order #%d result: %s, in_list = %d, context %s", $this->id, $res, $in_list, $context);
-      return $res;
+        $ctx = $context ? $context : 'child->Unregister';    
+        if ($in_list)
+            $order_list->Exclude($this, $ctx);
+
+
+        $table = $order_list->TableName();    
+        $acc_id = intval($this->account_id);
+        $res = $mysqli->try_query("DELETE FROM `$table` WHERE (id = $id) AND (account_id = $acc_id); -- Unregister: $ctx"); //  
+        if ($context)
+            $core->LogOrder("Unregister order #%d result: %s, in_list = %d, context %s", $this->id, $res, $in_list, $context);
+        return $res;
     }
 
 
     public function Pending(): float {
-      if (!$this->IsFixed())       
-          return $this->amount - $this->matched;
-      return 0;  
+        if (!$this->IsFixed())       
+            return $this->amount - $this->matched;
+        return 0;  
     }
 
     public function qty(): float {   // if not assigned raw_set['qty']   
@@ -556,103 +556,103 @@
     }
     
     protected function set_qty(float $qty ) {
-      $e = active_bot()->Engine();
-      $this->amount =  $e->QtyToAmount ($this->pair_id, $this->price, $this->btc_price, $qty);      
+        $e = active_bot()->Engine();
+        $this->amount =  $e->QtyToAmount ($this->pair_id, $this->price, $this->btc_price, $qty);      
     }
 
     protected function set_flags(int $ff) {
-      $pend = ['new', 'proto', 'active'];
-      if ($ff & OFLAG_FIXED && false !== array_search($this->status, $pend))  {
-         active_bot()->LogError("~C91#ERROR:~C00 try set fixed flag for pending order: %s, source %s, from %s", 
-                                  strval($this), json_encode($this->source_raw),  format_backtrace());
-         return;
-      }  
-      $this->flags = $ff;  
+        $pend = ['new', 'proto', 'active'];
+        if ($ff & OFLAG_FIXED && false !== array_search($this->status, $pend))  {
+            active_bot()->LogError("~C91#ERROR:~C00 try set fixed flag for pending order: %s, source %s, from %s", 
+                                    strval($this), json_encode($this->source_raw),  format_backtrace());
+            return;
+        }  
+        $this->flags = $ff;  
     }
 
     public function set_status(string $value, bool $force = false) {
-      $result = true;
-      try {        
-        $value = trim($value);
-        $prev = $this->raw_set['status'];
-        if ($value == $prev) return true;
-        $core = active_bot();
-        if (!$this->VerifyStatus($value)) return false;
-        $fixed = $this->IsFixed();
-        $flags = $this->flags;
+        $result = true;
+        try {        
+            $value = trim($value);
+            $prev = $this->raw_set['status'];
+            if ($value == $prev) return true;
+            $core = active_bot();
+            if (!$this->VerifyStatus($value)) return false;
+            $fixed = $this->IsFixed();
+            $flags = $this->flags;
 
-        $can_mod = array_search($prev, ['active', 'new', 'proto', 'lost', 'rejected', 'invalid']);
+            $can_mod = array_search($prev, ['active', 'new', 'proto', 'lost', 'rejected', 'invalid']);
 
-        $code = StatusCode($value);          
-        if (OrderStatusCode::ACTIVE   == $code) {
-            $flags |= OFLAG_ACTIVE;
-            $flags &= ~OFLAG_FIXED;
-        }    
+            $code = StatusCode($value);          
+            if (OrderStatusCode::ACTIVE   == $code) {
+                $flags |= OFLAG_ACTIVE;
+                $flags &= ~OFLAG_FIXED;
+            }    
 
-        if (OrderStatusCode::FILLED   == $code ||
-            OrderStatusCOde::CANCELED == $code ||
-            OrderStatusCOde::EXPIRED  == $code) {
-               $flags |= OFLAG_FIXED; // гарантированно fixed
-               $flags &= ~OFLAG_ACTIVE;
-            }   
+            if (OrderStatusCode::FILLED   == $code ||
+                OrderStatusCOde::CANCELED == $code ||
+                OrderStatusCOde::EXPIRED  == $code) {
+                $flags |= OFLAG_FIXED; // гарантированно fixed
+                $flags &= ~OFLAG_ACTIVE;
+                }   
 
-        if (0 == $this->matched && ( OrderStatusCode::FILLED == $code || OrderStatusCode::TOUCHED == $code)) {
-            $core->LogError("~C91#WARN:~C00 try set ~C97'$value'~C00 status for order %s with matched = 0, from:\n %s", 
-                            strval($this), format_backtrace());
-            return false;
-        }
-
-        if ($this->matched > 0 && OrderStatusCOde::CANCELED == $code) {
-            $core->LogError("~C91#WARN:~C00 try set ~C97'$value'~C00 status for order %s with matched > 0, from:\n %s", 
-                          strval($this), format_backtrace());
-            if ($force) {
-                $value = $this->Pending() > 0 ? 'partially_filled' : 'filled';
-                $code = StatusCode($value);
+            if (0 == $this->matched && ( OrderStatusCode::FILLED == $code || OrderStatusCode::TOUCHED == $code)) {
+                $core->LogError("~C91#WARN:~C00 try set ~C97'$value'~C00 status for order %s with matched = 0, from:\n %s", 
+                                strval($this), format_backtrace());
+                return false;
             }
-            else                                         
-                return false; 
-        }    
-      
-        if ($fixed && false === $can_mod && 
-             !str_in($prev, '_filled') && 
-             !str_in($prev, 'lost')) {  // lost is only changeable status                    
-          if ($force) {
-            $core->LogError("~C91#WARN:~C00 forced change status to %s (%s) for fixed order %s, source %s, from:\n %s", 
-                            $value, var_export($code, true), strval($this), json_encode($this->source_raw), format_backtrace());                            
-            $result = true;                            
-            $this->flags &= ~OFLAG_FIXED; // force change
-            $this->Unregister($this->owner, "force change status");
-          }                  
-          elseif (!str_in($this->status, $value))  
-            throw new Exception('Trouble, force-change');  
-        }   
-        elseif($core && $this->owner) // not need message while initial import
-           $core->LogOrder(" order [%s] changed status to %s", strval($this), $value);
 
-        $this->status_code = $code;  
-        $this->raw_set['status'] = $value; // need change before flags  
-        $this->set_flags($flags);   
-      } 
-      catch (Exception $e) {
-        $this->owner->TradeCore()->LogError("~C91#EXCEPTION:~C00 set status '%s' for %s, error %s from\n~C97".$e->getTraceAsString(), 
-                                            $value, strval($this), $e->getMessage());
-      }    
-      return $result;
+            if ($this->matched > 0 && OrderStatusCOde::CANCELED == $code) {
+                $core->LogError("~C91#WARN:~C00 try set ~C97'$value'~C00 status for order %s with matched > 0, from:\n %s", 
+                            strval($this), format_backtrace());
+                if ($force) {
+                    $value = $this->Pending() > 0 ? 'partially_filled' : 'filled';
+                    $code = StatusCode($value);
+                }
+                else                                         
+                    return false; 
+            }    
+        
+            if ($fixed && false === $can_mod && 
+                !str_in($prev, '_filled') && 
+                !str_in($prev, 'lost')) {  // lost is only changeable status                    
+            if ($force) {
+                $core->LogError("~C91#WARN:~C00 forced change status to %s (%s) for fixed order %s, source %s, from:\n %s", 
+                                $value, var_export($code, true), strval($this), json_encode($this->source_raw), format_backtrace());                            
+                $result = true;                            
+                $this->flags &= ~OFLAG_FIXED; // force change
+                $this->Unregister($this->owner, "force change status");
+            }                  
+            elseif (!str_in($this->status, $value))  
+                throw new Exception('Trouble, force-change');  
+            }   
+            elseif($core && $this->owner) // not need message while initial import
+            $core->LogOrder(" order [%s] changed status to %s", strval($this), $value);
+
+            $this->status_code = $code;  
+            $this->raw_set['status'] = $value; // need change before flags  
+            $this->set_flags($flags);   
+        } 
+        catch (Exception $e) {
+            $this->owner->TradeCore()->LogError("~C91#EXCEPTION:~C00 set status '%s' for %s, error %s from\n~C97".$e->getTraceAsString(), 
+                                                $value, strval($this), $e->getMessage());
+        }    
+        return $result;
     }
 
     public function TradeSign() {
-      return $this->buy ? 1 : -1;
+        return $this->buy ? 1 : -1;
     }
 
     public function ErrCount(string $op): int {
-      return isset($this->error_map[$op]) ? $this->error_map[$op] : 0;
+        return isset($this->error_map[$op]) ? $this->error_map[$op] : 0;
     }
 
     public function OnError (string $op): int{
-      if ('move' == $op) $this->flags &= ~OFLAG_ACTIVE; // deactivate
-      $fails = $this->ErrCount($op) + 1;
-      $this->error_map[$op] = $fails;
-      return $fails;
+        if ('move' == $op) $this->flags &= ~OFLAG_ACTIVE; // deactivate
+        $fails = $this->ErrCount($op) + 1;
+        $this->error_map[$op] = $fails;
+        return $fails;
     }
     
 
@@ -684,7 +684,7 @@
         if ($this->price <= 0) {
           $core->LogError ("~C91#ERROR:~C00 price %f too small for order %s for saving, refusing", $this->price, strval($this)); // TODO: use config for negative prices        
           return false;
-      }
+        }
 
         if ($this->amount >= 10e9) {
           $core->LogError ("~C91#WARN:~C00 amount %10f too big for order %s for saving, limiting ", $this->amount, $this->id);         
@@ -694,19 +694,19 @@
         if (abs($this->in_position) >= 10e9) {
           $core->LogError ("~C91#WARN:~C00 in_position %10f too big for order %s for saving, limiting ", $this->in_position, $this->id);
           $this->in_position = (10e9 - 1) * signval($this->in_position);
-      }
+        }
 
-      $t = strtotime($this->updated);
+        $t = strtotime($this->updated);
 
-      if ($this->batch_id > 0) {
-        $batch = $engine->GetOrdersBatch($this->batch_id, false);
-        if ($batch)
-            $batch->last_active = max($batch->last_active, $t);
-      }    
+        if ($this->batch_id > 0) {
+            $batch = $engine->GetOrdersBatch($this->batch_id, false);
+            if ($batch)
+                $batch->last_active = max($batch->last_active, $t);
+        }    
 
-      if ($core->TradingAllowed())
-          $this->SaveToDB();    
-      return true;
+        if ($core->TradingAllowed())
+            $this->SaveToDB();    
+        return true;
 
     } // OnUpdate
 

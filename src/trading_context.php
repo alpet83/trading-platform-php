@@ -156,6 +156,8 @@
 
         public function batch(mixed $update = false): ?OrdersBatch {
             if (is_null($update)) {
+                if (is_object($this->batch))
+                    $this->batch->Close();
                 $this->batch = null;
                 $this->batch_id = -100;
             }            

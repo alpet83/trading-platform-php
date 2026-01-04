@@ -365,7 +365,8 @@
             if ($this->PendingAmount() > 0 && !$force) return 'have pending';                    
             if ($total < $this->min_clean) return 'not enough orders';
             $cdp_start = $this->CurrentDeltaPos(N); 
-            $bias = $cdp_start - $this->TargetDeltaPos(N);
+            $tdp_start = $this->TargetDeltaPos(N);
+            $bias = $cdp_start - $tdp_start;
             $bias_cost = abs($bias) * $ti->last_price;        
             if ($bias_cost > $core->ConfigValue('min_order_cost', 100) && !$force) return 'have delta';  // при активном расхождении, не трогать
 
@@ -412,6 +413,7 @@
 
             $dump_map = [];
             $all_orders = [];
+            $all_saldo = 0;
             
             foreach ($check_list as $n => $oid) {          
                 $oinfo = $owner->FindOrder($oid, $this->pair_id, true);
@@ -436,6 +438,7 @@
                     $dump_map[$k][0] += $buy ? 1 : 0;
                     $dump_map[$k][1] += $buy ? 0 : 1;
                     $all_orders []= $oinfo;
+                    $all_saldo += $oinfo->matched * $oinfo->TradeSign();
                         
                 } 
                 // удалять так-же безобъектные заявки
@@ -455,23 +458,27 @@
             ksort($match_map);
 
             $forget = [];
-            // $core->LogMsg("~C94 #SMART_CLEANUP:~C00 matching map %s ", json_encode(array_keys($match_map)));
-            // дальше можно сканировать список исполненных заявок до получения нулевого сальдо, и помечать анигилировавшие. Слишком долгая жизнь сигнала приведет к сотням заявок в списке
-            foreach ($match_map as $list) {
-                if (count($list) < 2) continue;                    
-                $buys = []; 
-                $sells = [];
-                foreach ($list as $oinfo) 
-                    if ($oinfo->buy) $buys []= $oinfo; else $sells []= $oinfo;
-                if (0 == count($buys) || 0 == count($sells)) continue; // анигилировать нечему
-                $core->LogMsg("~C95#CLEANUP:~C00 for %s found orders with same matched amount %.6f, %d buys, %d sells",
-                                strval($this),  $list[0]->matched, count($buys), count($sells));
-                $max_count = min(count($buys), count($sells));
-                // пометить заявки, чтобы они в следующий раз не участвовали в подсчете CurrentDeltaPos и вообще не загружались
-                for ($i = 0; $i < $max_count; $i ++) { 
-                    $forget = array_merge($forget, [$buys[$i], $sells[$i]]);
-                }
+            if (abs($all_saldo) < $min_amount) {
+                $forget = $all_orders; // полное анигилирование всех заявок
+                $core->LogMsg("~C95#CLEANUP:~C00 signal %s expected full cleanup of all %d orders due total delta pos = %.5f", strval($this), count($forget), $all_saldo);
             }
+            else                
+                // дальше можно сканировать список исполненных заявок до получения нулевого сальдо, и помечать анигилировавшие. Слишком долгая жизнь сигнала приведет к сотням заявок в списке
+                foreach ($match_map as $list) {
+                    if (count($list) < 2) continue;                    
+                    $buys = []; 
+                    $sells = [];
+                    foreach ($list as $oinfo) 
+                        if ($oinfo->buy) $buys []= $oinfo; else $sells []= $oinfo;
+                    if (0 == count($buys) || 0 == count($sells)) continue; // анигилировать нечему
+                    $core->LogMsg("~C95#CLEANUP:~C00 for %s found orders with same matched amount %.6f, %d buys, %d sells",
+                                    strval($this),  $list[0]->matched, count($buys), count($sells));
+                    $max_count = min(count($buys), count($sells));
+                    // пометить заявки, чтобы они в следующий раз не участвовали в подсчете CurrentDeltaPos и вообще не загружались
+                    for ($i = 0; $i < $max_count; $i ++) { 
+                        $forget = array_merge($forget, [$buys[$i], $sells[$i]]);
+                    }
+                }
 
             if (0 == count($forget)) {
                 // похоже списки заявок имеют разный объем, потому анигилировать проблематично

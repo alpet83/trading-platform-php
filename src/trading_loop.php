@@ -148,17 +148,18 @@
 
             $min_cost = $config->min_order_cost; // это минимальная стоимость ордера в базовой валюте
             $max_cost = $config->max_order_cost; // это максимальная стоимость ордера в базовой валюте
+            $ctx->cost_limit = $max_cost;        // будет вероятно ещё уменьшаться, в зависимости от агрессии алгоритма
+
             if ($ti->is_quanto)
                 $min_cost = max($min_cost, 50); // TODO: debug bias unexpected volatility
 
-            $ctx->min_cost = $min_cost;
-            $ctx->max_cost = $max_cost;
-            $ctx->cost_limit = $max_cost; // будет вероятно ещё уменьшаться, в зависимости от агрессии алгоритма
-
             if ($ti->is_btc_pair) {
                 $min_cost = round($min_cost / $ctx->btc_price, 7);     
-                $max_cost = round($max_cost / $ctx->btc_price, 7);     
+                $max_cost = round($max_cost / $ctx->btc_price, 7);                     
             }
+            $ctx->min_cost = $min_cost;
+            $ctx->max_cost = $max_cost;            
+
             $ctx->min_qty = $ti->RoundQty($min_cost / $price);    
             $ctx->max_qty = $ti->RoundQty($max_cost / $price );
             $ctx->min_amount = $engine->QtyToAmount($pair_id, $price, $btc_price, $ctx->min_qty, 'calc:min_qty'); 
@@ -179,7 +180,7 @@
             $ctx->get_var('amount')                   // всегда ≥ 0
                 ->constrain('max_abs',  'Amount limit',  $ctx->max_amount(...));  
 
-            // ограничитель для amount - предел стоимости заявки
+            // ограничитель для amount - предел стоимости заявки в USD
             $cost_limit =  $this->ConfigValue('max_order_cost', 5000);            
 
             if (!isset($this->high_liq_pairs[$pair_id])) 
@@ -442,24 +443,12 @@
                 if ($ctx->ext_sig_id != $ext_sig->id) { 
                     $ctx->batch (null);  // prevent reusing                               
                 }
+                $active_batch = $ctx->batch();
+                $batch_dir = 0;
+                if ($active_batch)
+                    $batch_dir = signval($active_batch->Bias());
                 $sig_ctx->name = 'sig#'.$ext_sig->id;
-                $engine->last_scale = '';  
-                
-                $po = $ext_sig->PendingOrders();
-                if (count($po) > 0)  {
-                    $dump = [];
-                    $pa = 0;
-                    $ff = 0;              
-                    foreach ($po as $oinfo) {
-                        $dump []= strval($oinfo);
-                        $pa += $oinfo->Pending();
-                        $ff |= $oinfo->flags;
-                    }   
-                    $this->LogMsg("~C07~C94#SIGNAL_WAIT:~C00 %s have pending amount %s, flags 0x%02x in: %s", 
-                            strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $ff, json_encode($dump));
-                    $ctx->update('target_pos', $curr_pos, 'signal have pending orders');                    
-                    return false;
-                }
+                $engine->last_scale = '';                  
                 
                 $cp_raw = $ext_sig->CurrentDeltaPos(false);
                 $cp_cost = $tinfo->QtyCost($cp_raw);
@@ -482,24 +471,63 @@
                     $ctx->batch (null);
                     $ctx->ext_sig = null;  
                     break;
-                }
+                }                
 
-                // TODO: нужно выводить предупреждения или даже ошибки, если лимитируется огромный объем/позиция. Эпизодически репортить, если позиция близка к предельной
+                $po = $ext_sig->PendingOrders();
+                if ($trade_dir == -$sig_dir) 
+                    $this->LogMsg("~C93 #BIAS_DBG:~C00 detected opposite tradeable delta bias for %s: trade_dir %s, sig_dir %s, curr_pos %s, sig_pos %s, saldo amount %s", 
+                                    strval($ext_sig), td2s($trade_dir), td2s($sig_dir), 
+                                    $tinfo->FormatAmount($curr_pos, Y, Y), 
+                                    $tinfo->FormatAmount($sig_pos, Y, Y), 
+                                    $tinfo->FormatAmount($ctx->amount, Y, Y));
+            
+                if ($active_batch && $trade_dir == -$batch_dir) 
+                    $this->LogMsg("~C93 #BIAS_DBG:~C00 detected opposite active batch direction for %s: trade_dir %s, batch_dir %s, curr_pos %s, batch target %s", 
+                                    strval($ext_sig), td2s($trade_dir), td2s($batch_dir), 
+                                    $tinfo->FormatAmount($curr_pos, Y, Y), 
+                                    $tinfo->FormatAmount($active_batch->TargetPos(), Y, Y));
 
                 // потенциально редкий случай, когда сальдо-дельта достаточно большая для создания заявки, а сигнал направлен в другую сторону
-                if ($trade_dir == -signval($delta) && $bias > $ctx->min_amount) {
-                    $this->LogMsg("~C94 #SIGNAL_SKIP:~C00 %s have opposite to tradeable delta bias %s, small signal bias %s %f cost %.6f, ignoring...", 
+                if ( $trade_dir == -$sig_dir && $ctx->amount > $ctx->min_amount) {
+                    $this->LogMsg("~C94 #SIGNAL_SKIP:~C00 %s have opposite to tradeable saldo delta bias %s, vs signal bias %s %f cost %.6f, ignoring...", 
                                     strval($ext_sig), td2s($trade_dir), td2s($delta), $bias, $bias_cost);
-                    $orders = $ext_sig->PendingOrders();
-                    $cnt  = count($orders);
+                    
+                    $cnt  = count($po);
                     if ($pa > abs($bias) && $cnt > 0) {
                         $this->LogMsg("~C91#WARN:~C00 %s have pending excess orders %d with amount %s, canceling...", strval($ext_sig), $cnt, $pa);
-                        $engine->CancelOrders($orders);
+                        $engine->CancelOrders($po);
                     }    
                     $ctx->batch(null);
                     $ctx->ext_sig = null;  
                     break;
                 }           
+
+                
+                if (count($po) > 0)  {
+                    $dump = [];
+                    $pa = 0;
+                    $ff = 0;
+                    $opposite = [];
+                    
+                    foreach ($po as $oinfo) {
+                        $dump []= strval($oinfo);
+                        $pa += $oinfo->Pending();
+                        $ff |= $oinfo->flags;
+                        if ($oinfo->TradeSign() == -$sig_dir && $oinfo->signal_id == $ext_sig->id)
+                            $opposite []= $oinfo;
+                    }   
+
+                    if (count($opposite) > 0) {
+                        $this->LogMsg("~C91#WARN:~C00 %s have %d opposite direction pending orders, cancelling...", strval($ext_sig), count($opposite));
+                        $engine->CancelOrders($opposite);                                                   
+                    }
+
+                    $this->LogMsg("~C07~C94#SIGNAL_WAIT:~C00 %s have pending amount %s, saldo/sig/batch dir [%d, %d, %d], flags 0x%02x in: %s", 
+                            strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $trade_dir, $sig_dir, $batch_dir, $ff, json_encode($dump));
+                    $ctx->update('target_pos', $curr_pos, 'signal have pending orders');                    
+                    return false;
+                }
+
                 
                 $ucount = $sig_feed->unfilled_map[$pair_id] - 1;
                 if ($tinfo->is_btc_pair)
@@ -538,7 +566,7 @@
                                     $tinfo->FormatAmount($ctx->bias, Y, Y), $tinfo->FormatAmount($virt_pos, Y, Y));
                     }                    
                     
-                    if ($pa > 0)  // исполнение в процессе - можно попробовать вернуть сигнал 
+                    if ($pa > 0 && $sig_dir == $batch_dir)  // исполнение в процессе - можно попробовать вернуть сигнал 
                         $ctx->batch ($ext_sig->LastBatch());
                     if (is_nan($ext_sig->recalc_price))   
                         throw new Exception("Invalid recalc_price for batch ".$ext_sig->id);
@@ -782,30 +810,10 @@
                     }
 
                 }  
-                // TODO: проверить избыточность фильтра: Дополнительное ограничение по стоимости, на стадии начала исполнения. 
-                $cost_limit /= $price_coef;
-                $la = $engine->LimitAmountByCost($pair_id, $amount, $cost_limit, true);
-                if ($la < $amount) {
-                    $qty = $engine->AmountToQty($pair_id,$raw_price, $btc_price, $la);
-                    $cost = $price * $qty;   // 2-nd calc                
-                    $cost_usd = round($cost, 2);
-                    $cost_info = format_color("cost = $%.2f", $cost_usd);
-                    if ($price_coef != 1) {
-                        $cost_usd = round($cost * $price_coef, 2);  // предыдущее значение скорее всего округлилось до нуля
-                        $cost_info = format_color("cost = %f ($%.2f)", $cost, $cost_usd);
-                    }   
-                    else
-                        $cost = $cost_usd;           
-
-                    $this->LogMsg("  ~C94#COST_LIMIT:~C00 amount reduced from %s to %s, price_coef = %f, qty = %s $cost_info",
-                                $tinfo->FormatAmount($amount, Y, Y), $tinfo->FormatAmount($la, Y, Y),  
-                                $price_coef,  $tinfo->FormatQty($qty, Y));
-                    $amount = $la;          
-                }         
-                else {
-                    $cost = $ctx->cost;
-                    $cost_usd = round($cost * $price_coef, 2);
-                }  
+                
+                $cost_limit /= $price_coef;                
+                $cost = $ctx->cost;
+                $cost_usd = round($cost * $price_coef, 2);                 
 
                 if ($cost < $ctx->min_cost && !$ctx->split_trade || 0 == $cost) {  // CHECK: cost and min_cost must be in same currency (USD, BTC)
                     $ctx->ignore_trade(IGNORE_SMALL_BIAS, "small amount {$ctx->amount} or qty {$qty} for target_pos {$ctx->target_pos}: cost = $cost < min_cost {$ctx->min_cost}");
@@ -952,6 +960,7 @@
                 if (is_array($opt_rec)) {
                     $price = $opt_rec['price'];
                     $this->LogMsg("~C96#EXEC_OPT(NewOrder):~C00 postion %f => %f, result: %s ", $curr_pos, $pos, json_encode($opt_rec));
+                    $hidden &= $opt_rec['speed'] < 5; // скрытые заявки в спреде могут дойти до плохой цены
                 }
                 if ($mm) {
                     $res = $mm->AddBatch($batch, false, true);
