@@ -1,0 +1,2 @@
+GET {{url}}/api/chart?exchange=bitfinex&account_id=279405
+Content-Type: application/json

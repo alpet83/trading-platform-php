@@ -1,0 +1,12 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /
+
+RewriteCond %{REQUEST_URI} ^/api($|/.*)
+RewriteCond %{REQUEST_FILENAME} !-f
+
+RewriteCond %{REQUEST_FILENAME}/index.php -f
+RewriteRule ^api/(.*)$ api/$1/index.php [L]
+
+RewriteCond %{REQUEST_URI} ^/api/?$
+RewriteRule ^api/?$ api/index.php [L]

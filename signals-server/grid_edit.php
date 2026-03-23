@@ -1,0 +1,511 @@
+<?php
+  include_once('lib/common.php');
+  include_once('lib/db_tools.php');
+  include_once('lib/ip_check.php');
+  include_once('/usr/local/etc/php/db_config.php');
+ //  include_once('lib/db_config.php');
+  // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to BUY.X1.22  Series name: LONG
+  // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to SELL.22  Series name: SHORT
+
+  // [11/22/2023 11:13:00 GMT+3] [DOTUSDT]:  BUY.X10#2
+  // [11/19/2023 10:02.41 AM GMT+3] [BTCUSDT]: SELL#23
+  // [now] [ARBUSD]: BUY.X100#2
+  // [now] [BTCUSDT]: DEL#23
+  define('GRID_LOG', __DIR__.'/logs/grid.log');
+
+  define('SIG_FLAG_TP', 0x001);
+  define('SIG_FLAG_SL', 0x002);
+  define('SIG_FLAG_LP', 0x004);
+  define('SIG_FLAG_GRID', 0x100);
+  $req_flags = SIG_FLAG_GRID;
+
+?>
+<!DOCTYPE html>
+<?php   
+  $minute = date('i') * 1;
+  $setup = 0;
+  $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__; // TODO: use auth token with cookies
+    // echo "<!-- \n"; print_r($_SERVER); echo "-->\n";
+  if (preg_match('/(\d+)/', $script, $m) && count($m) > 1) 
+    $setup = $m[1];      
+
+  $input = rqs_param('signal', false);
+  $sfx = $input ? 'edit' : 'view';
+  $sfx .=  "-$setup"; 
+  $color_scheme = 'cli';
+  $log_file = fopen(__DIR__."/logs/grid_$sfx.log", $input ? 'a' : 'w');
+  if (!$log_file || php_sapi_name() == 'cli')     
+      $log_file = fopen("/tmp/grid_$sfx.log", 'w');
+
+  mysqli_report(MYSQLI_REPORT_OFF);
+  $tstart = pr_time();
+  log_msg("#START: connecting to DB...");
+  $mysqli = init_remote_db('trading');
+  $table_name = 'signals';
+  
+  if (!$mysqli)
+     die("FATAL: user '$db_user' can't connect to servers ".json_encode($db_servers)."\n");
+  
+  $pairs_map = $mysqli->select_map('symbol,id', 'pairs_map');
+  $id_map    = $mysqli->select_map('id,symbol', 'pairs_map');
+  $colors = [1 => '#7FFF00', 2 => 'Gold', 3 => '', 66 => '#DABADA'];
+
+
+       
+  $touched = false;
+  
+  $init_t = pr_time() - $tstart;
+
+  log_msg(sprintf("#PERF: %.2f sec, pairs_map:\n %s", $init_t, json_encode($pairs_map)));
+  
+  $btc_pair_id = $pairs_map['BTCUSD'];
+  $eth_pair_id = $pairs_map['ETHUSD'];
+
+  
+  $filter = rqs_param('filter', false);  
+  $action = rqs_param('action', '');
+
+  $source = $_SERVER['REMOTE_ADDR'];
+  $signal = false;     
+
+  mysqli_report(MYSQLI_REPORT_OFF);
+  include_once('load_sym.inc.php');  // request symbols from remote servers and map its data
+  log_msg("#PERF: loaded cm_symbols = ".count($cm_symbols));
+
+  $filter_id = 0;
+  if ($filter) {
+     if (isset($pairs_map[$filter]))
+       $filter_id = intval($pairs_map[$filter]);
+     else  
+       die("<pre>#ERROR: symbol $filter not found in ".print_r($pairs_map, true));
+
+     $color = rqs_param("color", '-'); 
+     $lc = strlen($color);
+     if ($lc >= 3 && $filter_id > 0) { 
+       $mysqli->try_query("UPDATE `pairs_map` SET color = '#$color' WHERE id = $filter_id");
+       die("For $filter #$filter_id updated color = $color, result: {$mysqli->affected_rows} ");
+     }
+     else 
+       echo "<!-- $color = $lc, $filter =  $filter_id -->\n";     
+  }   
+
+  if (count(array_keys($_REQUEST)) > 0)
+      ip_check();
+
+  $colors    = $mysqli->select_map('id,color', 'pairs_map');
+
+  $delete = rqs_param('delete', false);
+  if ($delete) {        
+     $delete = intval($delete);
+     $mysqli->try_query("DELETE FROM $table_name WHERE (id = $delete) AND (setup = $setup);");
+  }
+    
+  $qview = 'quick' == rqs_param('view', 'html');
+
+  if (!$qview) echo "<!-- \n";
+  $price = rqs_param('price', 0) * 1.0;
+  $amount = rqs_param('amount', 1) * 1;
+
+  function sig_param_set(string $param, string $field, float $value, int $flag) {
+    global $mysqli, $table_name, $strict, $touched;
+    $id = rqs_param($param, -1);
+    if ($id <= 0) return;
+    $touched = $mysqli->select_value('pair_id', $table_name, "WHERE (id = $id) AND $strict");        
+    $query = "UPDATE `$table_name` SET $field = $value, flags = (flags | $flag) WHERE (id = $id) AND $strict;";
+    if ($mysqli->try_query($query) && $mysqli->affected_rows)
+      echo "#OK: $field = $value for #$touched\n";
+    else 
+      echo "#FAIL: [ $query ] result {$mysqli->error};";       
+  }
+
+  $singal = false;
+  $id_added = 0;  
+  $strict = "(setup = $setup)";  
+  sig_param_set('sig_id', 'mult', $amount, 0);       
+  sig_param_set('edit_qty', 'qty',     rqs_param('qty', 2),  0);
+  sig_param_set('edit_tp', 'take_profit', $price, 0);       
+  sig_param_set('edit_sl', 'stop_loss', $price, 0);    
+  // sig_param_set('edit_lp', 'limit_price', $price, SIG_FLAG_LP);  
+
+  function sig_toggle_flag(string $param, int $flag) {
+    global $mysqli, $table_name, $strict;
+    $id = rqs_param($param, -1) * 1; 
+    if ($id > 0) 
+       $mysqli->try_query("UPDATE $table_name SET flags = flags ^ $flag WHERE (id = $id) AND $strict; ");  
+  }
+
+  log_cmsg("#REQUEST: dump: %s\n", print_r($_REQUEST, true)); 
+
+  while ($input)
+  try {
+     
+     $m = [];
+     $enter = false;     
+     $input = str_replace('[now]', '['.date('r').']', $input);
+     log_cmsg("#DBG: --------------------  processing %s -------------------- ", $input);
+
+     if (false !== preg_match('/\[(.*)\]\s\[(\S*)\]:.*(BUY|SELL|SHORT).X([\d\.]*)#(\d*)/', $input, $m) && count($m) >= 6)  {
+        $enter = true;
+     } elseif (false !== preg_match('/\[(.*)\]\s\[(\S*)\]:.*(BUY|SELL|SHORT).X(\d).(\d*).*(LONG|SHORT)/', $input, $m) && count($m) > 6)  {
+        $enter = true;
+     } elseif (false !== preg_match('/\[(.*)\]\s\[(\S*)\]:.*(BUY|SELL|DEL)#(\d*)/', $input, $m) && count($m) >= 5) {
+
+     } elseif (false !== preg_match('/\[(.*)\]\s\[(\S*)\]:.*(BUY|SELL|DEL).(\d*).*(LONG|SHORT)/', $input, $m) && count($m) > 5) {   
+
+     }
+     else  {
+        echo "#FAIL: can't parse $input\n";
+        log_msg("#FAIL: can't parse $input");
+        break;
+     }   
+
+     
+     print_r($m);
+     $pair = $m[2];
+     if (!isset($pairs_map[$pair])) {
+        log_msg("#ERROR: not registered pair $pair\n");
+        throw new Exception("Unknown pair $pair");
+     }    
+
+     $t = strtotime($m[1]);    
+     $t = min(time(), $t);
+     $ts = date(SQL_TIMESTAMP, $t);
+     $pair_id = $pairs_map[$pair];
+
+     $deleted = false;
+
+     $shift = $enter ? 1 : 0;    
+     $mult  = $enter ? $m[4] : 0;
+     $trade_no = $m[4 + $shift];
+     
+
+     if (9999 == $trade_no) 
+         $trade_no = intval($mysqli->select_value('trade_no', $table_name, "WHERE (pair_id = $pair_id) AND (setup = $setup) AND (flags & $req_flags) ORDER BY trade_no DESC")) + 1;
+
+     $side = '';
+     if (count($m) > $shift + 5)
+        $side = $m[5 + $shift];
+
+     $buy = ($enter && 'BUY' === $m[3]) ? 1 : 0;
+     if ('DEL' == $m[3] && $trade_no > 0) {
+        $query = "DELETE FROM $table_name WHERE (pair_id = $pair_id) AND (trade_no = $trade_no) AND (setup = $setup) ";
+        if ($mysqli->try_query($query)) {
+          $ar = $mysqli->affected_rows;
+          log_msg("#OK: signals #$trade_no for $pair removed from DB. Rows = $ar");
+          file_add_contents(SIGNALS_LOG, tss()."#DELETE: $trade_no, affected rows $ar, source = $source\n");
+          $deleted = $pair_id;
+        }  
+        else 
+          echo "#ERROR: failed $query\n";
+        break;
+     }
+   
+
+     log_msg("#PERF: load prev signal for setup %d", $setup);
+     $prev = $mysqli->select_row('ts, mult', 'signals', "WHERE (pair_id = $pair_id) AND (setup = $setup) AND (trade_no = $trade_no) AND (buy = $buy)");
+     $signal = tss().' + '.$m[0];
+     
+     $query = "INSERT INTO $table_name (ts, pair_id, setup, trade_no, buy, mult, qty, flags, source_ip)\n VALUES ";     
+     $query .= "('$ts', $pair_id, $setup, $trade_no, $buy, $mult, 2, $req_flags, '$source')\n";
+     $query .= "ON DUPLICATE KEY UPDATE ts='$ts', mult=$mult, flags=$req_flags, source_ip='$source';";
+     log_cmsg("#QUERY: %s", $query);
+     
+     if ($mysqli->try_query($query)) {
+        $touched = $pair;
+        $ar = $mysqli->affected_rows;
+        $id_added = $mysqli->select_value('id', 'signals', "WHERE (pair_id = $pair_id) AND (trade_no = $trade_no) AND (setup = $setup)");
+
+        if (false === $prev)  {
+           echo "#OK: new record added.\n";
+           file_add_contents(GRID_LOG, tss()."#ADD: [$query], affected rows $ar, source = $source\n");
+        }   
+        else {
+           echo "#OK: record changed from previous ".json_encode($prev)."\n";
+           file_add_contents(GRID_LOG, tss()."#MODIFY: [$query], affected rows $ar, source = $source\n");
+        }   
+
+        if ($id_added && isset($cm_symbols[$pair_id])) {
+          $last_price = $cm_symbols[$pair_id]->last_price;
+          $lo_bound = $last_price * 0.95;
+          $hi_bound = $last_price * 1.05;
+          $mysqli->try_query("UPDATE $table_name\n SET stop_loss = $lo_bound, take_profit = $hi_bound\n WHERE (id = $id_added) AND (setup = $setup);");   
+          echo "#OK: assigned SL price = $last_price\n";
+
+        }  
+     }   
+     else 
+        throw new Exception("Failed to add signal: ".$mysqli->error);
+     break;    
+  } catch (Exception $e) {
+     echo "-->\n";
+     die("#ERROR: ".$e->getMessage()." at <pre> ".$e->getTraceAsString());  
+  }
+  
+  if ($qview) {
+    if (!$input) {
+       echo "#WARN: data param not specified\n";
+       print_r($_REQUEST);
+    }   
+    ob_start();
+  }  
+  echo "-->\n";
+?>
+<html>
+ <head>
+  <title>Grid Editor <?php echo $setup; ?></title> 
+  <style type='text/css'>
+   td { padding-left: 4pt;
+        padding-right: 4pt; } 
+  </style>
+  <script type='text/javascript'>
+    <?php 
+       $js_script = file_get_contents('sig_edit.js');
+       $js_script = str_replace('script', $script, $js_script);
+       echo $js_script;
+    ?>
+
+    function Startup() {      
+      <?php
+        if ($touched) {
+         if (isset($id_map[$touched]))
+           $touched = $id_map[$touched];
+         echo "document.location = '$script?filter=$touched';\n";
+        }    
+      ?> 
+    }
+  </script>
+ <body onLoad="Startup()">
+ <?php  
+   print "\t<form name='signals' method='POST' action='$script'>\n";
+ ?>
+  <input type='text' name='signal' id='signal' value='' placeholder="[NOW] [NOPUSD]: BUY.X1#1" style='width:590pt;'/> <input type='submit' value='Post'/>  
+ </form>  
+  <h4>Edit setup <?php echo $setup ?></h4>
+  <table border=1 style='border-collapse:collapse;'>
+   <tr><th>Time<th>#Sig<th>Side<th>Pair<th>Mult<th>Qty</th><th>Low<th>High<th>Last price<th>Action</tr> 
+   <?php 
+     $accum_map = [];
+     $ts_map = [];
+     $buys = [];  
+     $shorts = [];
+     echo "<!-- btc_id = $btc_pair_id, eth_id = $eth_pair_id -->\n";
+     $vwap_prices = [];
+     $vwap_fails = [];
+     $vwap_cache = [];
+     $cache_hits = 0;
+     // initialize all positions as closed
+     foreach ($id_map as $id => $sym)
+       $accum_map[$id] = 0;
+
+     define('VWAP_CACHE_FILE', '/tmp/vwap_cache.json');
+     function file_age($fname) {      
+       return time() - filemtime($fname) or 0;
+     }
+
+     $timeout = 120;
+     if ('track' === $action) {       
+       $timeout = 30;
+     }  
+
+     if (file_exists(VWAP_CACHE_FILE))
+       $vwap_cache = file_load_json(VWAP_CACHE_FILE, null, true);
+       
+     function get_vwap(int $pair_id) {      
+       global $id_map, $mysqli, $vwap_prices, $vwap_cache, $vwap_fails, $cache_hits, $timeout;
+       if (!isset($id_map[$pair_id])) {
+          echo "<!-- #ERROR: unknown pair_id #$pair_id -->\n";
+          return;
+       }   
+       $elps = 3600;
+       $pair = strtolower($id_map[$pair_id]);
+       if (isset($vwap_cache[$pair_id]))
+           unset($vwap_cache[$pair_id]);
+
+       if (isset($vwap_cache[$pair])) {
+         $elps = time() - $vwap_cache[$pair]['ts'];
+         if ($elps <= $timeout) {
+            $cache_hits ++;
+            $vwap_prices[$pair_id] = $vwap_cache[$pair]['vwap'];
+            return;
+         }   
+       }        
+       if (isset($vwap_fails[$pair_id])) return;
+
+       $vwap = curl_http_request("http://vm-office.vpn/bot/get_vwap.php?pair_id=$pair_id&limit=5");       
+       if (false === strpos($vwap, '#') && floatval($vwap) > 0) {       
+         $vwap_prices[$pair_id] = $vwap;
+         $vwap_cache[$pair] = ['ts' => time(), 'vwap' => $vwap];
+         printf("<!-- For %s vwap price loaded as %s, cache elps = $elps -->\n", $pair, $vwap);         
+       }   
+       else {
+         printf("<!-- #WARN: For %s not loaded VWAP, response: $vwap -->\n", $pair);
+         $vwap_fails[$pair_id] = 1;
+       }   
+     }
+
+     $strict = sprintf("WHERE (setup = %d) AND (flags & %d) AND ", $setup, SIG_FLAG_GRID);
+     if ($filter_id > 0)
+       $strict .=  "(pair_id = $filter_id)";
+    else
+       $strict .= '(pair_id > 0)';
+
+     log_msg("#PERF: loading grid signals...");
+     function cmp_pair($a, $b) {
+       global $id_map;
+       $pid_a = $a['pair_id'];
+       $pid_b = $b['pair_id'];
+       if ($pid_a == $pid_b) 
+         return intval($a['trade_no']) - intval($b['trade_no']);
+       if (isset($id_map[$pid_a]) && isset($id_map[$pid_b]))          
+         return $id_map[$pid_a] < $id_map[$pid_b] ? -1 : 1;         
+       return $pid_a < $pid_b ? -1 : 1;
+     }
+     // main rows load <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<====================================
+     $rows = $mysqli->select_rows('id, ts, trade_no, buy, pair_id, mult, qty, take_profit, stop_loss, ttl, flags', 'signals', $strict.' ORDER BY pair_id,trade_no', MYSQLI_ASSOC);     
+     if (is_null($rows))  
+        die("#ERROR: failed to fetch signals: {$mysqli->error}\n");
+     usort($rows, 'cmp_pair');
+     if ($filter && count($rows) < 10) {
+       printf("<!-- sorted rows:\n%s -->\n", print_r($rows, true));
+     }
+     if (0 == count($rows)) 
+        printf("<h4>No grid configs yet for setup %d</h4>\n", $setup);
+     $sym_errs = 0;
+     if (!$filter) {
+       $rqst = pr_time();
+       // precalculate VWAP price for each used pair_id
+       foreach ($rows as $row) {      
+         $pair_id = intval($row['pair_id']);
+         if (isset($vwap_prices[$pair_id])) continue;      
+         get_vwap($pair_id);
+       }  
+       $elps = pr_time() - $rqst;
+       file_save_json(VWAP_CACHE_FILE, $vwap_cache);
+       if ($cache_hits > 0)
+         printf("<!-- load VWAP time = %.1f sec, cache hits $cache_hits -->\n", $elps);       
+       else  
+         printf("<!-- load VWAP time = %.1f sec, cache data:\n%s -->\n", $elps, print_r($vwap_cache, true));       
+       $vwap_good = 0;
+       foreach ($vwap_prices as $pair_id => $vwap)
+         if ($vwap > 0)
+             $vwap_good ++;
+       if ($vwap_good < 10 && !$filter) {
+        print_r($vwap_prices);
+        echo ("#FATAL: VWAP calculated/loaded only for $vwap_good pairs");
+       }
+     }
+
+     log_msg("#PERF: dumping signals");
+     
+
+     // processing format table
+     foreach ($rows as $row) {
+        list($id, $ts, $trade_no, $is_buy, $pair_id, $mult, $qty, $tp, $sl, $ttl, $flags) = array_values($row);
+        $ts_map[$pair_id] = $ts;
+        $pair = $id_map[$pair_id];
+        $curr_ch = '$';
+        if (strpos($pair, 'BTC', -3) !== false) 
+           $curr_ch = '₿'; // ฿
+
+        $is_buy = $is_buy > 0;
+        $side = $is_buy ? 'BUY' : 'SELL';        
+        $key   = "$pair_id:$trade_no";
+        $price = 0;
+        if (isset($cm_symbols[$pair_id])) {
+           $price = $cm_symbols[$pair_id]->last_price;
+        }  
+        elseif ('ETHBTC' == $pair && isset($cm_symbols[$btc_pair_id]) && isset($cm_symbols[$eth_pair_id])) 
+           $price = sprintf('%.4f', $cm_symbols[$eth_pair_id]->last_price / $cm_symbols[$btc_pair_id]->last_price);
+        else            
+           $sym_errs ++;
+        if (isset($vwap_prices[$pair_id]))
+           $price = $vwap_prices[$pair_id]; 
+                
+        $coef = 1;
+        $amount = round($mult * $coef);
+        if ($is_buy) { // buying                       
+          if (isset($shorts[$key])) { // this row closing exist SHORT signal 
+            $accum_map [$pair_id] += $shorts[$key];
+          } elseif ($amount > 0) { // not existed signal = typical
+            $accum_map [$pair_id] += $amount;   
+            $buys [$key] = $amount;
+          }  
+        }  
+        else {  // selling
+          if (isset($buys[$key]))  // this row closing exist LONG signal 
+             $accum_map [$pair_id] -= $buys[$key];
+           elseif ($amount > 0) { // not existed signal = typical 
+             $accum_map [$pair_id] -= $amount;   
+             $shorts [$key] = $amount;
+             if ($accum_map [$pair_id] < 0)  $side = 'SHORT';
+           } 
+        }
+        
+        printf("<!-- coef = $coef, amount = $amount, TTL = $ttl  --> \n");
+        
+        $bg_color = 'white';
+        if(isset($colors[$pair_id]))
+           $bg_color = $colors[$pair_id];
+        $style = '';
+        if ($id == $id_added) 
+          $style .= 'font-weight: bold;';
+        $font_color = 'black';
+
+        if (false !== strpos($bg_color, '#')) {
+          $hx = substr($bg_color, 1);
+          list($r, $g, $b) = sscanf($hx, '%2x%2x%2x');
+          $lt = max ($r, max($g, $b));
+          printf("<!-- COLOR from $hx: $r, $g, $b = $lt -->\n");
+          if ($lt < 145)
+            $font_color = 'white';
+        }        
+        $strict = "(pair_id = $pair_id) AND (setup = $setup) AND (flags & $req_flags)";
+        $mno = $mysqli->select_value('MIN(trade_no)', $table_name, "WHERE $strict");
+        $pair_cell = sprintf("<!-- min trade_no = %s -->", var_export($mno, true));
+        $pair_text = sprintf("<a href='$script?filter=%s' style='color:$font_color'>%s</a>", $pair, $pair);
+
+        if (is_numeric($mno) && $mno == $row['trade_no']) {
+          $sigcnt = $mysqli->select_value('COUNT(id)', $table_name, "WHERE $strict");
+          $pair_cell = sprintf("<td rowspan=%d>%s", $sigcnt, $pair_text);
+        }  
+        elseif(is_null($mno))
+           $pair_cell = "<td>$pair";
+        $t = strtotime($ts);
+        $ts_rounded = date('Y-m-d H:i', $t);
+        printf("\t<tr style='background-color: $bg_color;color: $font_color; $style'><td>%s<td>%d<td>%s", $ts_rounded, $row['trade_no'], $side);
+        print $pair_cell;
+        printf("\n\t\t<td><u onClick='EditAmount($id, $mult)'>%.1f</u>",  $mult);
+        printf("\n\t\t<td><u onClick='EditQty($id, $qty)'>$curr_ch%s</u>", $qty);
+        printf("\n\t\t<td><u onClick='EditSL($id, $sl)'>$curr_ch%s</u>\n", $sl);
+        printf("\n\t\t<td><u onClick='EditTP($id, $tp)'>$curr_ch%s</u>", $tp);        
+        $price_text = $curr_ch.$price;
+        if ($price < 0.0001)
+            $price_text = sprintf("$curr_ch%.3f/M", $price * 1e6);
+        elseif ($price < 0.01)
+            $price_text = sprintf("$curr_ch$%.3f/1K", $price * 1000);        
+        echo "\n\t\t<td>$price_text\n\t\t<td><input type='submit' name='remove' onclick='DeleteSignal($id)' value='Delete'/>\n ";
+     }
+     echo "</table>\n";
+     if ($sym_errs > 0) {
+       echo "#ERROR: cm_symbols loaded incomplete, errors = $sym_errs:</br> \n";
+       foreach ($cm_symbols as $pair_id => $rec)
+         printf("$pair_id => %f, ", $rec->last_price);
+       echo "</br>\n";
+     }
+     echo "<pre>n";
+      
+     $ts_now = date(SQL_TIMESTAMP);
+
+     if ($qview) ob_end_clean();
+     if ($delete && !isset($accum_map[$delete]))
+         $accum_map[$delete] = 0;                
+ 
+     if ($filter) 
+        echo "<input type='submit'  onClick='GoHome()' value='Home' />";
+
+     if ($qview) die('');     
+     $work_t = pr_time() - $tstart;
+     log_msg(sprintf("#END: work_t = %.1f sec, CWD: %s, LOG_FILE %s", $work_t, getcwd(), GRID_LOG));
+     
+?>     
+ 

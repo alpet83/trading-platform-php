@@ -1,0 +1,40 @@
+POST {{url}}/api/auth/base/login
+Content-Type: application/json
+
+{
+  "username": "test@test.ru",
+  "password": "123123",
+  "remember": true
+}
+
+###
+
+POST {{url}}/api/auth/base/check
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInVzZXJuYW1lIjoidGVzdEB0ZXN0LnJ1Iiwicm9sZXMiOltdLCJpYXQiOjE3MjIzNDgxMDQsImV4cCI6MTcyMjM1ODkwNH0.Q9RvkvknY0U4BUT3-ezrPlRHc7qfTtD90piKjTEXcNo
+
+###
+POST {{url}}/api/external/user
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInVzZXJuYW1lIjoidGVzdEB0ZXN0LnJ1Iiwicm9sZXMiOltdLCJpYXQiOjE3MjIzNDgxMDQsImV4cCI6MTcyMjM1ODkwNH0.Q9RvkvknY0U4BUT3-ezrPlRHc7qfTtD90piKjTEXcNo
+
+{
+  "id": 1444238727,
+  "user_name": "D_Korshunov",
+  "rights": ["admin", "view", "trade"]
+}
+###
+POST {{url}}/api/external/user/update
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInVzZXJuYW1lIjoidGVzdEB0ZXN0LnJ1Iiwicm9sZXMiOltdLCJpYXQiOjE3MjIzNDgxMDQsImV4cCI6MTcyMjM1ODkwNH0.Q9RvkvknY0U4BUT3-ezrPlRHc7qfTtD90piKjTEXcNo
+
+{
+  "id": 1444238727,
+  "user_name": "D_Korshunov",
+  "rights": ["admin", "view", "trade"],
+  "enabled": 1
+}
+###
+GET {{url}}/api/external/user
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInVzZXJuYW1lIjoidGVzdEB0ZXN0LnJ1Iiwicm9sZXMiOltdLCJpYXQiOjE3MjIzNDgxMDQsImV4cCI6MTcyMjM1ODkwNH0.Q9RvkvknY0U4BUT3-ezrPlRHc7qfTtD90piKjTEXcNo

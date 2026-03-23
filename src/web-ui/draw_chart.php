@@ -137,7 +137,7 @@
     }
 
     if (0 == count($rows)) {   
-        log_msg("#ERROR: MySQL returned nothing: error = {$mysqli->error}, using query [$query] result = ".var_export($res, true));         
+        log_msg("#ERROR: MySQL returned nothing: error = {$mysqli->error}, using query [{$mysqli->last_query}] result = ".var_export($res, true));         
         log_msg("#FATAL: nothing was returned from table $table, limited by [$strict] \n");
         $mysqli->close();  
         if (!$offline_mode) {

@@ -1,0 +1,24 @@
+<template>
+  <div>
+    <Header />
+    <slot />
+  </div>
+</template>
+
+<script setup lang="ts">
+</script>
+<style>
+.cl41 { color: darkred; }
+.cl42 { color: darkgreen; }
+.cl43 { color: brown; }
+.cl44 { color: blue; }
+.cl45 { color: purple; }
+
+.cl91 { color: red; }
+.cl92 { color: lime; }
+.cl93 { color: yellow; }
+.cl94 { color: lightblue; }
+.cl95 { color: magenta; }
+.cl96 { color: cyan; }
+
+</style>

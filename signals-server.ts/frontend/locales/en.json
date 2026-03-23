@@ -1,0 +1,40 @@
+{
+  "theme": {
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "home": "Home",
+  "addSignal": "Add a signal",
+  "modal": {
+    "title": "New signal",
+    "side": "Side",
+    "pair": "Pair",
+    "mult": "Mult",
+    "signalNo": "Signal No",
+    "placeholderPair": "Enter the text",
+    "ok": "OK",
+    "cancel": "Cancel"
+  },
+  "editTable": "edit the table",
+  "headers": {
+    "time": "Time",
+    "sigID": "#Sig/ID",
+    "side": "Side",
+    "pair": "Pair",
+    "mult": "Mult",
+    "accumPos": "Accum. pos",
+    "limitPrice": "Limit price",
+    "takeProfit": "Take profit",
+    "stopLoss": "Stop loss",
+    "slEndless": "SL endless",
+    "lastPrice": "Last price",
+    "comment": "Add comment",
+    "delete": "Delete"
+  },
+  "commentPlaceholder": "Comment",
+  "deleteConfirm": {
+    "title": "Delete a signal?",
+    "delete": "Delete",
+    "cancel": "Cancel"
+  }
+}

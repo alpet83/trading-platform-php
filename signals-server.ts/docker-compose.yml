@@ -1,0 +1,73 @@
+version: "3.8"
+
+networks:
+  back:
+  botctrl-rev-proxy:
+    external: true
+
+services:
+  nginx:
+    build:
+      context: .
+      target: finalNginx
+      args:
+        APP_BASE_PATH: ${APP_BASE_PATH}
+        SIGNALS_API_URL: ${SIGNALS_API_URL}
+    restart: always
+#    <<: *default-logging
+    networks:
+      - back
+      - botctrl-rev-proxy
+    expose:
+      - 380
+    ports:
+      - "380:80"
+    env_file:
+      - .env.nginx.docker
+    environment:
+      - APP_BASE_PATH=${APP_BASE_PATH}
+      - VIRTUAL_HOST=${DOMAIN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - LETSENCRYPT_HOST=${DOMAIN}
+      - LETSENCRYPT_EMAIL=test@test.ru
+  node:
+    build:
+      context: .
+      target: finalNode
+#    <<: *default-logging
+    restart: always
+    networks:
+      back:
+        aliases:
+          - node
+          - backend-node
+    dns:
+      - 10.119.10.1
+# 157.97.132.161
+    expose:
+      - 3001
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env.node.docker
+    depends_on:
+      - db
+    environment:
+      - APP_BASE_PATH=${APP_BASE_PATH}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+
+  db:
+    image: postgres:16.1-alpine
+    restart: always
+    networks:
+      - back
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./server/pg/10-init-user-db.sh:/docker-entrypoint-initdb.d/10-init-user-db.sh
+    env_file:
+      - .env.db.docker
+    environment:
+      - POSTGRES_DB=backend
+
+volumes:
+  postgres:

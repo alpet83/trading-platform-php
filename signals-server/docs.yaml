@@ -1,0 +1,1497 @@
+openapi: 3.0.3
+info:
+  title: Trading Signals API
+  description: API для управления торговыми сигналами
+  version: 1.0.0
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/users:
+    get:
+      summary: Получить список пользователей
+      description: Возвращает список всех пользователей системы
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+      responses:
+        '200':
+          description: Успешное получение списка пользователей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          description: Не авторизован (неверный токен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Недостаточно прав (требуется admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/create:
+    post:
+      summary: Создать нового пользователя
+      description: Создает нового пользователя в системе
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - id
+                - user_name
+              properties:
+                id:
+                  type: integer
+                  description: Telegram ID пользователя
+                  example: 123456789
+                  minimum: 1
+                user_name:
+                  type: string
+                  description: Имя пользователя в Telegram (с @ или без)
+                  example: "john_doe"
+                'rights[]':
+                  type: array
+                  description: Массив прав доступа пользователя
+                  items:
+                    type: string
+                    enum: [ view, trade, admin ]
+                  default: []
+                enabled:
+                  type: integer
+                  description: Статус активности (1 - активен, 0 - отключен)
+                  enum: [ 0, 1 ]
+                  default: 1
+                  example: 1
+            encoding:
+              'rights[]':
+                style: form
+                explode: true
+      responses:
+        '201':
+          description: Пользователь успешно создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_fields:
+                  value:
+                    error: "Missing required fields: id, user_name"
+                invalid_id:
+                  value:
+                    error: "Invalid id"
+                invalid_user_name:
+                  value:
+                    error: "Invalid user_name"
+                invalid_rights:
+                  value:
+                    error: "Invalid rights value. Must be one or more of: view, trade, admin"
+                invalid_enabled:
+                  value:
+                    error: "Invalid enabled value. Must be 0 or 1"
+        '401':
+          description: Не авторизован (неверный токен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Недостаточно прав (требуется admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Пользователь уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "User already exists"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/update:
+    post:
+      summary: Обновить пользователя
+      description: Обновляет права и статус пользователя
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - id
+                - rights
+                - enabled
+              properties:
+                id:
+                  type: integer
+                  description: Telegram ID пользователя
+                  example: 123456789
+                  minimum: 1
+                'rights[]':
+                  type: array
+                  description: Массив прав доступа
+                  items:
+                    type: string
+                    enum: [ view, trade, admin ]
+                enabled:
+                  type: integer
+                  description: Статус активности (1 - активен, 0 - отключен)
+                  enum: [ 0, 1 ]
+                  example: 1
+            encoding:
+              'rights[]':
+                style: form
+                explode: true
+      responses:
+        '200':
+          description: Пользователь успешно обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_fields:
+                  value:
+                    error: "Missing required fields: id, rights, enabled"
+
+                invalid_id:
+                  value:
+                    error: "Invalid id"
+                invalid_rights:
+                  value:
+                    error: "Invalid rights value. Must be one or more of: view, trade, admin"
+                invalid_enabled:
+                  value:
+                    error: "Invalid enabled value. Must be 0 or 1"
+        '401':
+          description: Не авторизован (неверный токен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Недостаточно прав (требуется admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "User not found"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/delete:
+    post:
+      summary: Удалить пользователя
+      description: Полностью удаляет пользователя из базы данных
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: integer
+                  description: Telegram ID пользователя
+                  example: 123456789
+                  minimum: 1
+      responses:
+        '200':
+          description: Пользователь успешно удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User deleted"
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_field:
+                  value:
+                    error: "Missing required field: id"
+                invalid_id:
+                  value:
+                    error: "Invalid id"
+        '401':
+          description: Не авторизован (неверный токен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Недостаточно прав (требуется admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "User not found"
+        '405':
+          description: Метод не разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /sig_edit.php:
+    get:
+      summary: Получить торговые сигналы или выполнить операции
+      description: Возвращает торговые сигналы с возможностью фильтрации и сортировки, или выполняет операции удаления сигналов
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+        - name: setup
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 9
+          example: 9
+          description: Идентификатор настройки
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ json, html ]
+            default: json
+          example: json
+          description: Формат ответа
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Название торговой пары для фильтрации
+          example: ""
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ timestamp, id, side, pair, multiplier, accumulated_position, limit_price, take_profit, stop_loss ]
+          description: Поле для сортировки
+          example: ""
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ asc, desc ]
+            default: asc
+          example: ""
+          description: Порядок сортировки
+        - name: setup-list
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Если передан, возвращает только массив уникальных номеров setup вместо сигналов
+      responses:
+        '200':
+          description: Успешное получение сигналов
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    description: Список уникальных номеров setup (только при передаче параметра setup-list)
+                    items:
+                      type: integer
+                    example: [1, 2, 3, 9]
+                  - type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      setup:
+                        type: integer
+                        description: Идентификатор настройки
+                        example: 9
+                      timestamp:
+                        type: string
+                        format: date-time
+                        description: Время формирования ответа
+                        example: "2025-09-03T10:30:00+00:00"
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            type: object
+                            properties:
+                              total_signals:
+                                type: integer
+                                description: Общее количество сигналов
+                                example: 15
+                              total_pairs:
+                                type: integer
+                                description: Количество торговых пар (только если нет фильтра и сортировки)
+                                example: 5
+                              buys:
+                                type: object
+                                description: Активные покупки по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:1": 2
+                                  "1:2": 3
+                              shorts:
+                                type: object
+                                description: Активные шорты по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:3": 1
+                              symbol_errors:
+                                type: integer
+                                description: Количество ошибок загрузки символов
+                                example: 0
+                          filter:
+                            type: string
+                            description: Название торговой пары, по которой выполнена фильтрация (только при использовании filter)
+                            example: "BTCUSD"
+                          sorting:
+                            type: object
+                            description: Информация о сортировке (только при использовании sort)
+                            properties:
+                              field:
+                                type: string
+                                description: Поле сортировки
+                                example: "timestamp"
+                              order:
+                                type: string
+                                enum: [ asc, desc ]
+                                description: Порядок сортировки
+                                example: "asc"
+                          pairs:
+                            type: array
+                            description: Массив торговых пар с сигналами (только если нет фильтра и сортировки)
+                            items:
+                              type: object
+                              properties:
+                                pair:
+                                  type: string
+                                  description: Название торговой пары
+                                  example: "BTCUSD"
+                                pair_id:
+                                  type: integer
+                                  description: Идентификатор пары
+                                  example: 1
+                                signal_count:
+                                  type: integer
+                                  description: Количество сигналов для данной пары
+                                  example: 3
+                                background_color:
+                                  type: string
+                                  description: Цвет фона для пары
+                                  example: "#ff0000"
+                                signals:
+                                  type: array
+                                  items:
+                                    $ref: '#/components/schemas/Signal'
+                          signals:
+                            type: array
+                            description: Массив сигналов (при использовании фильтра или сортировки)
+                            items:
+                              $ref: '#/components/schemas/Signal'
+                      setup_info:
+                        type: object
+                        properties:
+                          setup_id:
+                            type: integer
+                            example: 9
+                          btc_pair_id:
+                            type: integer
+                            example: 1
+                          eth_pair_id:
+                            type: integer
+                            example: 2
+                          processing_time:
+                            type: number
+                            format: float
+                            description: Время обработки запроса в секундах
+                            example: 0.15
+                  - type: object
+                    description: Результат удаления сигнала
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      message:
+                        type: string
+                        description: Сообщение об успешном удалении
+                        example: "Signal #123 deleted"
+            text/html:
+              schema:
+                type: string
+                description: HTML страница с сигналами
+
+    post:
+      summary: Добавить торговый сигнал
+      description: Создает новый торговый сигнал или обновляет существующий через отдельные параметры
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+        - name: setup
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 9
+          example: 9
+          description: Идентификатор настройки
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ json, html ]
+            default: json
+          example: json
+          description: Формат ответа
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - side
+                - pair
+                - signal_no
+              properties:
+                side:
+                  type: string
+                  enum: [ BUY, SELL, SHORT, DEL ]
+                  description: Сторона сделки или действие
+                  example: "BUY"
+                pair:
+                  type: string
+                  description: Название торговой пары (в верхнем регистре)
+                  example: "BTCUSD"
+                signal_no:
+                  type: integer
+                  description: Номер сигнала (9999 для автоматической генерации)
+                  example: 1
+                  minimum: 1
+                multiplier:
+                  type: number
+                  description: Мультипликатор сигнала (по умолчанию 1.0)
+                  example: 1.5
+                  minimum: 0.1
+                  default: 1.0
+            examples:
+              buy_signal:
+                summary: "Создание сигнала на покупку"
+                value:
+                  side: "BUY"
+                  pair: "BTCUSD"
+                  signal_no: 1
+                  multiplier: 1.5
+              sell_signal:
+                summary: "Создание сигнала на продажу"
+                value:
+                  side: "SELL"
+                  pair: "ETHUSD"
+                  signal_no: 2
+                  multiplier: 1.0
+              short_signal:
+                summary: "Создание сигнала на короткую продажу"
+                value:
+                  side: "SHORT"
+                  pair: "BTCUSD"
+                  signal_no: 3
+                  multiplier: 2.0
+              delete_signal:
+                summary: "Удаление существующего сигнала"
+                value:
+                  side: "DEL"
+                  pair: "BTCUSD"
+                  signal_no: 1
+              auto_signal_number:
+                summary: "Создание с автоматическим номером"
+                value:
+                  side: "BUY"
+                  pair: "ETHUSD"
+                  signal_no: 9999
+                  multiplier: 1.0
+      responses:
+        '200':
+          description: Сигнал успешно добавлен или обновлен
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      setup:
+                        type: integer
+                        description: Идентификатор настройки
+                        example: 9
+                      timestamp:
+                        type: string
+                        format: date-time
+                        description: Время формирования ответа
+                        example: "2025-09-03T10:30:00+00:00"
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            type: object
+                            properties:
+                              total_signals:
+                                type: integer
+                                description: Общее количество сигналов
+                                example: 15
+                              total_pairs:
+                                type: integer
+                                description: Количество торговых пар (только если нет фильтра и сортировки)
+                                example: 5
+                              buys:
+                                type: object
+                                description: Активные покупки по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:1": 2
+                                  "1:2": 3
+                              shorts:
+                                type: object
+                                description: Активные шорты по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:3": 1
+                              symbol_errors:
+                                type: integer
+                                description: Количество ошибок загрузки символов
+                                example: 0
+                          filter:
+                            type: string
+                            description: Название торговой пары, по которой выполнена фильтрация (только при использовании filter)
+                            example: "BTCUSD"
+                          sorting:
+                            type: object
+                            description: Информация о сортировке (только при использовании sort)
+                            properties:
+                              field:
+                                type: string
+                                description: Поле сортировки
+                                example: "timestamp"
+                              order:
+                                type: string
+                                enum: [ asc, desc ]
+                                description: Порядок сортировки
+                                example: "asc"
+                          pairs:
+                            type: array
+                            description: Массив торговых пар с сигналами (только если нет фильтра и сортировки)
+                            items:
+                              type: object
+                              properties:
+                                pair:
+                                  type: string
+                                  description: Название торговой пары
+                                  example: "BTCUSD"
+                                pair_id:
+                                  type: integer
+                                  description: Идентификатор пары
+                                  example: 1
+                                signal_count:
+                                  type: integer
+                                  description: Количество сигналов для данной пары
+                                  example: 3
+                                background_color:
+                                  type: string
+                                  description: Цвет фона для пары
+                                  example: "#ff0000"
+                                signals:
+                                  type: array
+                                  items:
+                                    $ref: '#/components/schemas/Signal'
+                          signals:
+                            type: array
+                            description: Массив сигналов (при использовании фильтра или сортировки)
+                            items:
+                              $ref: '#/components/schemas/Signal'
+                      setup_info:
+                        type: object
+                        properties:
+                          setup_id:
+                            type: integer
+                            example: 9
+                          btc_pair_id:
+                            type: integer
+                            example: 1
+                          eth_pair_id:
+                            type: integer
+                            example: 2
+                          processing_time:
+                            type: number
+                            format: float
+                            description: Время обработки запроса в секундах
+                            example: 0.15
+                  - type: object
+                    description: Результат удаления сигнала
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      message:
+                        type: string
+                        description: Сообщение об успешном удалении
+                        example: "Signal #123 deleted"
+            text/html:
+              schema:
+                type: string
+                description: HTML страница с сигналами
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ error ]
+                    example: error
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: integer
+                        example: 400
+                      message:
+                        type: string
+                        example: "Invalid side parameter: INVALID. Must be BUY, SELL, SHORT or DEL"
+        '404':
+          description: Торговая пара не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ error ]
+                    example: error
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: integer
+                        example: 404
+                      message:
+                        type: string
+                        example: "Unknown pair: BTCUSD"
+        '500':
+          description: Ошибка при сохранении в базу данных
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ error ]
+                    example: error
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: integer
+                        example: 500
+                      message:
+                        type: string
+                        example: "Failed to add signal via individual params: database error"
+
+    patch:
+      summary: Обновить параметры торгового сигнала
+      description: |
+        Обновляет параметры существующего торгового сигнала. Поддерживаемые варианты операций:
+        
+        **1. Изменение мультипликатора:**
+        - Параметры: `sig_id` + `amount`
+        - Пример: `/sig_edit.php?sig_id=123&amount=2.5`
+        
+        **2. Установка Take Profit:**
+        - Параметры: `edit_tp` + `price`
+        - Пример: `/sig_edit.php?edit_tp=123&price=50000`
+        
+        **3. Установка Stop Loss:**
+        - Параметры: `edit_sl` + `price`
+        - Пример: `/sig_edit.php?edit_sl=123&price=45000`
+        
+        **4. Установка лимитной цены:**
+        - Параметры: `edit_lp` + `price`
+        - Пример: `/sig_edit.php?edit_lp=123&price=48000`
+        
+        **5. Обновление комментария:**
+        - Параметры: `edit_comment` + `text`
+        - Пример: `/sig_edit.php?edit_comment=123&text=Updated%20strategy`
+
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+        - name: setup
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 9
+          example: 9
+          description: Идентификатор настройки
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ json, html ]
+            default: json
+          example: json
+          description: Формат ответа
+        - name: sig_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для обновления мультипликатора
+        - name: amount
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0.1
+          description: Новый мультипликатор сигнала
+        - name: edit_tp
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+          description: ID сигнала для установки Take Profit цены
+        - name: edit_sl
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+          description: ID сигнала для установки Stop Loss цены
+        - name: edit_lp
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+          description: ID сигнала для установки лимитной цены
+        - name: price
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+          description: Новая цена для установки (используется с edit_tp, edit_sl, edit_lp)
+        - name: edit_comment
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для обновления комментария
+        - name: text
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+          description: Новый текст комментария (используется с edit_comment)
+      responses:
+        '200':
+          description: Параметры сигнала успешно обновлены
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      setup:
+                        type: integer
+                        description: Идентификатор настройки
+                        example: 9
+                      timestamp:
+                        type: string
+                        format: date-time
+                        description: Время формирования ответа
+                        example: "2025-09-03T10:30:00+00:00"
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            type: object
+                            properties:
+                              total_signals:
+                                type: integer
+                                description: Общее количество сигналов
+                                example: 15
+                              total_pairs:
+                                type: integer
+                                description: Количество торговых пар (только если нет фильтра и сортировки)
+                                example: 5
+                              buys:
+                                type: object
+                                description: Активные покупки по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:1": 2
+                                  "1:2": 3
+                              shorts:
+                                type: object
+                                description: Активные шорты по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:3": 1
+                              symbol_errors:
+                                type: integer
+                                description: Количество ошибок загрузки символов
+                                example: 0
+                          filter:
+                            type: string
+                            description: Название торговой пары, по которой выполнена фильтрация (только при использовании filter)
+                            example: "BTCUSD"
+                          sorting:
+                            type: object
+                            description: Информация о сортировке (только при использовании sort)
+                            properties:
+                              field:
+                                type: string
+                                description: Поле сортировки
+                                example: "timestamp"
+                              order:
+                                type: string
+                                enum: [ asc, desc ]
+                                description: Порядок сортировки
+                                example: "asc"
+                          pairs:
+                            type: array
+                            description: Массив торговых пар с сигналами (только если нет фильтра и сортировки)
+                            items:
+                              type: object
+                              properties:
+                                pair:
+                                  type: string
+                                  description: Название торговой пары
+                                  example: "BTCUSD"
+                                pair_id:
+                                  type: integer
+                                  description: Идентификатор пары
+                                  example: 1
+                                signal_count:
+                                  type: integer
+                                  description: Количество сигналов для данной пары
+                                  example: 3
+                                background_color:
+                                  type: string
+                                  description: Цвет фона для пары
+                                  example: "#ff0000"
+                                signals:
+                                  type: array
+                                  items:
+                                    $ref: '#/components/schemas/Signal'
+                          signals:
+                            type: array
+                            description: Массив сигналов (при использовании фильтра или сортировки)
+                            items:
+                              $ref: '#/components/schemas/Signal'
+                      setup_info:
+                        type: object
+                        properties:
+                          setup_id:
+                            type: integer
+                            example: 9
+                          btc_pair_id:
+                            type: integer
+                            example: 1
+                          eth_pair_id:
+                            type: integer
+                            example: 2
+                          processing_time:
+                            type: number
+                            format: float
+                            description: Время обработки запроса в секундах
+                            example: 0.15
+                  - type: object
+                    description: Результат удаления сигнала
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      message:
+                        type: string
+                        description: Сообщение об успешном удалении
+                        example: "Signal #123 deleted"
+            text/html:
+              schema:
+                type: string
+                description: HTML страница с сигналами
+
+    put:
+      summary: Переключить флаги торгового сигнала
+      description: Переключает флаги активации для существующего торгового сигнала (Take Profit, Stop Loss, Limit Price, Stop Endless)
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+        - name: setup
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 9
+          example: 9
+          description: Идентификатор настройки
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ json, html ]
+            default: json
+          example: json
+          description: Формат ответа
+        - name: toggle_tp
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для переключения флага Take Profit
+        - name: toggle_sl
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для переключения флага Stop Loss
+        - name: toggle_lp
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для переключения флага Limit Price
+        - name: toggle_se
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для переключения флага Stop Endless
+      responses:
+        '200':
+          description: Флаги сигнала успешно переключены
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      setup:
+                        type: integer
+                        description: Идентификатор настройки
+                        example: 9
+                      timestamp:
+                        type: string
+                        format: date-time
+                        description: Время формирования ответа
+                        example: "2025-09-03T10:30:00+00:00"
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            type: object
+                            properties:
+                              total_signals:
+                                type: integer
+                                description: Общее количество сигналов
+                                example: 15
+                              total_pairs:
+                                type: integer
+                                description: Количество торговых пар (только если нет фильтра и сортировки)
+                                example: 5
+                              buys:
+                                type: object
+                                description: Активные покупки по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:1": 2
+                                  "1:2": 3
+                              shorts:
+                                type: object
+                                description: Активные шорты по парам
+                                additionalProperties:
+                                  type: integer
+                                example:
+                                  "1:3": 1
+                              symbol_errors:
+                                type: integer
+                                description: Количество ошибок загрузки символов
+                                example: 0
+                          filter:
+                            type: string
+                            description: Название торговой пары, по которой выполнена фильтрация (только при использовании filter)
+                            example: "BTCUSD"
+                          sorting:
+                            type: object
+                            description: Информация о сортировке (только при использовании sort)
+                            properties:
+                              field:
+                                type: string
+                                description: Поле сортировки
+                                example: "timestamp"
+                              order:
+                                type: string
+                                enum: [ asc, desc ]
+                                description: Порядок сортировки
+                                example: "asc"
+                          pairs:
+                            type: array
+                            description: Массив торговых пар с сигналами (только если нет фильтра и сортировки)
+                            items:
+                              type: object
+                              properties:
+                                pair:
+                                  type: string
+                                  description: Название торговой пары
+                                  example: "BTCUSD"
+                                pair_id:
+                                  type: integer
+                                  description: Идентификатор пары
+                                  example: 1
+                                signal_count:
+                                  type: integer
+                                  description: Количество сигналов для данной пары
+                                  example: 3
+                                background_color:
+                                  type: string
+                                  description: Цвет фона для пары
+                                  example: "#ff0000"
+                                signals:
+                                  type: array
+                                  items:
+                                    $ref: '#/components/schemas/Signal'
+                          signals:
+                            type: array
+                            description: Массив сигналов (при использовании фильтра или сортировки)
+                            items:
+                              $ref: '#/components/schemas/Signal'
+                      setup_info:
+                        type: object
+                        properties:
+                          setup_id:
+                            type: integer
+                            example: 9
+                          btc_pair_id:
+                            type: integer
+                            example: 1
+                          eth_pair_id:
+                            type: integer
+                            example: 2
+                          processing_time:
+                            type: number
+                            format: float
+                            description: Время обработки запроса в секундах
+                            example: 0.15
+                  - type: object
+                    description: Результат удаления сигнала
+                    properties:
+                      status:
+                        type: string
+                        enum: [ success ]
+                        example: success
+                      message:
+                        type: string
+                        description: Сообщение об успешном удалении
+                        example: "Signal #123 deleted"
+            text/html:
+              schema:
+                type: string
+                description: HTML страница с сигналами
+
+    delete:
+      summary: Удалить торговый сигнал
+      description: Удаляет торговый сигнал по его ID. Реализовано через GET-запрос с параметром delete вместо стандартного DELETE-метода
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Telegram ID пользователя для проверки прав
+          example: 123456789
+        - name: setup
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 9
+          example: 9
+          description: Идентификатор настройки
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ json, html ]
+            default: json
+          example: json
+          description: Формат ответа
+        - name: delete
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: ID сигнала для удаления
+      responses:
+        '200':
+          description: Сигнал успешно удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ success ]
+                    example: success
+                  message:
+                    type: string
+                    description: Сообщение об успешном удалении
+                    example: "Signal #123 deleted"
+            text/html:
+              schema:
+                type: string
+                description: HTML страница с результатом удаления
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+      description: |
+        Токен авторизации для доступа к API.
+        
+        Пример использования:
+        ```
+        Authorization: Bearer Vs9yo5HfkXewfzqYkjM$d/@6W3ZrNWCTiQSVLC0f6X4
+        ```
+        
+        Дополнительно передается заголовок X-User-Id с Telegram ID пользователя
+        для определения прав доступа.
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Telegram ID пользователя
+          example: 123456789
+        user_name:
+          type: string
+          description: Имя пользователя в Telegram
+          example: "john_doe"
+        rights:
+          type: array
+          description: Массив прав доступа
+          items:
+            type: string
+            enum: [ view, trade, admin ]
+          example: ["trade", "view"]
+        enabled:
+          type: integer
+          description: Статус активности (1 - активен, 0 - отключен)
+          enum: [ 0, 1 ]
+          example: 1
+    Signal:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Уникальный идентификатор сигнала
+          example: 123
+        timestamp:
+          type: integer
+          description: Временная метка в формате Unix timestamp
+          example: 1725357000
+        signal_no:
+          type: integer
+          description: Номер сигнала
+          example: 1
+        side:
+          type: string
+          description: Сторона сделки
+          enum: [ BUY, SELL, SHORT ]
+          example: "BUY"
+        pair:
+          type: string
+          description: Название торговой пары
+          example: "BTCUSD"
+        pair_id:
+          type: integer
+          description: Идентификатор торговой пары
+          example: 1
+        multiplier:
+          type: number
+          description: Мультипликатор сигнала
+          example: 1.5
+        accumulated_position:
+          type: number
+          description: Накопленная позиция
+          example: 2.5
+        limit_price:
+          type: number
+          description: Лимитная цена
+          example: 45000.0
+        take_profit:
+          type: number
+          description: Цена фиксации прибыли
+          example: 50000.0
+        stop_loss:
+          type: number
+          description: Стоп-лосс цена
+          example: 40000.0
+        stop_loss_diff_percent:
+          type: number
+          description: Разница между текущей ценой и стоп-лоссом в процентах
+          example: -8.5
+        ttl:
+          type: integer
+          description: Time to live для сигнала
+          example: 10
+        flags:
+          type: object
+          description: Флаги активации различных параметров
+          properties:
+            limit_price:
+              type: boolean
+              description: Активна ли лимитная цена
+              example: false
+            take_profit:
+              type: boolean
+              description: Активен ли тейк-профит
+              example: true
+            stop_loss:
+              type: boolean
+              description: Активен ли стоп-лосс
+              example: true
+            stop_endless:
+              type: boolean
+              description: Активен ли бесконечный стоп
+              example: false
+        comment:
+          type: string
+          nullable: true
+          description: Комментарий к сигналу
+          example: "Test signal"
+        currency_symbol:
+          type: string
+          description: Символ валюты
+          example: "$"
+        last_price:
+          type: number
+          description: Последняя цена
+          example: 43500.0
+        coefficient:
+          type: number
+          description: Коэффициент для расчета количества
+          example: 1.0
+        amount:
+          type: number
+          description: Рассчитанное количество
+          example: 2
+        colors:
+          type: object
+          description: Цвета для отображения
+          properties:
+            background:
+              type: string
+              description: Цвет фона
+              example: "#ff0000"
+            font:
+              type: string
+              description: Цвет шрифта
+              example: "#ffffff"
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Описание ошибки
+          example: "Database configuration not found"
