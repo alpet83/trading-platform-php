@@ -46,7 +46,9 @@ function check_auth() {
 }
 
 function get_user_rights() {
+    global $user_base_setup;
     $default_rights = 'none';
+    $user_base_setup = 0;
 
     $headers = array_change_key_case(getallheaders(), CASE_LOWER);
     $telegram_id = $headers['x-user-id'] ?? null;
@@ -62,9 +64,15 @@ function get_user_rights() {
         // Host of the PHP trading server. In dev use the docker service name;
         // in production set TRADEBOT_PHP_HOST env var to the internal address.
         $host = getenv('ENVIRONMENT') === 'dev' ? 'http://tradebot-new-php' : (getenv('TRADEBOT_PHP_HOST') ?: 'http://localhost');
-        $rights = curl_http_request("{$host}/get_user_rights.php?id=$telegram_id");
 
-        return $rights;
+        $raw = curl_http_request("{$host}/get_user_rights.php?id=$telegram_id");
+        $parsed = json_decode($raw, true);
+        if (is_array($parsed)) {
+            $user_base_setup = intval($parsed['base_setup'] ?? 0);
+            return $parsed['rights'] ?? 'none';
+        }
+        // Fallback: old plain-text response (no base_setup)
+        return trim($raw);
     }
 
     return $default_rights;

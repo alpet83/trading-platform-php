@@ -26,9 +26,9 @@ if ($_SERVER && $sapi !== 'cli' && isset($_SERVER['REMOTE_ADDR']))
     $remote = $_SERVER['REMOTE_ADDR'];
 
 if ($remote)  {
-   $account_id = rqs_param('src_account', 256); 
+   $account_id = intval(rqs_param('src_account', 256));
    $view = rqs_param('view', 'json');
-   $setup = rqs_param('setup', 0);
+   $setup = intval(rqs_param('setup', 0));
    $out = rqs_param('format', 'json');
 }   
 

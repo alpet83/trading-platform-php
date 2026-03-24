@@ -58,6 +58,16 @@ if ($setup == 0) {
         $setup = $m[1];
 }
 
+// Validate setup is within the user's allowed range (JSON API path, non-admin only)
+if ($output_format === 'json' && !str_in($user_rights, 'admin')) {
+    $allowed_min = $user_base_setup ?? 0;
+    $allowed_max = $allowed_min + 9;
+    if ($setup < $allowed_min || $setup > $allowed_max) {
+        send_error("Setup $setup out of allowed range [$allowed_min..$allowed_max]", 403);
+        exit;
+    }
+}
+
 $input = rqs_param('signal', false);
 $filter = rqs_param('filter', false);
 $action = rqs_param('action', '');

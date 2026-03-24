@@ -21,12 +21,12 @@
     }
     // echo '+';
 
-    $res = $mysqli->select_row('user_name,rights', 'chat_users', "WHERE chat_id = $uid", MYSQLI_OBJECT);
-    $mysqli->close();    
-    if ($res) 
-        echo $res->rights; 
-    else    
-        echo 'none for '.$uid;
+    $res = $mysqli->select_row('user_name,rights,base_setup', 'chat_users', "WHERE chat_id = $uid", MYSQLI_OBJECT);
+    $mysqli->close();
+    if ($res)
+        echo json_encode(['rights' => $res->rights, 'base_setup' => intval($res->base_setup)]);
+    else
+        echo json_encode(['rights' => 'none', 'base_setup' => 0]);
 
 ?>
 
