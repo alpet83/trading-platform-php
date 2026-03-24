@@ -1,15 +1,11 @@
 <template>
   <div class="head-top">
     <div class="tbs h-[50px]">
-      <div
-        v-if="route.path === '/'"
-        v-for="tab in setups"
-        :key="tab"
-        class="tbs-item"
-        :class="{ active: activeTab === tab.id }"
-        @click="onClickTab(tab.id)"
-      >
-        {{ `Setup ${tab.id}` }}
+      <div v-if="route.path === '/'" class="setup-select-wrap">
+        <label class="setup-select-label">Setup</label>
+        <select class="setup-select" :value="activeTab" @change="onSetupChange">
+          <option v-for="n in availableSetups" :key="n" :value="n">{{ n }}</option>
+        </select>
       </div>
     </div>
   </div>
@@ -39,7 +35,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useSetupTabs } from "~/composables/setupTabs";
 import ProfileModal from "~/components/profile/modal/ProfileModal.vue";
 
@@ -62,6 +58,17 @@ async function fetchUserData() {
 onMounted(async () => {
   await fetchUserData()
 });
+const availableSetups = computed(() => {
+  if (setups.value?.length) {
+    return [...setups.value.map((s) => s.id)].sort((a, b) => a - b);
+  }
+  return Array.from({ length: 10 }, (_, i) => i);
+});
+
+const onSetupChange = (event) => {
+  setActiveTab(Number(event.target.value));
+};
+
 const onClickTab = (tab) => {
   setActiveTab(tab);
 };
@@ -463,6 +470,40 @@ onMounted(() => {
 }
 .dark .tbs-item:hover {
   color: #2F354E;
+}
+
+.setup-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.setup-select-label {
+  font-size: 16px;
+  color: #2F354E;
+  white-space: nowrap;
+}
+.setup-select {
+  height: 36px;
+  min-width: 80px;
+  border: 1px solid #E3E3E3;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 16px;
+  color: #2F354E;
+  background: #FFFFFF;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.setup-select:focus {
+  border-color: #3758F9;
+}
+.dark .setup-select-label { color: #E3E3E3; }
+.dark .setup-select {
+  background: #2F354E;
+  color: #E3E3E3;
+  border-color: #5a6278;
 }
 
 

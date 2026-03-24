@@ -55,11 +55,14 @@
 import type {AddSignalForm} from "~/components/table/table.types";
 import Loader from "~/components/ui/Loader.vue";
 
+const props = defineProps<{ setup: number | string }>();
+
 const form = ref<AddSignalForm>({
   side: 'BUY',
   pair: '',
   multiplier: '',
   signal_no : '',
+  setup: String(props.setup ?? 0),
 })
 const displayErrors = ref(false)
 const inLoad = ref(false)

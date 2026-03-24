@@ -145,8 +145,8 @@ export class SignalsService {
     // Формируем форму
     const params = new URLSearchParams();
 
-    // setup по умолчанию = 9, если не передан
-    params.append('setup', String(body.setup ?? 9));
+    // setup обязателен, берётся из клиента (activeTab)
+    params.append('setup', String(body.setup ?? 0));
     params.append('side', body.side);
     params.append('pair', body.pair.toUpperCase());
     params.append('signal_no', String(body.signal_no));

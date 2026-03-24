@@ -75,4 +75,5 @@ export type AddSignalForm = {
     pair: string,
     multiplier?: string,
     signal_no: string,
+    setup: string,
 }

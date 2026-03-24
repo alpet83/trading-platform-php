@@ -12,6 +12,7 @@
         <AddSignalModal
             @confirm="confirmed"
             v-if="displaySignalModal"
+            :setup="activeTab"
             @closeModal="toggleSignalModal"
         ></AddSignalModal>
       </div>
