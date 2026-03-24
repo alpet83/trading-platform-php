@@ -67,6 +67,7 @@ CREATE TABLE `chat_users` (
   `enabled` int(11) NOT NULL DEFAULT 1,
   `rights` varchar(48) DEFAULT '',
   `auth_pass` int(10) NOT NULL DEFAULT 0,
+  `base_setup` tinyint(3) unsigned NOT NULL DEFAULT 0 COMMENT 'Start of user setup range (base_setup..base_setup+9)',
   PRIMARY KEY (`chat_id`),
   UNIQUE KEY `user_name` (`user_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
