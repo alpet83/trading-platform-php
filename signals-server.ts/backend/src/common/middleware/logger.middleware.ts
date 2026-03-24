@@ -16,10 +16,15 @@ export class LoggerMiddleware implements NestMiddleware {
       const { statusCode } = res;
       const duration = Date.now() - start;
       const requestId = String(res.locals.requestId || '-');
+      const message = `[${requestId}] [${method}] ${originalUrl} [${statusCode}] - ${duration}ms`;
 
-      this.logger.debug(
-        `[${requestId}] [${method}] ${originalUrl} [${statusCode}] - ${duration}ms`,
-      );
+      if (statusCode >= 500) {
+        this.logger.error(message);
+      } else if (statusCode >= 400) {
+        this.logger.warn(message);
+      } else {
+        this.logger.log(message);
+      }
 
       const payload = {
         ts: new Date().toISOString(),
