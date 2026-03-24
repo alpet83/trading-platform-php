@@ -1,6 +1,7 @@
 <?php
  require_once('lib/common.php');
  require_once('lib/db_tools.php');
+ require_once('lib/ip_check.php');
  include_once('/usr/local/etc/php/db_config.php');
 
  mysqli_report(MYSQLI_REPORT_OFF);
@@ -26,6 +27,7 @@ if ($_SERVER && $sapi !== 'cli' && isset($_SERVER['REMOTE_ADDR']))
     $remote = $_SERVER['REMOTE_ADDR'];
 
 if ($remote)  {
+   ip_check();
    $account_id = intval(rqs_param('src_account', 256));
    $view = rqs_param('view', 'json');
    $setup = intval(rqs_param('setup', 0));

@@ -1,7 +1,6 @@
 <?php
   include_once('lib/common.php');
   include_once('lib/db_tools.php');
-  include_once('lib/ip_check.php');
   include_once('/usr/local/etc/php/db_config.php');
  //  include_once('lib/db_config.php');
   // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to BUY.X1.22  Series name: LONG
@@ -19,15 +18,44 @@
   define('SIG_FLAG_GRID', 0x100);
   $req_flags = SIG_FLAG_GRID;
 
-?>
-<!DOCTYPE html>
-<?php   
-  $minute = date('i') * 1;
+  $output_format = detect_output_format();
+  $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__;
   $setup = 0;
-  $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__; // TODO: use auth token with cookies
-    // echo "<!-- \n"; print_r($_SERVER); echo "-->\n";
-  if (preg_match('/(\d+)/', $script, $m) && count($m) > 1) 
-    $setup = $m[1];      
+  if (preg_match('/(\d+)/', $script, $m) && count($m) > 1)
+      $setup = intval($m[1]);
+
+  if (php_sapi_name() != 'cli') {
+      if ($output_format === 'json') {
+          require_once('api_helper.php');
+          $user_rights = get_user_rights();
+      } else {
+          require_once('lib/auth_check.php');
+      }
+  }
+
+  if (!str_in($user_rights, 'view')) {
+      if ($output_format === 'json')
+          send_error("User has no rights to view/edit grid", 403);
+      else
+          error_exit("ERROR: user has no rights to view/edit signals\n");
+      exit;
+  }
+
+  if ($output_format === 'json' && !str_in($user_rights, 'admin')) {
+      $allowed_min = $user_base_setup ?? 0;
+      $allowed_max = $allowed_min + 9;
+      if ($setup < $allowed_min || $setup > $allowed_max) {
+          send_error("Setup $setup out of allowed range [$allowed_min..$allowed_max]", 403);
+          exit;
+      }
+  }
+
+?>
+<?php if ($output_format !== 'json'): ?>
+<!DOCTYPE html>
+<?php endif; ?>
+<?php
+  $minute = date('i') * 1;
 
   $input = rqs_param('signal', false);
   $sfx = $input ? 'edit' : 'view';
@@ -88,9 +116,6 @@
      else 
        echo "<!-- $color = $lc, $filter =  $filter_id -->\n";     
   }   
-
-  if (count(array_keys($_REQUEST)) > 0)
-      ip_check();
 
   $colors    = $mysqli->select_map('id,color', 'pairs_map');
 
