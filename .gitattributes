@@ -1,2 +1,4 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Enforce LF line endings for all text files (Linux deploy target)
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
