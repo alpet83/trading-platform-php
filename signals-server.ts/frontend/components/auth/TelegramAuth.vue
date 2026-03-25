@@ -64,7 +64,7 @@ export default {
     window.onTelegramAuth = async (data: Record<string, any>) => {
       try {
         console.log("Данные от Telegram:", data);
-        const response = await useApiRequest(`/user/telegram`, {
+        const response = await useApiRequest(`/api/user/telegram`, {
           method: "POST",
           body: JSON.stringify(data),
         });

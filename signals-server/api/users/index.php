@@ -22,7 +22,7 @@ if ($method !== 'GET') {
     exit;
 }
 
-$query = "SELECT chat_id, user_name, rights, enabled FROM chat_users";
+$query = "SELECT chat_id, user_name, rights, enabled, base_setup FROM chat_users";
 $result = $mysqli->query($query);
 
 if (!$result) {
@@ -35,6 +35,8 @@ while ($row = $result->fetch_assoc()) {
     $row['id'] = $row['chat_id'];
     unset($row['chat_id']);
     $row['rights'] = !empty($row['rights']) ? explode(',', $row['rights']) : [];
+    $row['enabled'] = intval($row['enabled']);
+    $row['base_setup'] = intval($row['base_setup'] ?? 0);
     $users[] = $row;
 }
 

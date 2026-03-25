@@ -30,6 +30,7 @@ if (!isset($_POST['id']) || !isset($_POST['rights']) || !isset($_POST['enabled']
 $id = intval($_POST['id']);
 $rights_input = $_POST['rights'] ?? [];
 $enabled = intval($_POST['enabled']);
+$base_setup_input = $_POST['base_setup'] ?? null;
 
 if ($id <= 0) {
     send_error('Invalid id', 400);
@@ -53,7 +54,7 @@ if (!in_array($enabled, [0, 1])) {
     exit;
 }
 
-$user = $mysqli->select_row('chat_id, user_name', 'chat_users', "WHERE chat_id = $id", MYSQLI_ASSOC);
+$user = $mysqli->select_row('chat_id, user_name, base_setup', 'chat_users', "WHERE chat_id = $id", MYSQLI_ASSOC);
 
 if (!$user) {
     send_error('User not found', 404);
@@ -62,10 +63,21 @@ if (!$user) {
 
 $rights_str = implode(',', $rights_input);
 
+if ($base_setup_input === null || $base_setup_input === '') {
+    $base_setup = intval($user['base_setup'] ?? 0);
+} else {
+    $base_setup = intval($base_setup_input);
+    if ($base_setup < 0) {
+        send_error('Invalid base_setup value. Must be >= 0', 400);
+        exit;
+    }
+}
+
 $query = sprintf(
-    "UPDATE chat_users SET rights = '%s', enabled = %d WHERE chat_id = %d",
+    "UPDATE chat_users SET rights = '%s', enabled = %d, base_setup = %d WHERE chat_id = %d",
     $mysqli->real_escape_string($rights_str),
     $enabled,
+    $base_setup,
     $id
 );
 
@@ -76,7 +88,8 @@ if ($mysqli->try_query($query)) {
             'id' => $id,
             'user_name' => $user['user_name'],
             'rights' => $rights_input,
-            'enabled' => $enabled
+            'enabled' => $enabled,
+            'base_setup' => $base_setup,
         ]
     ]);
 } else {

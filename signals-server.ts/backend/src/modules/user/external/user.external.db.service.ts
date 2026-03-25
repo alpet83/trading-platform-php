@@ -8,6 +8,7 @@ import {
   UserListResult,
   DBActionResult,
   AdminCheckResult,
+  SetupBaseGroupsResult,
 } from './user.external.interface';
 import { normalizeMutationInput, toUserId } from './user.external.input';
 import {
@@ -116,6 +117,10 @@ export class UserExternalDbService implements IUserExternalService {
     });
 
     return Boolean(current?.rights?.includes('admin'));
+  }
+
+  async getSetupBaseGroups(_user: any): SetupBaseGroupsResult {
+    return this.tradingUsersRepository.findSetupBaseGroups();
   }
 
   private async run<T>(operation: () => Promise<T>): Promise<T> {

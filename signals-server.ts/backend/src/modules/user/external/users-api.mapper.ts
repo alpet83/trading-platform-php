@@ -14,6 +14,7 @@ export interface UserRecord {
   user_name: string;
   rights: string[];
   enabled: number;
+  base_setup: number;
 }
 
 /** Standardized response envelope for all write operations. */
@@ -29,6 +30,7 @@ export const toUserRecord = (user: TradingUser): UserRecord => ({
   user_name: user.user_name,
   rights: [...user.rights],
   enabled: user.enabled,
+  base_setup: user.base_setup,
 });
 
 export const toUserRecords = (users: TradingUser[]): UserRecord[] =>

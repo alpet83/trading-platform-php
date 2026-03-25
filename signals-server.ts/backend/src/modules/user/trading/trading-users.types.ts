@@ -9,6 +9,7 @@ export interface TradingUser {
   user_name: string;
   rights: TradingUserRight[];
   enabled: EnabledFlag;
+  base_setup: number;
 }
 
 export interface TradingUserCreateInput {
@@ -16,6 +17,7 @@ export interface TradingUserCreateInput {
   user_name: string;
   rights: TradingUserRight[];
   enabled: EnabledFlag;
+  base_setup?: number;
 }
 
 export interface TradingUserUpdateInput {
@@ -23,6 +25,7 @@ export interface TradingUserUpdateInput {
   user_name: string;
   rights: TradingUserRight[];
   enabled: EnabledFlag;
+  base_setup?: number;
 }
 
 export interface TradingUsersRow {
@@ -30,6 +33,12 @@ export interface TradingUsersRow {
   user_name: string;
   rights: string | null;
   enabled: number;
+  base_setup?: number | null;
+}
+
+export interface SetupBaseGroup {
+  base_setup: number;
+  users_count: number;
 }
 
 export interface TradingWriteResult {

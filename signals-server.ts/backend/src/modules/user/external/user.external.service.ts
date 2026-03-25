@@ -8,6 +8,7 @@ import {
   UserListResult,
   DBActionResult,
   AdminCheckResult,
+  SetupBaseGroupsResult,
 } from './user.external.interface';
 import { UserExternalDbService } from './user.external.db.service';
 import { UserExternalPhpService } from './user.external.php.service';
@@ -49,5 +50,9 @@ export class UserExternalService implements IUserExternalService {
 
   isAdmin(user: any): AdminCheckResult {
     return this.impl.isAdmin(user);
+  }
+
+  getSetupBaseGroups(user: any): SetupBaseGroupsResult {
+    return this.impl.getSetupBaseGroups(user);
   }
 }

@@ -154,6 +154,9 @@ export class UserService {
   async getUser(user: User) {
     if (user) {
       const userRes = user;
+      const tradingUser = await this.tradingUsersRepository.findByChatId(
+        Number(user.telegramId),
+      );
       const setups = await this.man
         .getRepository(Setup)
         .createQueryBuilder('setup')
@@ -163,6 +166,7 @@ export class UserService {
       return {
         user: userRes,
         setups,
+        setupBase: tradingUser?.base_setup ?? 0,
       };
     } else {
       return null;

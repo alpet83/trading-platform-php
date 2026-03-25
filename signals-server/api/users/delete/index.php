@@ -34,7 +34,7 @@ if ($id <= 0) {
     exit;
 }
 
-$user = $mysqli->select_row('chat_id', 'chat_users', "WHERE chat_id = $id", MYSQLI_ASSOC);
+$user = $mysqli->select_row('chat_id, user_name, rights, enabled, base_setup', 'chat_users', "WHERE chat_id = $id", MYSQLI_ASSOC);
 
 if (!$user) {
     send_error('User not found', 404);
@@ -47,9 +47,17 @@ $query = sprintf(
 );
 
 if ($mysqli->try_query($query)) {
+    $rights = !empty($user['rights']) ? array_filter(array_map('trim', explode(',', $user['rights']))) : [];
     send_response([
         'success' => true,
-        'message' => 'User deleted'
+        'message' => 'User deleted',
+        'user' => [
+            'id' => intval($user['chat_id']),
+            'user_name' => $user['user_name'] ?? '',
+            'rights' => array_values($rights),
+            'enabled' => intval($user['enabled'] ?? 0),
+            'base_setup' => intval($user['base_setup'] ?? 0),
+        ],
     ]);
 } else {
     send_error('Failed to delete user', 500);

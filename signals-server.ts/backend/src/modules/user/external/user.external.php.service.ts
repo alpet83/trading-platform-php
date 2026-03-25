@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 import { Env } from '../../../config/env.validation';
 import { AdminNotifyService } from '@modules/events/admin-notify.service';
 import { CreateUserDTO, UpdateUserDTO } from './user.external.dto';
@@ -7,6 +7,7 @@ import {
   UserListResult,
   DBActionResult,
   AdminCheckResult,
+  SetupBaseGroupsResult,
 } from './user.external.interface';
 import { normalizeRights } from './user.external.input';
 import { UserExternalPhpClient } from './user.external.php-client';
@@ -92,5 +93,11 @@ export class UserExternalPhpService implements IUserExternalService {
     });
 
     return Boolean(current?.rights?.includes('admin'));
+  }
+
+  async getSetupBaseGroups(_user: any): SetupBaseGroupsResult {
+    throw new NotImplementedException(
+      'Setup-base groups are available only for USERS_API_SOURCE=ts',
+    );
   }
 }

@@ -66,28 +66,40 @@ if (!in_array($enabled, [0, 1])) {
 
 $rights_str = implode(',', $rights_input);
 
-$exists = $mysqli->select_value('chat_id', 'chat_users',
-    "WHERE chat_id = $id OR user_name = '$user_name'");
+$user_name_escaped = $mysqli->real_escape_string($user_name);
+
+$exists = $mysqli->select_row(
+    'chat_id, user_name, rights, enabled, base_setup',
+    'chat_users',
+    "WHERE chat_id = $id OR user_name = '$user_name_escaped' LIMIT 1",
+    MYSQLI_ASSOC,
+);
 
 if ($exists) {
+    $existing_rights = $exists['rights'] ? array_filter(array_map('trim', explode(',', $exists['rights']))) : [];
     send_response([
         'success' => true,
         'user' => [
-            'id' => $id,
-            'user_name' => $user_name,
-            'rights' => $rights_input,
-            'enabled' => $enabled
+            'id' => intval($exists['chat_id']),
+            'user_name' => $exists['user_name'],
+            'rights' => array_values($existing_rights),
+            'enabled' => intval($exists['enabled']),
+            'base_setup' => intval($exists['base_setup'] ?? 0),
         ]
     ], 201);
     exit;
 }
 
+$users_count = intval($mysqli->select_value('COUNT(*)', 'chat_users'));
+$base_setup = max(0, $users_count) * 10;
+
 $query = sprintf(
-    "INSERT INTO chat_users (chat_id, user_name, rights, enabled) VALUES (%d, '%s', '%s', %d)",
+    "INSERT INTO chat_users (chat_id, user_name, rights, enabled, base_setup) VALUES (%d, '%s', '%s', %d, %d)",
     $id,
-    $mysqli->real_escape_string($user_name),
+    $user_name_escaped,
     $mysqli->real_escape_string($rights_str),
-    $enabled
+    $enabled,
+    $base_setup
 );
 
 if ($mysqli->try_query($query)) {
@@ -97,7 +109,8 @@ if ($mysqli->try_query($query)) {
             'id' => $id,
             'user_name' => $user_name,
             'rights' => $rights_input,
-            'enabled' => $enabled
+            'enabled' => $enabled,
+            'base_setup' => $base_setup,
         ]
     ], 201);
 } else {

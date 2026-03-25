@@ -18,8 +18,15 @@
       </div>
     </div>
     <div class="transition-all duration-300 w-full">
+      <div
+        v-if="apiError"
+        class="w-full rounded border border-red-300 bg-red-50 p-4 text-red-800"
+      >
+        <div class="font-semibold mb-2">Signals API error</div>
+        <pre class="whitespace-pre-wrap text-sm">{{ apiError }}</pre>
+      </div>
       <div class="overflow-auto w-full">
-        <table class="w-full text-center text-base font-normal border-collapse">
+        <table v-if="!apiError" class="w-full text-center text-base font-normal border-collapse">
           <thead>
           <tr>
             <th v-for="header in Object.keys(headers)" class="py-3 px-2 font-normal">
@@ -285,6 +292,7 @@ let preventClose = false;
 const editingField = ref<{ id: string, field: string } | null>(null);
 const editValue = ref<string | number>("");
 const activeFilter = ref<string | undefined>();
+const apiError = ref<string>('');
 // Nest API endpoint
 
 watch(refreshTick, async () => {
@@ -312,11 +320,14 @@ const headers: TableHeaders = {
 // =============================
 
 async function fetchData(activeSort: ActiveSort = { field: '', direction: '' }, filter?: string) {
+  const query: Record<string, string> = {
+    setup: activeTab.value.toString(),
+  };
+
   try {
     inLoad.value = true;
-    const query: Record<string, string> = {
-      setup: activeTab.value.toString(),
-    };
+    apiError.value = '';
+
     if (activeSort.field) {
       query.sort = activeSort.field;
       if (activeSort.direction) query.order = activeSort.direction;
@@ -338,7 +349,28 @@ async function fetchData(activeSort: ActiveSort = { field: '', direction: '' }, 
 
     data.value = responseData;
   } catch (e) {
-    console.error(e);
+    const err = e as any;
+    const status = err?.status || err?.response?.status;
+    const statusText = err?.statusText || err?.response?.statusText;
+    const body = err?.data || err?.response?._data || err?.response?.data;
+    const message =
+      typeof body === 'string'
+        ? body
+        : body?.message || err?.message || 'Unknown error';
+
+    apiError.value = [
+      status ? `HTTP ${status}${statusText ? ` ${statusText}` : ''}` : 'Request failed',
+      `GET /api/signals?setup=${activeTab.value.toString()}`,
+      `message: ${typeof message === 'string' ? message : JSON.stringify(message)}`,
+    ].join('\n');
+
+    console.error('[Table] failed to fetch signals', {
+      query,
+      status,
+      statusText,
+      body,
+      error: err,
+    });
   } finally {
     inLoad.value = false;
   }

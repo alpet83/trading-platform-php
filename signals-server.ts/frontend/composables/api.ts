@@ -8,9 +8,24 @@ export function useApiRequest<T>(
     }
 ) {
   const config = useRuntimeConfig();
+  const appBasePath = String(config.public.appBasePath || '').replace(/\/+$/, '');
 
-  return useFetch<T>(url, {
-    baseURL: config.public.baseURL,
+  const normalizeApiUrl = (rawUrl: string): string => {
+    if (/^https?:\/\//i.test(rawUrl)) {
+      return rawUrl;
+    }
+
+    const withLeadingSlash = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+    const apiPath = withLeadingSlash.startsWith('/api/')
+      ? withLeadingSlash
+      : `/api${withLeadingSlash}`;
+
+    return `${appBasePath}${apiPath}`;
+  };
+
+  const requestUrl = normalizeApiUrl(url);
+
+  return useFetch<T>(requestUrl, {
     method: options?.method || 'GET',
     body: options?.body,
     params: options?.params,

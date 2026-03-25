@@ -14,6 +14,7 @@ import {
   UpdateUserDTO,
 } from '@modules/user/external/user.external.dto';
 import { JwtAuthGuard } from '@modules/jwt/jwt-auth.guard';
+import { AdminGuard } from '@common/auth/admin.guard';
 @UseGuards(JwtAuthGuard)
 @Controller()
 export class UserExternalController {
@@ -26,6 +27,12 @@ export class UserExternalController {
   @Get('isAdmin')
   isAdmin(@Request() req: { user: any }) {
     return this.service.isAdmin(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get('external/user/setup-bases')
+  getSetupBaseGroups(@Request() req: { user: any }) {
+    return this.service.getSetupBaseGroups(req.user);
   }
   @Post('external/user')
   createUser(@Body() body: CreateUserDTO, @Request() req: { user: any }) {

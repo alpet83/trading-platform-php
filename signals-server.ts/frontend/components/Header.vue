@@ -2,6 +2,28 @@
   <div class="head-top">
     <div class="tbs h-[50px]">
       <div v-if="route.path === '/'" class="setup-select-wrap">
+        <label
+          v-if="isAdmin && setupBaseGroups.length > 0"
+          class="setup-select-label"
+          style="margin-right: 8px;"
+        >
+          Setup Base
+        </label>
+        <select
+          v-if="isAdmin && setupBaseGroups.length > 0"
+          class="setup-select"
+          :value="selectedSetupBase"
+          @change="onSetupBaseChange"
+          style="margin-right: 12px;"
+        >
+          <option
+            v-for="group in setupBaseGroups"
+            :key="group.base_setup"
+            :value="group.base_setup"
+          >
+            {{ group.base_setup }} ({{ group.users_count }})
+          </option>
+        </select>
         <label class="setup-select-label">Setup</label>
         <select class="setup-select" :value="activeTab" @change="onSetupChange">
           <option v-for="n in availableSetups" :key="n" :value="n">{{ n }}</option>
@@ -45,25 +67,109 @@ const config = useRuntimeConfig();
 const user = ref()
 const displayProfileModal = ref(false)
 const setups = ref()
+const setupBase = ref(0)
+const isAdmin = ref(false)
+const setupBaseGroups = ref([])
+const selectedSetupBase = ref(0)
 const route = useRoute()
+
+const normalizeBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.toLowerCase() === 'true';
+  return false;
+};
+
+const normalizeSetupBase = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(parsed));
+};
+
+const buildSetupRange = (base) =>
+  Array.from({ length: 10 }, (_, i) => normalizeSetupBase(base) + i);
+
 async function fetchUserData() {
   try {
-    const res = await useApiRequest(`/user/telegram`);
+    const res = await useApiRequest(`/api/user/telegram`);
     user.value = res.data.value.user
     setups.value = res.data.value.setups
+    setupBase.value = normalizeSetupBase(res.data.value.setupBase)
+
+    const adminRes = await useApiRequest('/api/isAdmin', {
+      method: 'GET',
+    });
+    isAdmin.value = normalizeBoolean(adminRes.data.value);
+    console.debug(
+      '[Header] user role check:',
+      isAdmin.value ? 'admin' : 'regular',
+      {
+        telegramId: user.value?.telegramId,
+        username: user.value?.username,
+        setupBase: setupBase.value,
+      },
+    );
+
+    if (isAdmin.value) {
+      try {
+        const setupBasesRes = await useApiRequest('/api/external/user/setup-bases', {
+          method: 'GET',
+        });
+        setupBaseGroups.value = Array.isArray(setupBasesRes.data.value)
+          ? setupBasesRes.data.value
+              .map((item) => ({
+                base_setup: normalizeSetupBase(item.base_setup),
+                users_count: Number(item.users_count || 0),
+              }))
+              .sort((a, b) => a.base_setup - b.base_setup)
+          : [];
+      } catch (e) {
+        setupBaseGroups.value = [];
+        console.error('[Header] failed to fetch setup-base groups', e);
+      }
+
+      const hasCurrentBase = setupBaseGroups.value.some(
+        (item) => item.base_setup === setupBase.value,
+      );
+
+      selectedSetupBase.value = hasCurrentBase
+        ? setupBase.value
+        : (setupBaseGroups.value[0]?.base_setup ?? setupBase.value);
+    } else {
+      selectedSetupBase.value = setupBase.value;
+    }
+
+    const current = Number(activeTab.value);
+    const range = buildSetupRange(selectedSetupBase.value);
+    if (!range.includes(current)) {
+      setActiveTab(range[0]);
+    }
+
+    console.debug('[Header] setup selector state', {
+      selectedSetupBase: selectedSetupBase.value,
+      availableSetups: range,
+      currentSetup: Number(activeTab.value),
+      setupBaseGroups: setupBaseGroups.value,
+    });
   } catch (e) {
-    console.error(e);
+    console.error('[Header] failed to initialize setup selector', e);
   }
 }
 onMounted(async () => {
   await fetchUserData()
 });
 const availableSetups = computed(() => {
-  if (setups.value?.length) {
-    return [...setups.value.map((s) => s.id)].sort((a, b) => a - b);
-  }
-  return Array.from({ length: 10 }, (_, i) => i);
+  return buildSetupRange(selectedSetupBase.value);
 });
+
+const onSetupBaseChange = (event) => {
+  selectedSetupBase.value = normalizeSetupBase(event.target.value);
+  const range = buildSetupRange(selectedSetupBase.value);
+  if (!range.includes(Number(activeTab.value))) {
+    setActiveTab(range[0]);
+  }
+};
 
 const onSetupChange = (event) => {
   setActiveTab(Number(event.target.value));

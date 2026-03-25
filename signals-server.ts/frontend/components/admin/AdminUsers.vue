@@ -5,7 +5,7 @@
       v-if="users?.value?.length"
       :data="users.value"
       row-key="id"
-      :columns-count="4"
+      :columns-count="6"
       searchable
       :search-keys="['user_name']"
       :per-page="5"
@@ -13,6 +13,7 @@
     <template #header>
       <th class="px-4 py-3">ID</th>
       <th class="px-4 py-3">Username</th>
+      <th class="px-4 py-3 text-center">Setup Base</th>
       <th class="px-4 py-3">Права доступа</th>
       <th class="px-4 py-3 text-center">Активен</th>
       <th class="px-4 py-3 text-right">Действия</th>
@@ -21,6 +22,7 @@
     <template #row="{ row }">
       <td class="px-4 py-2 text-center">{{ row.id }}</td>
       <td class="px-4 py-2 font-medium text-center">{{ row.user_name }}</td>
+      <td class="px-4 py-2 text-center">{{ row.base_setup ?? 0 }}</td>
       <td class="px-4 py-2 text-center">
         {{ row.rights?.map(r => roleLabels[r] || r).join(', ') || '-' }}
       </td>
