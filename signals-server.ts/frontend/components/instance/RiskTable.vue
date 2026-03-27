@@ -1,3 +1,8 @@
+<!-- RiskTable.vue
+     Таблица risk-mapping: отображает суммарные позиции (long/short volume)
+     и разбивку по биржевым ботам для каждого торгового символа.
+     Используется на странице /instance.
+-->
 <template>
   <div class="admin__risk">
     <h2>Risk mapping</h2>

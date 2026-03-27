@@ -76,6 +76,101 @@
       @save="saveBot"
       @cancel="cancelEdit"
   />
+
+  <div class="mt-10 space-y-4">
+    <h3 class="text-lg font-semibold">Хосты статистики</h3>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div>
+        <label class="block text-sm mb-1">Название</label>
+        <input
+            v-model="hostForm.host_name"
+            class="w-full border rounded px-3 py-2 dark:text-black"
+            placeholder="main-host"
+            type="text"
+        />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm mb-1">Instance URL</label>
+        <input
+            v-model="hostForm.instance_url"
+            class="w-full border rounded px-3 py-2 dark:text-black"
+            placeholder="https://example.com"
+            type="text"
+        />
+      </div>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input v-model="hostForm.is_active" type="checkbox" />
+        Сделать активным
+      </label>
+    </div>
+
+    <div class="flex gap-2">
+      <button
+          class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+          type="button"
+          @click="saveHost"
+      >
+        {{ hostForm.host_id ? 'Сохранить хост' : 'Добавить хост' }}
+      </button>
+      <button
+          v-if="hostForm.host_id"
+          class="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 dark:text-black"
+          type="button"
+          @click="resetHostForm"
+      >
+        Отмена
+      </button>
+    </div>
+
+    <div class="overflow-x-auto" v-if="hosts.length">
+      <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+        <thead>
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Название</th>
+          <th class="px-4 py-3 text-left">URL</th>
+          <th class="px-4 py-3 text-center">Активный</th>
+          <th class="px-4 py-3 text-right">Действия</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr v-for="host in hosts" :key="host.host_id" class="border-t">
+          <td class="px-4 py-2">{{ host.host_id }}</td>
+          <td class="px-4 py-2">{{ host.host_name }}</td>
+          <td class="px-4 py-2">{{ host.instance_url }}</td>
+          <td class="px-4 py-2 text-center">
+            <StatusIcon :value="host.is_active" />
+          </td>
+          <td class="px-4 py-2 text-right space-x-2">
+            <button
+                type="button"
+                class="text-blue-600 hover:text-blue-800"
+                @click="editHost(host)"
+            >
+              Изменить
+            </button>
+            <button
+                v-if="!host.is_active"
+                type="button"
+                class="text-green-600 hover:text-green-800"
+                @click="activateHost(host.host_id)"
+            >
+              Активировать
+            </button>
+            <button
+                type="button"
+                class="text-red-600 hover:text-red-800"
+                @click="deleteHost(host.host_id)"
+            >
+              Удалить
+            </button>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -85,21 +180,23 @@ import { useApiRequest } from '~/composables/api'
 
 import StatusIcon from "~/components/admin/StatusIcon.vue";
 import {mdiDelete, mdiPencil} from "@mdi/js";
-import EditUserDialog from "~/components/admin/EditUserDialog.vue";
 import ConfirmDialog from "~/components/admin/ConfirmDialog.vue";
 import EditBotDialog from "~/components/admin/EditBotDialog.vue";
 
 const bots = ref([])
+const hosts = ref([])
 const botToDelete = ref(null)
 const botToEdit = ref(null)
+const hostForm = ref({
+  host_id: null,
+  host_name: '',
+  instance_url: '',
+  is_active: false,
+})
 
-const roleLabels = {
-  admin: 'Администратор',
-  view: 'Просмотр',
-  trade: 'Торговля'
-}
 onBeforeMount(async () => {
   await fetchBots()
+  await fetchHosts()
 })
 function createBot() {
   botToEdit.value = {
@@ -137,6 +234,13 @@ async function fetchBots() {
     method: 'GET'
   })
   bots.value = res.data?.value?.bots
+}
+
+async function fetchHosts() {
+  const res = await useApiRequest('/api/instance/hosts', {
+    method: 'GET'
+  })
+  hosts.value = (res.data?.value || [])
 }
 
 function editBot(bot) {
@@ -179,5 +283,67 @@ async function confirmDelete() {
 
 function cancelDelete() {
   botToDelete.value = null
+}
+
+function resetHostForm() {
+  hostForm.value = {
+    host_id: null,
+    host_name: '',
+    instance_url: '',
+    is_active: false,
+  }
+}
+
+function editHost(host) {
+  hostForm.value = {
+    host_id: host.host_id,
+    host_name: host.host_name,
+    instance_url: host.instance_url,
+    is_active: Boolean(host.is_active),
+  }
+}
+
+async function saveHost() {
+  if (!hostForm.value.host_name || !hostForm.value.instance_url) {
+    return
+  }
+
+  const payload = {
+    host_name: hostForm.value.host_name,
+    instance_url: hostForm.value.instance_url,
+    is_active: hostForm.value.is_active,
+  }
+
+  if (hostForm.value.host_id) {
+    await useApiRequest(`/api/instance/hosts/${hostForm.value.host_id}`, {
+      method: 'POST',
+      body: payload,
+    })
+  } else {
+    await useApiRequest('/api/instance/hosts', {
+      method: 'POST',
+      body: payload,
+    })
+  }
+
+  resetHostForm()
+  await fetchHosts()
+}
+
+async function activateHost(hostId) {
+  await useApiRequest(`/api/instance/hosts/${hostId}/activate`, {
+    method: 'POST',
+  })
+  await fetchHosts()
+}
+
+async function deleteHost(hostId) {
+  await useApiRequest(`/api/instance/hosts/${hostId}`, {
+    method: 'DELETE',
+  })
+  await fetchHosts()
+  if (hostForm.value.host_id === hostId) {
+    resetHostForm()
+  }
 }
 </script>

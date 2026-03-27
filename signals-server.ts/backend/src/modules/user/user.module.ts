@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { UserService } from '@modules/user/user.service';
 import { JwtModule } from '@nestjs/jwt';
 import { UserController } from '@modules/user/user.controller';
@@ -12,12 +12,12 @@ import { EventsModule } from '@modules/events/events.module';
     UserExternalModule,
     TradingUsersModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'secretKey',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '7d' },
     }),
   ],
   controllers: [UserController],
   providers: [UserService],
-  exports: [UserService],
+  exports: [UserService, UserExternalModule],
 })
 export class UserModule {}

@@ -1,8 +1,8 @@
 <template>
-  <SignalsTable></SignalsTable>
+  <SignalTable></SignalTable>
 </template>
 <script setup lang="ts">
-import SignalsTable from '~/components/table/Table.vue';
+import SignalTable from '~/components/signals/SignalTable.vue';
 definePageMeta({
   layout: 'default'
 });

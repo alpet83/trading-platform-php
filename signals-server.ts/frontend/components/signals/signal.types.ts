@@ -1,3 +1,6 @@
+// signal.types.ts
+// Типы данных для SignalTable: Signal, SignalData, TableHeaders, AddSignalForm и конфигурация SignalSort.
+
 export type Signal = {
     id: string
     timestamp: number

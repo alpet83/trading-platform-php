@@ -1,3 +1,9 @@
+<!-- InstanceTable.vue
+     Таблица мониторинга и базового управления запущенными ботами на инстансе.
+     Отображает: bot, account, pid, started, last_alive, matched_orders, restarts,
+     exceptions, last_error, position_coef (inline edit), trade_enabled (checkbox).
+     Используется на странице /instance.
+-->
 <template>
   <div class="admin__table">
     <table>
@@ -12,11 +18,12 @@
       <tr :class="`bg${index+1}`" v-for="(item, index) in data" :key="item.pid">
         <td>{{ item.bot }}</td>
         <td><nuxt-link style="color: black; text-decoration: underline;" :to="{
-        path: '/stats/account',
+        path: '/instance/account',
         query: {
           bot: item.bot,
           account: item.account,
-          exchange: item.exchange
+          exchange: item.exchange,
+          hostId: normalizedHostId ? String(normalizedHostId) : undefined,
         }
     }">{{ item.account }}</nuxt-link></td>
         <td>{{ item.started }}</td>
@@ -75,7 +82,18 @@
 import {useApiRequest} from "~/composables/api";
 
 const props = defineProps({
-  data: {}
+  data: {},
+  hostId: {
+    type: [String, Number],
+    default: undefined,
+  },
+})
+const normalizedHostId = computed(() => {
+  const parsed = Number(props.hostId)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined
+  }
+  return parsed
 })
 const editingRow = ref<number | null>(null);
 const headers = ref([
@@ -94,11 +112,12 @@ const headers = ref([
   { key: 'enabled', title: 'Enabled' },
 ]);
 async function switchTradeCheckbox(item) {
-  const res = await useApiRequest(`/api/stats/updateTradeEnabled`, {
+  const res = await useApiRequest(`/api/instance/updateTradeEnabled`, {
     method: "POST",
     body: {
       bot: item.bot,
-      trade_enabled: item.trade_enabled
+      trade_enabled: item.trade_enabled,
+      hostId: normalizedHostId.value,
     }
   });
 }
@@ -120,11 +139,12 @@ function parseColoredMessage(messageRaw) {
       });
 }
 async function onPositionCoefChange(item: any) {
-  const res = await useApiRequest(`/api/stats/updatePositionCoef`, {
+  const res = await useApiRequest(`/api/instance/updatePositionCoef`, {
     method: "POST",
     body: {
       bot: item.bot,
-      position_coef: item.position_coef
+      position_coef: item.position_coef,
+      hostId: normalizedHostId.value,
     }
   });
 }
@@ -132,8 +152,11 @@ function goToError(item: any) {
   const router = useRouter();
   if (!item?.account) return; // проверим на всякий случай
   router.push({
-    path: '/stats/error',
-    query: { bot: item.bot }
+    path: '/instance/error',
+    query: {
+      bot: item.bot,
+      hostId: normalizedHostId.value ? String(normalizedHostId.value) : undefined,
+    }
   });
 }
 </script>

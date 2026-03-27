@@ -1,3 +1,8 @@
+<!-- Chart.vue
+     PnL-чарт (lightweight-charts) для визуализации истории прибыли/убытков
+     по аккаунту биржи. Данные загружаются с /api/chart.
+     Используется на странице /chart.
+-->
 <template>
   <div ref="chartContainer" class="chart-container"></div>
 </template>

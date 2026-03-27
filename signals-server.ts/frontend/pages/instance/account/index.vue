@@ -1,15 +1,16 @@
 <template>
   <div class="bot">
-    <a href="/stats" class="prev">
+    <nuxt-link :to="instanceBackLink" class="prev">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path fill-rule="evenodd" clip-rule="evenodd" d="M5.78033 9.96967C6.07322 10.2626 6.07322 10.7374 5.78033 11.0303L3.31066 13.5L5.78033 15.9697C6.07322 16.2626 6.07322 16.7374 5.78033 17.0303C5.48744 17.3232 5.01256 17.3232 4.71967 17.0303L1.71967 14.0303C1.42678 13.7374 1.42678 13.2626 1.71967 12.9697L4.71967 9.96967C5.01256 9.67678 5.48744 9.67678 5.78033 9.96967Z" fill="#3758F9"/>
         <path fill-rule="evenodd" clip-rule="evenodd" d="M21.75 6.75C22.1642 6.75 22.5 7.08579 22.5 7.5V8.4375C22.5 11.5831 19.9683 14.25 16.7812 14.25H3C2.58579 14.25 2.25 13.9142 2.25 13.5C2.25 13.0858 2.58579 12.75 3 12.75H16.7812C19.1029 12.75 21 10.7922 21 8.4375V7.5C21 7.08579 21.3358 6.75 21.75 6.75Z" fill="#3758F9"/>
       </svg>
-      Bot statistics
-    </a>
+      Bot instance
+    </nuxt-link>
     <div class="bot__btn">
       <span>{{ bot }}</span>
       <span>{{ account }}</span>
+      <span v-if="hostId">host: {{ hostId }}</span>
     </div>
 
     <h2>Position offset configuration</h2>
@@ -115,7 +116,7 @@ import Chart from "~/pages/chart.vue";
 import {useApiRequest} from "~/composables/api";
 
 definePageMeta({
-  layout: 'default'
+  layout: 'default',
 });
 onMounted(async () => {
   await fetchData()
@@ -125,8 +126,27 @@ const activeOrders = ref([])
 const limitOrders = ref([])
 const positionOffset = ref([])
 const botInfo = ref({})
-const { account, bot, exchange } = route.query;
+const { account, bot, exchange, hostId } = route.query;
 const editingRow = ref<number | null>(null);
+const instanceBackLink = computed(() => {
+  if (!hostId) {
+    return { path: '/instance' }
+  }
+  return {
+    path: '/instance',
+    query: {
+      hostId: String(hostId),
+    },
+  }
+})
+
+const normalizedHostId = computed(() => {
+  const parsed = Number(hostId)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined
+  }
+  return parsed
+})
 function startEditing(item) {
   editingRow.value = item.pair_id;
 }
@@ -134,11 +154,12 @@ function roundPrice(target, round) {
   return Number.parseFloat(target).toFixed(round);
 }
 async function cancelOrder(item) {
-  const res = await useApiRequest(`/api/stats/cancelOrder`, {
+  const res = await useApiRequest(`/api/instance/cancelOrder`, {
     method: "POST",
     body: {
       bot: bot,
-      order_id: item.id
+      order_id: item.id,
+      hostId: normalizedHostId.value,
     }
   });
   window.location.reload()
@@ -148,25 +169,30 @@ function finishEditing(item) {
   changeOffset(item);
 }
 async function changeOffset(item: any) {
-  const res = await useApiRequest(`/api/stats/updateOffset`, {
+  const res = await useApiRequest(`/api/instance/updateOffset`, {
     method: "POST",
     body: {
       exchange: exchange,
       account: account,
       pair_id: item.pair_id,
       offset: item.offset,
+      hostId: normalizedHostId.value,
     }
   });
 }
 async function fetchData() {
 
-  const query = new URLSearchParams({
-    account,
-    bot,
-    exchange
-  }).toString();
+  const queryData: Record<string, string> = {
+    account: String(account),
+    bot: String(bot),
+    exchange: String(exchange),
+  }
+  if (normalizedHostId.value) {
+    queryData.hostId = String(normalizedHostId.value)
+  }
+  const query = new URLSearchParams(queryData).toString();
 
-  const res = await useApiRequest(`/api/stats/account?${query}`, {
+  const res = await useApiRequest(`/api/instance/account?${query}`, {
     method: "GET"
   });
   const responseData = res.data.value;

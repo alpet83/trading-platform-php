@@ -7,7 +7,7 @@ import { Env } from './config/env.validation';
 import { LoggerMiddleware } from '@common/middleware/logger.middleware';
 import { UserModule } from '@modules/user/user.module';
 import { ChartModule } from '@modules/chart/chart.module';
-import { StatsModule } from '@modules/stats/stats.module';
+import { InstanceModule } from '@modules/instance/instance.module';
 import { BotsModule } from '@modules/bots/bots.module';
 import { RequestIdMiddleware } from '@common/middleware/request-id.middleware';
 import { LoggingModule } from '@common/logging/logging.module';
@@ -20,7 +20,7 @@ import { LoggingModule } from '@common/logging/logging.module';
     DatabaseModule.forRoot(),
     SignalsModule,
     BotsModule,
-    StatsModule,
+    InstanceModule,
     ChartModule,
     LoggingModule,
     WebServerModule.register(Env.PORT, Env.SWAGGER_PATH),

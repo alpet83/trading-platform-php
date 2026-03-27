@@ -52,7 +52,7 @@
 
 <script setup lang="ts">
 
-import type {AddSignalForm} from "~/components/table/table.types";
+import type {AddSignalForm} from "~/components/signals/signal.types";
 import Loader from "~/components/ui/Loader.vue";
 
 const props = defineProps<{ setup: number | string }>();

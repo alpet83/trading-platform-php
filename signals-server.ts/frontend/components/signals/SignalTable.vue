@@ -1,3 +1,8 @@
+<!-- SignalTable.vue
+     Главный CRUD-редактор торговых сигналов: отображение, добавление, редактирование
+     и удаление сигналов, сортировка и фильтрация по паре. Размещается на главной странице /.
+     Данные сигналов загружаются с /api/signals. Типы — в signal.types.ts.
+-->
 <template>
   <div style="padding: 0 40px; box-sizing: border-box;">
     <div class="inline-flex absolute top-[10px] z-[3]">
@@ -271,10 +276,10 @@
 
 <script setup lang="ts">
 import CustomButton from "~/components/ui/buttons/CustomButton.vue";
-import { type SignalData, type TableHeaders } from "~/components/table/table.types";
+import { type SignalData, type TableHeaders } from "~/components/signals/signal.types";
 import { useI18n } from "vue-i18n";
-import AddSignalModal from "~/components/table/modal/AddSignalModal.vue";
-import DeleteSignalModal from "~/components/table/modal/DeleteSignalModal.vue";
+import AddSignalModal from "~/components/signals/modal/AddSignalModal.vue";
+import DeleteSignalModal from "~/components/signals/modal/DeleteSignalModal.vue";
 import tinycolor from "tinycolor2";
 import Loader from "~/components/ui/Loader.vue";
 import { FormatTimestamp } from "~/helpers/date";

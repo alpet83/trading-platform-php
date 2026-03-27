@@ -33,6 +33,48 @@ for (const key of requiredEnvs) {
 
 const backendBasePath = normalizeBasePath(process.env.APP_BASE_PATH);
 
+const resolveFetchTimeoutMs = () => {
+  const raw = process.env.HTTP_FETCH_TIMEOUT_MS ?? '10000';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+};
+
+export class FetchTimeoutError extends Error {
+  constructor(url: string, timeoutMs: number) {
+    super(`request timed out after ${timeoutMs}ms: ${url}`);
+    this.name = 'FetchTimeoutError';
+  }
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init?: import('node-fetch').RequestInit,
+): Promise<import('node-fetch').Response> {
+  const timeoutMs = resolveFetchTimeoutMs();
+  const timeoutController = new AbortController();
+  const inheritedSignal = init?.signal;
+
+  const onAbort = () => timeoutController.abort();
+  inheritedSignal?.addEventListener('abort', onAbort, { once: true });
+
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  try {
+    const nodeFetch = (await import('node-fetch')).default;
+    return await nodeFetch(url, {
+      ...init,
+      signal: timeoutController.signal,
+    });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new FetchTimeoutError(url, timeoutMs);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    inheritedSignal?.removeEventListener('abort', onAbort);
+  }
+}
+
 /**
  * Encodes '#' in the userinfo (password) part of a mysql:// URL.
  * mysql2 uses the WHATWG URL parser which treats '#' as a fragment delimiter,
@@ -57,7 +99,7 @@ export const Env = {
   TRADING_EVENTS_HOST: process.env.TRADING_EVENTS_HOST ?? '',
   SIGNALS_API_URL: process.env.SIGNALS_API_URL as string,
   AUTH_TOKEN: process.env.AUTH_TOKEN as string,
-  BOTS_STATS_URL: process.env.BOTS_STATS_URL as string,
+  INSTANCE_API_URL: process.env.INSTANCE_API_URL ?? process.env.BOTS_STATS_URL ?? '',
   /**
    * Relative path to the API root, e.g. /botctl/api
    * Used to build absolute backend URLs together with DOMAIN.
@@ -129,15 +171,14 @@ export async function backendFetch(
   const t0 = Date.now();
   console.log(`[backendFetch] --> ${init?.method ?? 'GET'} ${url}`);
   try {
-    const nodeFetch = (await import('node-fetch')).default;
-    const res = await nodeFetch(url, init);
+    const res = await fetchWithTimeout(url, init);
     console.log(`[backendFetch] <-- ${res.status} ${url} (${Date.now() - t0}ms)`);
     return res;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[backendFetch] FAIL ${url}: ${msg}`);
     console.error(`  DOMAIN raw="${process.env.DOMAIN}" normalized="${normalizeDomain(process.env.DOMAIN ?? '')}" BACKEND_API_PATH="${Env.BACKEND_API_PATH}"`);
-    throw new Error(`backendFetch failed for "${url}": ${msg}`);
+    throw err;
   }
 }
 
@@ -159,8 +200,7 @@ export async function safeFetch(
   }
   const t0 = Date.now();
   console.log(`[${serviceName}] --> ${init?.method ?? 'GET'} ${url}`);
-  const nodeFetch = (await import('node-fetch')).default;
-  const res = await nodeFetch(url, init);
+  const res = await fetchWithTimeout(url, init);
   console.log(`[${serviceName}] <-- ${res.status} ${url} (${Date.now() - t0}ms)`);
   return res;
 }
