@@ -1,0 +1,170 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+SRC_DIR="$ROOT_DIR/src"
+LIB_DIR="$SRC_DIR/lib"
+SECRETS_DIR="$ROOT_DIR/secrets"
+INIT_DIR="$ROOT_DIR/docker/mariadb-init"
+SCHEMA_DUMP="$ROOT_DIR/trading-structure.sql"
+CORE_TABLES_LIST="$ROOT_DIR/shell/bootstrap-core-tables.txt"
+SCHEMA_GENERATOR="$ROOT_DIR/shell/generate_bootstrap_schema.sh"
+
+ALPET_LIBS_REPO="${ALPET_LIBS_REPO:-P:/GitHub/alpet-libs-php}"
+TRADING_DB_USER="${TRADING_DB_USER:-trading}"
+TRADING_DB_PASSWORD="${TRADING_DB_PASSWORD:-}"
+MARIADB_DATABASE="${MARIADB_DATABASE:-trading}"
+MARIADB_HOSTNAME="mariadb"
+
+generate_loopback_ip() {
+  if command -v openssl >/dev/null 2>&1; then
+    o3="$(openssl rand -hex 1)"
+    o4="$(openssl rand -hex 1)"
+    o3="$((16#$o3))"
+    o4="$((16#$o4))"
+  else
+    o3="$(( ( $(date +%s) + $$ ) % 254 + 1 ))"
+    o4="$(( ( $(date +%s) * 3 + $$ ) % 254 + 1 ))"
+  fi
+  # Keep 127.0.0.1 reserved for conventional localhost; choose another loopback IP.
+  printf '127.77.%d.%d' "$o3" "$o4"
+}
+
+load_dotenv_value() {
+  key="$1"
+  env_file="$ROOT_DIR/.env"
+  if [ ! -f "$env_file" ]; then
+    return 1
+  fi
+
+  value="$(grep "^${key}=" "$env_file" | head -n1 | cut -d'=' -f2- || true)"
+  if [ -z "$value" ]; then
+    return 1
+  fi
+
+  printf '%s' "$value"
+  return 0
+}
+
+mkdir -p "$SECRETS_DIR" "$INIT_DIR" "$LIB_DIR"
+
+copy_missing_file_from_repo() {
+  repo_dir="$1"
+  file_name="$2"
+  target_path="$3"
+
+  if [ -f "$target_path" ]; then
+    echo "#INFO: already exists, skip $target_path"
+    return 0
+  fi
+
+  source_path="$(find "$repo_dir" -type f -name "$file_name" | head -n 1)"
+  if [ -z "$source_path" ]; then
+    echo "#WARN: cannot find $file_name in $repo_dir"
+    return 0
+  fi
+
+  cp "$source_path" "$target_path"
+  echo "#INFO: copied $file_name -> $target_path"
+}
+
+echo "#INFO: generating runtime proxy files"
+ALPET_LIBS_REPO="$ALPET_LIBS_REPO" sh "$ROOT_DIR/shell/generate_runtime_proxies.sh"
+
+if [ ! -f "$LIB_DIR/mini_core.php" ]; then
+  if [ ! -d "$ALPET_LIBS_REPO" ]; then
+    echo "#WARN: ALPET_LIBS_REPO not found: $ALPET_LIBS_REPO"
+    echo "#WARN: mini_core.php is missing and could not be bootstrapped"
+  else
+    copy_missing_file_from_repo "$ALPET_LIBS_REPO" "mini_core.php" "$LIB_DIR/mini_core.php"
+  fi
+fi
+
+if [ -z "$TRADING_DB_PASSWORD" ]; then
+  TRADING_DB_PASSWORD="$(load_dotenv_value TRADING_DB_PASSWORD || true)"
+fi
+
+if [ -z "$TRADING_DB_PASSWORD" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    TRADING_DB_PASSWORD="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24)"
+  else
+    TRADING_DB_PASSWORD="$(date +%s)$(printf "%s" "$$" | tr -dc '0-9')"
+    TRADING_DB_PASSWORD="$(printf "%s" "$TRADING_DB_PASSWORD" | tr -dc 'A-Za-z0-9' | head -c 24)"
+  fi
+fi
+
+if [ -f "$ROOT_DIR/.env" ]; then
+  if grep -q '^TRADING_DB_PASSWORD=' "$ROOT_DIR/.env"; then
+    sed -i "s|^TRADING_DB_PASSWORD=.*$|TRADING_DB_PASSWORD=$TRADING_DB_PASSWORD|" "$ROOT_DIR/.env"
+  else
+    printf "\nTRADING_DB_PASSWORD=%s\n" "$TRADING_DB_PASSWORD" >> "$ROOT_DIR/.env"
+  fi
+
+  if grep -q '^MARIADB_PASSWORD=' "$ROOT_DIR/.env"; then
+    sed -i "s|^MARIADB_PASSWORD=.*$|MARIADB_PASSWORD=$TRADING_DB_PASSWORD|" "$ROOT_DIR/.env"
+  else
+    printf "MARIADB_PASSWORD=%s\n" "$TRADING_DB_PASSWORD" >> "$ROOT_DIR/.env"
+  fi
+
+  WEB_PUBLISH_IP_VALUE=""
+  if grep -q '^WEB_PUBLISH_IP=' "$ROOT_DIR/.env"; then
+    WEB_PUBLISH_IP_VALUE="$(grep '^WEB_PUBLISH_IP=' "$ROOT_DIR/.env" | head -n1 | cut -d'=' -f2-)"
+  fi
+  if [ -z "$WEB_PUBLISH_IP_VALUE" ]; then
+    WEB_PUBLISH_IP_VALUE="$(generate_loopback_ip)"
+    if grep -q '^WEB_PUBLISH_IP=' "$ROOT_DIR/.env"; then
+      sed -i "s|^WEB_PUBLISH_IP=.*$|WEB_PUBLISH_IP=$WEB_PUBLISH_IP_VALUE|" "$ROOT_DIR/.env"
+    else
+      printf "WEB_PUBLISH_IP=%s\n" "$WEB_PUBLISH_IP_VALUE" >> "$ROOT_DIR/.env"
+    fi
+  fi
+
+  if grep -q '^ADMIN_IP_ALLOWLIST=' "$ROOT_DIR/.env"; then
+    sed -i "s|^ADMIN_IP_ALLOWLIST=.*$|ADMIN_IP_ALLOWLIST=127.0.0.1,::1,$WEB_PUBLISH_IP_VALUE|" "$ROOT_DIR/.env"
+  else
+    printf "ADMIN_IP_ALLOWLIST=%s\n" "127.0.0.1,::1,$WEB_PUBLISH_IP_VALUE" >> "$ROOT_DIR/.env"
+  fi
+
+  if grep -q '^AUTH_MODE=' "$ROOT_DIR/.env"; then
+    sed -i "s|^AUTH_MODE=.*$|AUTH_MODE=basic|" "$ROOT_DIR/.env"
+  else
+    printf "AUTH_MODE=basic\n" >> "$ROOT_DIR/.env"
+  fi
+fi
+
+cat > "$SECRETS_DIR/db_config.php" <<EOF
+<?php
+
+\$db_configs = [];
+\$db_configs['trading'] = ['$TRADING_DB_USER', '$TRADING_DB_PASSWORD'];
+\$db_configs['datafeed'] = \$db_configs['trading'];
+foreach (['binance', 'bitmex', 'bitfinex', 'bybit', 'deribit'] as \$db_name)
+    \$db_configs[\$db_name] = \$db_configs['datafeed'];
+
+\$db_servers = ['$MARIADB_HOSTNAME'];
+const MYSQL_REPLICA = '$MARIADB_HOSTNAME';
+\$db_alt_server = MYSQL_REPLICA;
+EOF
+
+cat > "$INIT_DIR/10-create-trading-role.sql" <<EOF
+CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;
+CREATE USER IF NOT EXISTS '$TRADING_DB_USER'@'%' IDENTIFIED BY '$TRADING_DB_PASSWORD';
+GRANT ALL PRIVILEGES ON \`$MARIADB_DATABASE\`.* TO '$TRADING_DB_USER'@'%';
+FLUSH PRIVILEGES;
+EOF
+
+if [ -f "$SCHEMA_DUMP" ] && [ -f "$SCHEMA_GENERATOR" ] && [ -f "$CORE_TABLES_LIST" ]; then
+  sh "$SCHEMA_GENERATOR" "$SCHEMA_DUMP" "$INIT_DIR/20-bootstrap-core.sql" "$CORE_TABLES_LIST"
+else
+  echo "#WARN: skip bootstrap schema generation (missing dump or helper files)"
+fi
+
+echo "#INFO: generated $SECRETS_DIR/db_config.php"
+echo "#INFO: generated $INIT_DIR/10-create-trading-role.sql"
+echo "#INFO: generated $INIT_DIR/20-bootstrap-core.sql (if source dump exists)"
+echo "#INFO: trading db user: $TRADING_DB_USER"
+echo "#INFO: trading db password length: $(printf "%s" "$TRADING_DB_PASSWORD" | wc -c)"
+if [ -f "$ROOT_DIR/.env" ]; then
+  WEB_PUBLISH_IP_VALUE="$(grep '^WEB_PUBLISH_IP=' "$ROOT_DIR/.env" | head -n1 | cut -d'=' -f2- || true)"
+  [ -n "$WEB_PUBLISH_IP_VALUE" ] && echo "#INFO: web publish loopback ip: $WEB_PUBLISH_IP_VALUE"
+fi

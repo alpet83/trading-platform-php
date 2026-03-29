@@ -1,0 +1,23 @@
+var/
+misc/
+secrets/
+.env
+!secrets/.gitkeep
+!secrets/db_config.php.example
+
+# Runtime-generated compatibility files from alpet-libs-php.
+src/common.php
+src/esctext.php
+src/lib/common.php
+src/lib/esctext.php
+src/lib/db_tools.php
+src/lib/basic_html.php
+src/lib/table_render.php
+
+# Local deployment-only tooling and artifacts
+scripts/commit_prepare_datafeed.ps1
+scripts/commit_prepare_datafeed.cmd
+init_grants.sql
+trading-structure.sql
+var/lib/mysql-prev-*/
+
