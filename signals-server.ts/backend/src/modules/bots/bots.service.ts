@@ -1,12 +1,32 @@
-import { Injectable } from '@nestjs/common';
-import { Env, backendFetch } from '../../config/env.validation';
+import {
+  GatewayTimeoutException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { Env, FetchTimeoutError, backendFetch } from '../../config/env.validation';
 import { CreateBotDTO, UpdateBotDTO } from '@modules/bots/bots.dto';
 
 @Injectable()
 export class BotsService {
   private readonly token = Env.AUTH_TOKEN;
+
+  private async callBotsBackend(
+    path: string,
+    init?: import('node-fetch').RequestInit,
+  ): Promise<import('node-fetch').Response> {
+    try {
+      return await backendFetch(path, init);
+    } catch (error: unknown) {
+      if (error instanceof FetchTimeoutError) {
+        throw new GatewayTimeoutException(`[bots] upstream timeout: ${error.message}`);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ServiceUnavailableException(`[bots] upstream request failed: ${message}`);
+    }
+  }
+
   async getBots(user: any) {
-    const data = await backendFetch('/bots', {
+    const data = await this.callBotsBackend('/bots', {
       method: 'GET',
       headers: {
         Authorization: 'Bearer ' + this.token,
@@ -53,7 +73,7 @@ export class BotsService {
       }
     });
 
-    const data = await backendFetch('/bots/create', {
+    const data = await this.callBotsBackend('/bots/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -82,7 +102,7 @@ export class BotsService {
     params.append('config[report_color]', body.config.report_color);
     params.append('config[debug_pair]', body.config.debug_pair);
 
-    const data = await backendFetch('/bots/update', {
+    const data = await this.callBotsBackend('/bots/update', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -99,7 +119,7 @@ export class BotsService {
     console.log('ID to delete: ', name);
     const params = new URLSearchParams();
     params.append('applicant', String(name).trim());
-    const data = await backendFetch('/bots/delete', {
+    const data = await this.callBotsBackend('/bots/delete', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

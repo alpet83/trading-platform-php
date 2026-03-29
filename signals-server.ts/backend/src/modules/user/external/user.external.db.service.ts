@@ -9,6 +9,7 @@ import {
   DBActionResult,
   AdminCheckResult,
   SetupBaseGroupsResult,
+  UserLookupResult,
 } from './user.external.interface';
 import { normalizeMutationInput, toUserId } from './user.external.input';
 import {
@@ -32,6 +33,10 @@ export class UserExternalDbService implements IUserExternalService {
   async getUsers(_user: any): UserListResult {
     const users = await this.tradingUsersRepository.findAll();
     return toUserRecords(users);
+  }
+
+  async getByTelegramId(telegramId: number): UserLookupResult {
+    return this.tradingUsersRepository.findByChatId(Number(telegramId));
   }
 
   async createUser(proto: CreateUserDTO, user: any): DBActionResult {

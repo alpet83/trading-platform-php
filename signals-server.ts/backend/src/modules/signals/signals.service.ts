@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { safeFetch } from '../../config/env.validation';
 import { Env } from '../../config/env.validation';
 import {
@@ -6,6 +6,7 @@ import {
   SignalEditRequestDto,
   SignalToggleRequestDto,
 } from '@modules/signals/signals.dto';
+import { UserExternalService } from '@modules/user/external/user.external.service';
 
 /**
  * АРХИТЕКТУРА: два независимых бэкенда
@@ -43,6 +44,8 @@ export class SignalsService {
   // Пример: https://myserver.com/signals-api/sig_edit.php?format=json
   private readonly baseUrl = Env.SIGNALS_API_URL.replace(/\/+$/, '') + '/sig_edit.php?format=json';
 
+  constructor(private readonly userService: UserExternalService) {}
+
   async fetchSignals(
     {
       setup,
@@ -72,6 +75,22 @@ export class SignalsService {
   }
 
   async editSignal(id: string, body: SignalEditRequestDto, user: any) {
+    // Валидация: setup должен быть в диапазоне [base_setup, base_setup + 9]
+    const userData = await this.userService.getByTelegramId(user.telegramId);
+    if (!userData?.base_setup) {
+      throw new BadRequestException('User setup range not configured');
+    }
+    
+    const setup = parseInt(String(body.setup), 10);
+    const minSetup = userData.base_setup;
+    const maxSetup = userData.base_setup + 9;
+    
+    if (setup < minSetup || setup > maxSetup) {
+      throw new BadRequestException(
+        `Setup ${setup} is outside allowed range [${minSetup}..${maxSetup}]`
+      );
+    }
+
     let query = '';
     switch (body.field) {
       case 'multiplier':
@@ -104,6 +123,22 @@ export class SignalsService {
   }
 
   async toggleFlag(id: string, body: SignalToggleRequestDto, user: any) {
+    // Валидация: setup должен быть в диапазоне [base_setup, base_setup + 9]
+    const userData = await this.userService.getByTelegramId(user.telegramId);
+    if (!userData?.base_setup) {
+      throw new BadRequestException('User setup range not configured');
+    }
+
+    const setup = parseInt(String(body.setup), 10);
+    const minSetup = userData.base_setup;
+    const maxSetup = userData.base_setup + 9;
+
+    if (setup < minSetup || setup > maxSetup) {
+      throw new BadRequestException(
+        `Setup ${setup} is outside allowed range [${minSetup}..${maxSetup}]`
+      );
+    }
+
     const res = await safeFetch(
       'signals',
       this.baseUrl + `&${body.flag}=${id}&setup=${body.setup}`,
@@ -119,6 +154,22 @@ export class SignalsService {
   }
 
   async deleteSignal(data: SignalDeleteRequestDto, user: any) {
+    // Валидация: setup должен быть в диапазоне [base_setup, base_setup + 9]
+    const userData = await this.userService.getByTelegramId(user.telegramId);
+    if (!userData?.base_setup) {
+      throw new BadRequestException('User setup range not configured');
+    }
+
+    const setup = parseInt(String(data.setup), 10);
+    const minSetup = userData.base_setup;
+    const maxSetup = userData.base_setup + 9;
+
+    if (setup < minSetup || setup > maxSetup) {
+      throw new BadRequestException(
+        `Setup ${setup} is outside allowed range [${minSetup}..${maxSetup}]`
+      );
+    }
+
     const res = await safeFetch(
       'signals',
       this.baseUrl + `&delete=${data.id}&setup=${data.setup}`,

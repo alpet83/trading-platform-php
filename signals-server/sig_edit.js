@@ -16,6 +16,10 @@
     function EditLP(id, def) {
        document.location="script?edit_lp=" + id + "&price=" + prompt("Enter limit price for signal", def);
     }        
+    
+    function EditComment(id, def) {
+      document.location="script?edit_comment=" + id + "&text=" + prompt("Enter comment for signal", def);
+    }
 
     function ToggleTP(id) {
        document.location="script?toggle_tp=" + id;
@@ -23,6 +27,9 @@
     function ToggleSL(id) {
        document.location="script?toggle_sl=" + id;
     }
+    function ToggleSE(id) {
+      document.location="script?toggle_se=" + id;
+   }
     function ToggleLP(id) {
        document.location="script?toggle_lp=" + id;
     }    

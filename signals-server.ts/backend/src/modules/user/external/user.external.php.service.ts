@@ -8,6 +8,7 @@ import {
   DBActionResult,
   AdminCheckResult,
   SetupBaseGroupsResult,
+  UserLookupResult,
 } from './user.external.interface';
 import { normalizeRights } from './user.external.input';
 import { UserExternalPhpClient } from './user.external.php-client';
@@ -24,6 +25,11 @@ export class UserExternalPhpService implements IUserExternalService {
 
   async getUsers(user: any): UserListResult {
     return this.phpClient.callJson('/api/users/', 'GET', String(user.telegramId));
+  }
+
+  async getByTelegramId(telegramId: number): UserLookupResult {
+    const users = await this.getUsers({ telegramId });
+    return users.find((item: { id: number | string }) => item.id == telegramId) ?? null;
   }
 
   async createUser(proto: CreateUserDTO, user: any): DBActionResult {

@@ -2,7 +2,10 @@
 
 require_once('lib/common.php');
 require_once('lib/db_tools.php');
-require_once('/usr/local/etc/php/db_config.php');
+if (file_exists('/usr/local/etc/php/db_config.php'))
+   require_once('/usr/local/etc/php/db_config.php'); // DOCKER hosting 
+else
+   require_once('lib/db_config.php'); // local hosting
 
 ob_start();
 

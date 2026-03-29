@@ -41,9 +41,9 @@
 
         <div class="profile-r__menu">
 <!--          <a href="#" class="profile-r__menu-item">Change name</a>-->
-          <a v-if="isAdmin" href="./admin" class="profile-r__menu-item">Admin</a>
-          <a :href="signalsHref" class="profile-r__menu-item">Signals</a>
-          <a href="./stats" class="profile-r__menu-item">Bot statistic</a>
+          <NuxtLink v-if="isAdmin" to="/admin" class="profile-r__menu-item">Admin</NuxtLink>
+          <NuxtLink to="/" class="profile-r__menu-item">Signals</NuxtLink>
+          <NuxtLink to="/instance" class="profile-r__menu-item">Bot instance manage</NuxtLink>
         </div>
       </div>
     </div>
@@ -62,8 +62,6 @@ const props = defineProps({
 })
 const isAdmin = ref(false);
 const { locale } = useI18n()
-const config = useRuntimeConfig();
-const signalsHref = (config.public.appBasePath as string || '') + '/';
 onBeforeMount(async () => {
   const res = await useApiRequest('/api/isAdmin', {
     method: 'GET',

@@ -9,6 +9,7 @@ import {
   DBActionResult,
   AdminCheckResult,
   SetupBaseGroupsResult,
+  UserLookupResult,
 } from './user.external.interface';
 import { UserExternalDbService } from './user.external.db.service';
 import { UserExternalPhpService } from './user.external.php.service';
@@ -34,6 +35,10 @@ export class UserExternalService implements IUserExternalService {
 
   getUsers(user: any): UserListResult {
     return this.impl.getUsers(user);
+  }
+
+  getByTelegramId(telegramId: number): UserLookupResult {
+    return this.impl.getByTelegramId(telegramId);
   }
 
   createUser(proto: CreateUserDTO, user: any): DBActionResult {

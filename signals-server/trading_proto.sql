@@ -161,6 +161,27 @@ CREATE TABLE `hosts` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `bot_hosts`
+--
+
+DROP TABLE IF EXISTS `bot_hosts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `bot_hosts` (
+  `host_id` int(11) NOT NULL AUTO_INCREMENT,
+  `host_name` varchar(64) NOT NULL,
+  `stats_url` varchar(255) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 0,
+  `created_ts` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_ts` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`host_id`),
+  UNIQUE KEY `host_name` (`host_name`),
+  UNIQUE KEY `stats_url` (`stats_url`),
+  KEY `is_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Trading bots backends hosts';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `hype_history_51__1`
 --
 

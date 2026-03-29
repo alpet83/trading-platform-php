@@ -1,3 +1,3 @@
 #!/bin/sh
-export TELEGRAM_BOT_USERNAME=trade_adm_auth_bot
+TELEGRAM_BOT_USERNAME=$(yq '.TELEGRAM_BOT_USERNAME' .envs/main/public.yaml)
 bash scripts/run.sh "docker compose up"

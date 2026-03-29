@@ -8,9 +8,11 @@ export type UserListResult = Promise<any[]>;
 export type DBActionResult = Promise<ActionResult>;
 export type AdminCheckResult = Promise<boolean>;
 export type SetupBaseGroupsResult = Promise<SetupBaseGroup[]>;
+export type UserLookupResult = Promise<any | null>;
 
 export interface IUserExternalService {
   getUsers(user: any): UserListResult;
+  getByTelegramId(telegramId: number): UserLookupResult;
   createUser(proto: CreateUserDTO, user: any): DBActionResult;
   updateUser(user: any, body: UpdateUserDTO): DBActionResult;
   deleteUser(user: any, id: string | number): DBActionResult;
