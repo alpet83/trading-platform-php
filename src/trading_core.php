@@ -12,7 +12,33 @@
     require_once 'lib/hosts_cfg.php';
     require_once 'lib/table_render.php';
     require_once 'lib/trading_info.php';
-    require_once 'lib/print_r_level.php';  
+    $print_level_file = __DIR__.'/lib/print_r_level.php';
+    if (file_exists($print_level_file)) {
+        require_once 'lib/print_r_level.php';
+    }
+    if (!function_exists('printRLevel')) {
+        function printRLevel(mixed $value, int $maxLevel = 2, int $level = 0): string {
+            if ($level >= $maxLevel) {
+                if (is_array($value)) return 'Array('.count($value).')';
+                if (is_object($value)) return 'Object('.get_class($value).')';
+                return var_export($value, true);
+            }
+
+            if (!is_array($value) && !is_object($value)) {
+                return var_export($value, true);
+            }
+
+            $indent = str_repeat('  ', $level);
+            $nextIndent = str_repeat('  ', $level + 1);
+            $rows = [];
+            foreach ((array)$value as $key => $item) {
+                $rows[] = sprintf('%s%s => %s', $nextIndent, strval($key), printRLevel($item, $maxLevel, $level + 1));
+            }
+
+            $open = is_array($value) ? 'Array [' : 'Object('.get_class($value).') [';
+            return $open."\n".implode("\n", $rows)."\n".$indent.']';
+        }
+    }
     require_once 'lib/smart_vars.php';
 
     require_once 'bot_globals.php';
@@ -924,6 +950,12 @@
       $exch = $this->Engine()->exchange;    
       $pid = getmypid();       
       $table = 'bot__redudancy';
+
+        $rd_mode = strtolower(trim((string)(getenv('REDUNDANCY_MODE') ?: 'paired')));
+        if (in_array($rd_mode, ['single', 'standalone', 'none', 'off'], true)) {
+            $this->trade_skip = 0;
+            return $this->SetActiveRole($this->active, 'single-mode');
+        }
 
       if (count($this->auth_errors) > 0) {
          $this->LogError("~C91#ERROR~C00: redudancy role absent, due auth errors count > 0 ");

@@ -1,6 +1,10 @@
 <?php
     echo '***';
-    set_include_path("lib:.:../lib:/usr/sbin/lib");
+    $include_path = getenv('PHP_INCLUDE_PATH');
+    if (false === $include_path || '' === trim($include_path)) {
+        $include_path = ".:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib";
+    }
+    set_include_path($include_path);
 
 
     include_once 'lib/common.php';
@@ -8,6 +12,13 @@
     include_once 'lib/db_tools.php';
     include_once 'lib/db_config.php';
     include_once 'lib/ip_config.php';  // hostmap as presentation of /etc/hosts
+
+    $credentials_source = strtolower(trim(getenv('BOT_CREDENTIAL_SOURCE') ?: 'pass'));
+    $pass_encryption_mode = strtolower(trim(getenv('BOT_PASS_ENCRYPTION_MODE') ?: 'none'));
+    if (!in_array($credentials_source, ['pass', 'db'], true)) {
+        log_cmsg("~C91 #WARN:~C00 invalid BOT_CREDENTIAL_SOURCE='%s', fallback to 'pass'", $credentials_source);
+        $credentials_source = 'pass';
+    }
     
     $active = true;
     $host = trim(file_get_contents('/etc/hostname'));
@@ -15,13 +26,18 @@
     if (isset($host_map[$host]))
         $host_ip = $host_map[$host];
 
-    $log_file = fopen(getcwd().'/log/bot_manager.log', 'w');
+    $bm_log_dir = getcwd().'/log/bot_manager';
+    if (!is_dir($bm_log_dir))
+        mkdir($bm_log_dir, 0775, true);
+    $log_file = fopen(getcwd().'/log/bot_manager/bot_manager.log', 'w');
 
     function send_event($tag, $event, $value = 0) {
         global $host;
         $post_data = 'event='.urlencode($event);
         log_cmsg ("~C93 #SEND_EVENT($tag):~C02  $event");
-        return curl_http_request("http://vps.vpn/trade_event.php?tag=$tag&host=$host&value=$value", $post_data);
+        $server = rtrim((string)(getenv('SIGNALS_API_URL') ?: getenv('TRADEBOT_PHP_HOST') ?: 'http://host.docker.internal'), '/');
+        $url = "$server/trade_event.php?tag=$tag&host=$host&value=$value";
+        return curl_http_request($url, $post_data);
     }
     
     function sig_handler(int $signo) {        
@@ -112,6 +128,63 @@
             return "{$this->exchange}@{$this->account_id}";
         }
 
+        protected function loadApiFromPass(string $exch, string $separator): void {
+            $sfx = '';
+            if (!$this->account_params->trade_enabled)
+                $sfx = '_ro'; // specify debug key
+            $pf = "$exch@{$this->account_id}$sfx";
+            $pp = "api/$pf";
+
+            $this->api_key = trim(exec("pass $pp"));
+            $list = [];
+            $found = 0;
+            exec('pass ls api', $list);
+            foreach ($list as $pass)
+            if (false !== strpos($pass, $pf))
+                $found ++;
+
+            $secret = '?';
+            if ($found > 1)
+                $secret = trim(exec("pass $pp".'_s0')).$separator.trim(exec("pass $pp".'_s1'));
+            else
+                log_cmsg("~C91 #WARN:~C00 not enough secrets for~C92 $pf~C00 in:\n\t %s", implode("\n\t", $list));
+
+            $this->api_secret = chunk_split(base64_encode($secret), 8, "\n");
+            log_msg("#DBG: cached $sfx secret size = ".strlen($this->api_secret));
+        }
+
+        protected function loadApiFromDb(string $separator): void {
+            $key_param = getenv('BOT_DB_API_KEY_PARAM') ?: 'api_key';
+            $secret_param = getenv('BOT_DB_API_SECRET_PARAM') ?: 'api_secret';
+
+            if (!$this->account_params->trade_enabled) {
+                $ro_key_param = $key_param.'_ro';
+                $ro_secret_param = $secret_param.'_ro';
+                $ro_key = trim((string)$this->ConfigValue($ro_key_param, ''));
+                $ro_secret = trim((string)$this->ConfigValue($ro_secret_param, ''));
+                if (strlen($ro_key) > 0 || strlen($ro_secret) > 0) {
+                    $key_param = $ro_key_param;
+                    $secret_param = $ro_secret_param;
+                }
+            }
+
+            $this->api_key = trim((string)$this->ConfigValue($key_param, ''));
+            $secret = trim((string)$this->ConfigValue($secret_param, ''));
+
+            if (!strlen($secret)) {
+                $s0 = trim((string)$this->ConfigValue($secret_param.'_s0', ''));
+                $s1 = trim((string)$this->ConfigValue($secret_param.'_s1', ''));
+                if (strlen($s0) && strlen($s1))
+                    $secret = $s0.$separator.$s1;
+            }
+
+            if (!strlen($this->api_key) || !strlen($secret)) {
+                log_cmsg("~C91 #WARN:~C00 DB credentials are incomplete for %s (key param '%s', secret param '%s')", $this->Name(), $key_param, $secret_param);
+            }
+
+            $this->api_secret = chunk_split(base64_encode($secret), 8, "\n");
+        }
+
         public function  Run() {
             $this->restarts ++;
             $name = $this->Name();  
@@ -135,27 +208,12 @@
 
             if (strlen($this->api_key) < 4) {        
                 log_cmsg("~C94 #DBG:~C00 API key not cached, trying retrieve and set env[$api_key_name], secret separator [$separator]");        
-                // once instance created, safe for session 
-                // TODO: allow account difference, or storage selection.  
-                $sfx = '';
-                if (!$this->account_params->trade_enabled)
-                    $sfx = '_ro'; // specify debug key
-                $pf = "$exch@{$this->account_id}$sfx";
-                $pp = "api/$pf";
-                $this->api_key = trim(exec("pass $pp")); 
-                $list = [];
-                $found = 0;
-                exec('pass ls api', $list);
-                foreach ($list as $pass)
-                if (false !== strpos($pass, $pf)) 
-                    $found ++;
-                $secret = '?';
-                if ($found > 1)
-                $secret = trim(exec("pass $pp".'_s0')).$separator.trim(exec("pass $pp".'_s1')); 
-                else  
-                log_cmsg("~C91 #WARN:~C00 not enough secrets for~C92 $pf~C00 in:\n\t %s", implode("\n\t", $list));
-                $this->api_secret = chunk_split(base64_encode($secret), 8, "\n");
-                log_msg("#DBG: cached $sfx secret size = ".strlen($this->api_secret));
+
+                global $credentials_source;
+                if ('db' === $credentials_source)
+                    $this->loadApiFromDb($separator);
+                else
+                    $this->loadApiFromPass($exch, $separator);
             }       
             $ds = [["pipe", "r"], ["pipe", "w"], ["pipe", "w"]];
         $env_vars = getenv();
@@ -171,9 +229,8 @@
                 log_cmsg("~C91#WARN:~C00 not specified API credentials meta in DB!");              
             }  
 
-            $path = __DIR__."/$exch/"; // subdir for each exchange bots
-            // php -d xdebug.auto_trace=ON -d xdebug.trace_output_dir=logs/ bot_instance.php
-            $cmd = "su trader -c '$path/start_bot.sh $exch'";
+            $path = __DIR__;
+            $cmd = "/bin/sh /usr/local/bin/run-bot.sh";
             $name = $this->Name();
             log_cmsg("~C97#DBG:~C00 trying start %s bot", $exch);
             // print_r($env_vars);
@@ -192,14 +249,11 @@
                     $c = fgets($this->stderr);
                     if ($c) $s .= $c;
                     $elps = time() - $start;
-                    if ($elps > 20 || false !== strpos($s, 'assword') || false !== strpos($s, 'ароль')) break;
+                    if ($elps > 5) break;
                 }
                 if ($s && strlen($s) > 1)
                     log_msg("#OUT: $s");
 
-                log_cmsg("~C94#DBG:~C00 trying authorize session...");
-                $pwd = base64_decode($this->trader_pwd);
-                fwrite($pipes[0], "$pwd\n"); // login trader, TODO use pass!
                 sleep(1);
                 $st = proc_get_status($this->instance);   
                 echo stream_get_contents($this->stderr);
@@ -252,7 +306,11 @@
                 else             
                     $alive = false;           
             }
-            exec("sudo kill_bot {$this->impl_name} 60", $out);  // kill any previous instance                
+            if ($alive && $pid) {
+                exec("kill $pid 2>&1", $out);
+                sleep(5);
+                exec("kill -9 $pid 2>&1", $out);
+            }
             $name = $this->Name();
             if ($pid)            
                 log_msg("#KILL($pid): bot $name result:".implode("\n", $out));                    
@@ -270,10 +328,17 @@
 
     echo '+++';
 
+    function is_single_redundancy_mode(): bool {
+        $mode = strtolower(trim((string)(getenv('REDUNDANCY_MODE') ?: 'paired')));
+        return in_array($mode, ['single', 'standalone', 'none', 'off'], true);
+    }
+
     function db_connect() {
         global $mysqli, $db_error, $db_servers;  
         // attempt to connect
-        $db_servers = [null, 'db-local.lan', 'db-remote.lan'];
+        $local_host = getenv('DB_LOCAL_HOST') ?: 'db-local.lan';
+        $remote_host = getenv('DB_REMOTE_HOST') ?: 'db-remote.lan';
+        $db_servers = is_single_redundancy_mode() ? [null, $local_host] : [null, $local_host, $remote_host];
         while (true) {
             $mysqli = init_remote_db('trading');
             if (!$mysqli)  {
@@ -288,21 +353,37 @@
         }  
     }
 
+    function resolve_trader_password(): string {
+        global $credentials_source;
+
+        if ('db' === $credentials_source) {
+            $pwd = trim((string)(getenv('BOT_TRADER_PASSWORD') ?: ''));
+            if (!strlen($pwd)) {
+                log_cmsg("~C91 #FATAL:~C00 BOT_CREDENTIAL_SOURCE=db requires BOT_TRADER_PASSWORD env");
+                die(11);
+            }
+            return $pwd;
+        }
+
+        $res = 0;
+        $out = [];
+        $pass_stderr = tp_debug_tmp_path('pass.stderr');
+        $pwd = exec('pass users/trader 2> ' . escapeshellarg($pass_stderr), $out, $res);
+        if (0 !== $res)  {
+            $err = file_get_contents($pass_stderr);
+            log_cmsg ("~C91 #FATAL~C00(%d): can't load credentials via pass\n~C91$err~C00\n", $res);
+            die($res);
+        }
+        return trim($pwd);
+    }
+
     log_cmsg("~C93 #START: initializing BOT Manager at host $host ($host_ip)...~C00");
     mysqli_report(MYSQLI_REPORT_OFF);
 
     if (!isset($db_configs['trading'])) 
         die("#FATAL: DB config not loaded!\n");
     
-    $res = 0;  
-    $trader_pwd = exec('pass users/trader 2> /tmp/pass.stderr', $out, $res);
-    if (0 !== $res)  {
-        $err = file_get_contents('/tmp/pass.stderr');
-        log_cmsg ("~C91 #FATAL~C00(%d): can't load credentials via pass\n~C91$err~C00\n", $res);
-        die($res);
-    }  
-
-    $trader_pwd = trim($trader_pwd);
+    $trader_pwd = resolve_trader_password();
     $trader_pwd = base64_encode($trader_pwd);
         
     db_connect();
@@ -357,6 +438,20 @@
             
     }
 
+    function ResolveReplicationCreds($spare): array {
+        // Explicit env vars are required for recovery to avoid hardcoded secrets.
+        $master_user = getenv('MARIADB_REMOTE_USER') ?: '';
+        $master_pass = getenv('MARIADB_REMOTE_PASSWORD') ?: '';
+        $master_db = getenv('MARIADB_REMOTE_DB') ?: 'trading';
+
+        if (!$master_user || !$master_pass) {
+            log_cmsg("~C91 #ERROR:~C00 replication recovery creds are not set: MARIADB_REMOTE_USER/MARIADB_REMOTE_PASSWORD");
+            return [false, false, false];
+        }
+
+        return [$master_user, $master_pass, $master_db];
+    }
+
     function RedudancyRecover($row): bool {
         global $db_servers, $host_map, $host_ip; 
         log_cmsg("~C91 #WARN:~C00 MariaDB redudancy failed... trying recovery. ");
@@ -385,15 +480,15 @@
         }
 
         $db_servers = array($spare);
-        // TODO: ugly hardcoded creds
-        $master_user = 'db_master';
-        if (false !== strpos($spare, '.10.50'))  // #TODO: bad rescuer side detection
-            $master_user .= '2';
-        
-        $master_pass = 'dbMaster!496';
-        $remote = init_remote_db ($master_user, $master_pass, 'trading');
+
+        list($master_user, $master_pass, $master_db) = ResolveReplicationCreds($spare);
+        if (!$master_user || !$master_pass) {
+            return false;
+        }
+
+        $remote = init_remote_db ($master_user, $master_pass, $master_db);
         if (!$remote) {
-            log_cmsg("~C91 #ERROR:~C00 cannot connect to DB on $spare ");
+            log_cmsg("~C91 #ERROR:~C00 cannot connect to DB on $spare with configured replication creds");
             return false;
         }
         

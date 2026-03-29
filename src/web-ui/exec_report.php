@@ -104,7 +104,8 @@
     $engine = $core->trade_engine;
 
     $exch = strtolower($engine->exchange ?? $exch);
-    $json = curl_http_request('http://vps.vpn/pairs_map.php?field='.$exch.'_pair');
+    $feed_host = rtrim((string)(getenv('TRADEBOT_PHP_HOST') ?: getenv('SIGNALS_API_URL') ?: getenv('SIGNALS_FEED_URL') ?: 'http://host.docker.internal'), '/');
+    $json = curl_http_request($feed_host.'/pairs_map.php?field='.$exch.'_pair');
     $pmap = json_decode($json, true);
     $symbol = 'nope';
     $ticker = false;

@@ -3,6 +3,7 @@
 chdir('../');
 
 require_once('api_helper.php');
+require_once(__DIR__ . '/../../lib/hosts_cfg.php');
 
 require_once('lib/esctext.php');
 require_once('lib/mini_core.php');
@@ -60,29 +61,48 @@ foreach ($activity as $acc_id => $row) {
         continue;
     }
 
-    $bot_dir = strtolower("/tmp/$app");
     $cfg_map[$app] = $config;
     $acc_map[$app] = $acc_id;
 
     $exch = strtolower($config['exchange'] ?? 'NYMEX');
+    $bot_prefix = (strpos($cfg_table, 'config__') === 0) ? substr($cfg_table, 8) : $exch;
 
-    $ticker = $mysqli->select_row('last_price,ts_updated', "{$exch}__tickers", "WHERE pair_id = 1");
+    $ticker = $mysqli->select_row('last_price,ts_updated', "{$bot_prefix}__tickers", "WHERE pair_id = 1");
     if (is_array($ticker) && $ticker[1] > $btc_time) {
         $btc_price = $ticker[0];
         $btc_time = $ticker[1];
     }
 
-    $pairs_table = "{$exch}__pairs_map";
+    $pairs_table = "{$bot_prefix}__pairs_map";
     $bot_pairs = $mysqli->select_map('pair_id,pair', $pairs_table, 'ORDER BY pair');
     $pairs_configs[$app] = [];
-    foreach ($bot_pairs as $pair_id => $pair) {
-        if (is_file("{$bot_dir}/$pair.json")) {
-            $pairs_configs[$app][$pair_id] = file_load_json("{$bot_dir}/$pair.json");
+    $tickersRows = $mysqli->select_rows('pair_id,symbol,last_price,multiplier,flags,tick_size,lot_size', "{$bot_prefix}__tickers", '', MYSQLI_ASSOC);
+    if (is_array($tickersRows)) {
+        foreach ($tickersRows as $tr) {
+            $pair_id = intval($tr['pair_id'] ?? 0);
+            if ($pair_id <= 0) continue;
+            $symbol = strtoupper((string)($tr['symbol'] ?? ($bot_pairs[$pair_id] ?? '')));
+            $quote = '';
+            foreach (['USDT', 'USDC', 'USD', 'XBT', 'BTC', 'ETH'] as $suffix) {
+                if ($symbol !== '' && str_ends_with($symbol, $suffix)) {
+                    $quote = $suffix;
+                    break;
+                }
+            }
+            $flags = intval($tr['flags'] ?? 0);
+            $pairs_configs[$app][$pair_id] = (object)[
+                'last_price' => floatval($tr['last_price'] ?? 0),
+                'multiplier' => floatval($tr['multiplier'] ?? 1),
+                'is_inverse' => (bool)($flags & 1),
+                'is_quanto' => (bool)($flags & 2),
+                'quote_currency' => $quote,
+                'pos_mult' => 1.0,
+            ];
         }
     }
 
-    $mo_table = "{$exch}__matched_orders";
-    $err_table = "{$exch}__last_errors";
+    $mo_table = "{$bot_prefix}__matched_orders";
+    $err_table = "{$bot_prefix}__last_errors";
     $last_err = $row['last_error'];
     if ('' == $last_err)
         $last_err = $mysqli->select_value('CONCAT(TIME(ts), " ", message)', $err_table, "WHERE (account_id = $acc_id) ORDER BY ts DESC LIMIT 1") ?? '';
@@ -90,7 +110,7 @@ foreach ($activity as $acc_id => $row) {
     $matched_count = $mysqli->select_value('COUNT(*)', $mo_table, "WHERE (account_id = $acc_id) AND (ts >= '$day_start')");
     $errors = $mysqli->select_value('COUNT(*)', $err_table, "WHERE (account_id = $acc_id)");
 
-    $evt_table = "{$exch}__events";
+    $evt_table = "{$bot_prefix}__events";
     $events = $mysqli->select_map('event,COUNT(*)', $evt_table, "WHERE account_id = $acc_id AND ts >= '$day_start' GROUP BY event");
     $restarts = 0;
     $exceptions = 0;
@@ -127,18 +147,36 @@ foreach ($activity as $acc_id => $row) {
     ];
 }
 
-$symbol_map = json_decode(file_get_contents("cm_symbols.json"), true);
+$pairs_map_url = signals_api_url('pairs_map.php?full_dump=1');
+$pairs_map_json = curl_http_request($pairs_map_url);
+$symbol_map = json_decode($pairs_map_json, true);
 
 if (!is_array($symbol_map)) {
-    send_error('wrong pairs_map');
-    exit;
+    $symbol_map = [];
+    foreach ($cfg_map as $bot => $config) {
+        $acc_id = $acc_map[$bot];
+        $exch = strtolower($config['exchange'] ?? 'NYMEX');
+        $cfg_table = $bots[$bot] ?? '';
+        $bot_prefix = (strpos($cfg_table, 'config__') === 0) ? substr($cfg_table, 8) : $exch;
+        $pairs = $mysqli->select_map('pair_id,pair', "{$bot_prefix}__pairs_map", '');
+        if (!is_array($pairs)) {
+            continue;
+        }
+        foreach ($pairs as $pair_id => $pair_name) {
+            if (!isset($symbol_map[$pair_id])) {
+                $symbol_map[$pair_id] = ['symbol' => strtoupper((string)$pair_name)];
+            }
+        }
+    }
 }
 
 $pos_map = [];
 foreach ($cfg_map as $bot => $config) {
     $acc_id = $acc_map[$bot];
     $exch = strtolower($config['exchange'] ?? 'NYMEX');
-    $pos_map[$bot] = $mysqli->select_map('`pair_id`,`current`,`offset`', "{$exch}__positions", "WHERE account_id = $acc_id");
+    $cfg_table = $bots[$bot] ?? '';
+    $bot_prefix = (strpos($cfg_table, 'config__') === 0) ? substr($cfg_table, 8) : $exch;
+    $pos_map[$bot] = $mysqli->select_map('`pair_id`,`current`,`offset`', "{$bot_prefix}__positions", "WHERE account_id = $acc_id");
 }
 
 function is_light_color(string $color) {

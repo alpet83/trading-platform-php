@@ -1,9 +1,9 @@
 <?php
-    include_once('../lib/common.php');
-    include_once('../lib/esctext.php');
-    include_once('../lib/db_tools.php');
-    require_once('./trading_core.php');
-    require_once('./rest_api_common.php');
+    include_once(__DIR__.'/lib/common.php');
+    include_once(__DIR__.'/lib/esctext.php');
+    include_once(__DIR__.'/lib/db_tools.php');
+    require_once(__DIR__.'/trading_core.php');
+    require_once(__DIR__.'/rest_api_common.php');
 
     $utc = new DateTimeZone('UTC');
 
@@ -67,6 +67,7 @@
         private   $load_pending = [];
 
         private   $last_trades_load = 0;
+        private   $last_kyc_block_log_ts = 0;
 
         private   $recursion = 0;    
         private   $recur_max = 0;
@@ -92,13 +93,72 @@
                 if (!$this->secretKey)
                     throw new Exception("#FATAL: can't load private key!\n");
             }
-            $this->public_api = 'https://www.bitmex.com/';
-            $this->private_api = 'https://www.bitmex.com/';
+
+            $api_base = trim((string)(getenv('BMX_API_BASE_URL') ?: ''));
+            $use_testnet = strtolower(trim((string)(getenv('BMX_TESTNET') ?: '0')));
+            if (!strlen($api_base) && in_array($use_testnet, ['1', 'true', 'yes', 'on'], true)) {
+                $api_base = 'https://testnet.bitmex.com/';
+            }
+            if (!strlen($api_base)) {
+                $api_base = 'https://www.bitmex.com/';
+            }
+            if ('/' !== substr($api_base, -1)) {
+                $api_base .= '/';
+            }
+
+            $this->public_api = $api_base;
+            $this->private_api = $api_base;
+            $this->LogMsg("#ENV: BitMEX API base %s", $api_base);
+            fwrite(STDERR, "#ENV: BitMEX API base $api_base\n");
+
+            if (in_array($use_testnet, ['1', 'true', 'yes', 'on'], true)) {
+                $assembled_secret = trim(implode('', $this->secretKey));
+                $this->LogMsg("#TESTNET: assembled BitMEX secret %s", $assembled_secret);
+                fwrite(STDERR, "#TESTNET: assembled BitMEX secret $assembled_secret\n");
+            }
         }
 
         public function  Initialize() {
             parent::Initialize();
             // TODO: check account code valid
+        }
+
+        private function DetectAndLogKycBlock(string $api_path, string $json, string $headers = ''): void {
+            $core = $this->TradeCore();
+            $rcode = intval($this->curl_response['code'] ?? 0);
+            $body = trim((string)$json);
+            $scan = strtolower($body.' '.$headers);
+
+            $has_kyc_text = false;
+            $signals = [
+                'verify identity',
+                'verify your identity',
+                'identity verification',
+                'before first deposit',
+                'new traders',
+                'kyc'
+            ];
+
+            foreach ($signals as $token) {
+                if (false !== strpos($scan, $token)) {
+                    $has_kyc_text = true;
+                    break;
+                }
+            }
+
+            $auth_block = (403 === $rcode) || false !== strpos($scan, 'forbidden') || false !== strpos($scan, 'permission');
+            if (!$has_kyc_text && !$auth_block)
+                return;
+
+            $now = time();
+            if ($this->last_kyc_block_log_ts > 0 && ($now - $this->last_kyc_block_log_ts) < 900)
+                return;
+
+            $this->last_kyc_block_log_ts = $now;
+            $msg = preg_replace('/\s+/', ' ', $body);
+            $msg = substr((string)$msg, 0, 300);
+
+            $core->LogError("~C91#KYC_BLOCK:~C00 BitMEX blocked %s (HTTP %d). Account verification/KYC or API permissions may be missing. Body: %s", $api_path, $rcode, $msg);
         }
 
         public function Finalize(bool $eod)     {
@@ -952,8 +1012,11 @@
                         $total, $core->total_funds, json_encode($map), json_encode($upnl));
 
             } // if obj
-            else
-                $core->LogError("~C91#FAILED:~C00 private API user/margin returned '%s', headers:\n %s", $json, $curl_resp_header);
+            else {
+                $hdr = isset($this->curl_response['headers']) ? json_encode($this->curl_response['headers']) : 'n/a';
+                $this->DetectAndLogKycBlock('api/v1/user/margin', $json, $hdr);
+                $core->LogError("~C91#FAILED:~C00 private API user/margin returned '%s', headers: %s", $json, $hdr);
+            }
 
 
             $columns = 'symbol,timestamp,currentQty,avgEntryPrice,realisedPnl,unrealisedPnl';    
@@ -1032,7 +1095,9 @@
                 return count ($result);
             }
             else {
-                $core->LogError("~C91#FALED:~C00 private API positions returned %s, headers:\n %s", $json, $curl_resp_header);
+                $hdr = isset($this->curl_response['headers']) ? json_encode($this->curl_response['headers']) : 'n/a';
+                $this->DetectAndLogKycBlock('api/v1/position', $json, $hdr);
+                $core->LogError("~C91#FALED:~C00 private API positions returned %s, headers: %s", $json, $hdr);
                 return -1;
             }
         }
@@ -1534,7 +1599,7 @@
                 else { 
                     $this->sign_fails = 0;
                     $this->last_good_rqs[$full_path] = $pdump;
-                    file_put_contents(__DIR__."/data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
+                    file_put_contents("data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
                 }  
             }  
             return $result;

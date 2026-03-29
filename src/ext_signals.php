@@ -788,7 +788,7 @@
             $ti = $this->ticker_info;
             
             if (0 == $price)  
-            $price = $ti->last_price;
+                $price = $ti->last_price;
 
             if ($apply_coef)
                 $base *= $this->open_coef; // лучше его применить до округления в нативные единицы
@@ -1387,7 +1387,7 @@
     protected $signals = [];    
     public    $core = null; // class TradingCore
     public    $engine = null; // class TradingEngine
-    protected $feed_server = 'http://vps.vpn'; // must be specified in /etc/hosts
+    protected $feed_server = 'http://host.docker.internal';
 
     protected $load_fails = 0;
     public   $orders_cache = [];
@@ -1406,6 +1406,19 @@
         $this->core = $owner;
         $this->engine = $owner->Engine();
         if (!$this->engine) throw new Exception("Engine not initialized");
+        $this->feed_server = $this->ResolveFeedServer();
+    }
+
+    protected function ResolveFeedServer(): string {
+        $configured = $this->core->ConfigValue('signals_feed_url', null);
+        if (is_string($configured) && strlen(trim($configured)) > 0) {
+            return rtrim($configured, '/');
+        }
+        $env = getenv('SIGNALS_FEED_URL');
+        if (is_string($env) && strlen(trim($env)) > 0) {
+            return rtrim($env, '/');
+        }
+        return rtrim($this->feed_server, '/');
     }
     public function Finalize(bool $eod) {
       foreach ($this->signals as $sig) {
@@ -1796,11 +1809,45 @@
 
     public function LoadSignals(): int {
         $engine = $this->engine;
-        $core = $this->core;      
-        $setup = $core->ConfigValue('signals_setup', -1);
-        if ($setup < 0)
+        $core = $this->core;
+        $this->feed_server = $this->ResolveFeedServer();
+        $setup_cfg = trim((string)$core->ConfigValue('signals_setup', ''));
+        if ('' === $setup_cfg)
             throw new Exception("Invalid signals setup value (not set in config table)");
-        $url = $this->feed_server."/get_signals.php?setup=$setup";
+
+        $setup = $setup_cfg;
+        if (!preg_match('/^\d+$/', $setup_cfg)) {
+            $setup_id = 0;
+            $decoded = json_decode($setup_cfg, true);
+
+            if (is_array($decoded)) {
+                if (isset($decoded['setup'])) {
+                    $setup_id = intval($decoded['setup']);
+                } else {
+                    foreach ($decoded as $row) {
+                        if (is_array($row) && isset($row['setup'])) {
+                            $setup_id = intval($row['setup']);
+                            if ($setup_id > 0) break;
+                        }
+                    }
+                }
+            }
+
+            // Fallback for lightly sanitized values like [{¨setup¨:1,¨qty¨:1}].
+            if ($setup_id <= 0 && preg_match('/setup[^0-9-]*([0-9]+)/i', $setup_cfg, $m)) {
+                $setup_id = intval($m[1]);
+            }
+
+            if ($setup_id > 0) {
+                $setup = strval($setup_id);
+            }
+        }
+
+        if (!preg_match('/^\d+$/', $setup)) {
+            throw new Exception("Invalid signals setup value: $setup_cfg");
+        }
+
+        $url = $this->feed_server."/get_signals.php?setup=".rawurlencode($setup);
         $json = curl_http_request($url);
         if (!$json) {
             $this->load_fails ++;

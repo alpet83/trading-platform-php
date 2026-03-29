@@ -1,0 +1,208 @@
+param(
+  [string]$ProjectRoot = "P:/opt/docker/trading-platform-php",
+  [string]$ComposeFile = "docker-compose.yml",
+  [string]$PassInitComposeFile = "docker-compose.init-pass.yml"
+)
+
+$ErrorActionPreference = "Stop"
+Set-Location $ProjectRoot
+
+function Ask([string]$Prompt, [string]$Default = "") {
+  if ($Default -ne "") {
+    $v = Read-Host "$Prompt [$Default]"
+    if ([string]::IsNullOrWhiteSpace($v)) { return $Default }
+    return $v.Trim()
+  }
+  return (Read-Host $Prompt).Trim()
+}
+
+function AskSecret([string]$Prompt) {
+  $secure = Read-Host $Prompt -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+  }
+}
+
+function EscapeSql([string]$Value) {
+  return $Value.Replace("'", "''")
+}
+
+function AskChoice([string]$Prompt, [int]$Min, [int]$Max, [int]$Default) {
+  while ($true) {
+    $raw = Ask $Prompt "$Default"
+    $v = 0
+    if ([int]::TryParse($raw, [ref]$v) -and $v -ge $Min -and $v -le $Max) {
+      return $v
+    }
+    Write-Host "Invalid choice: '$raw' (expected $Min..$Max)"
+  }
+}
+
+function Invoke-MariaDbQuery(
+  [string]$ComposeFile,
+  [string]$Query,
+  [switch]$NoHeaders
+) {
+  $dbName = $env:MARIADB_DATABASE
+  if ([string]::IsNullOrWhiteSpace($dbName)) { $dbName = "trading" }
+  $rootPwd = $env:MARIADB_ROOT_PASSWORD
+  if ([string]::IsNullOrWhiteSpace($rootPwd)) { $rootPwd = "root_change_me" }
+
+  $args = @('-f', $ComposeFile, 'exec', '-T', 'mariadb', 'mariadb')
+  if ($NoHeaders) { $args += '-N' }
+  $args += @('-uroot', "-p$rootPwd", $dbName, '-e', $Query)
+
+  $output = & docker-compose @args
+  if ($LASTEXITCODE -ne 0) {
+    throw "MariaDB query failed with code $LASTEXITCODE"
+  }
+  return $output
+}
+
+function SplitSecretAuto([string]$Secret) {
+  if ([string]::IsNullOrWhiteSpace($Secret) -or $Secret.Length -lt 3) {
+    throw "API secret must be at least 3 chars for auto split"
+  }
+
+  $mid = [Math]::Floor($Secret.Length / 2)
+  if ($mid -lt 1 -or $mid -ge $Secret.Length) {
+    throw "Auto split position is out of range"
+  }
+
+  $s0 = $Secret.Substring(0, $mid)
+  $sep = $Secret.Substring($mid, 1)
+  $s1 = $Secret.Substring($mid + 1)
+
+  if ([string]::IsNullOrWhiteSpace($s0) -or [string]::IsNullOrWhiteSpace($sep) -or [string]::IsNullOrWhiteSpace($s1)) {
+    throw "Auto split produced an empty part"
+  }
+
+  return [pscustomobject]@{
+    S0 = $s0
+    Sep = $sep
+    S1 = $s1
+    Pos = $mid
+  }
+}
+
+$source = Ask "Credential source (pass/db)" "pass"
+if ($source -ne "pass" -and $source -ne "db") {
+  throw "Unsupported source: $source"
+}
+
+if ($source -eq "pass") {
+  $accountId = Ask "Account ID" "1"
+  $apiKey = AskSecret "API key"
+  $exchange = Ask "Exchange" "bitmex"
+  $s0 = AskSecret "API secret part S0"
+  $s1 = AskSecret "API secret part S1"
+
+  docker-compose -f $PassInitComposeFile --profile init run --rm pass-init sh -lc "printf '%s\n' '$apiKey' | pass insert -f 'api/$exchange@$accountId' >/dev/null; printf '%s\n' '$s0' | pass insert -f 'api/$exchange@$accountId`_s0' >/dev/null; printf '%s\n' '$s1' | pass insert -f 'api/$exchange@$accountId`_s1' >/dev/null; pass show 'api/$exchange@$accountId' >/dev/null"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Pass injection failed with code $LASTEXITCODE"
+  }
+
+  Write-Host "#SUCCESS: pass credentials injected for $exchange@$accountId"
+} else {
+  $botsRaw = Invoke-MariaDbQuery -ComposeFile $ComposeFile -NoHeaders -Query "SELECT applicant, table_name FROM config__table_map ORDER BY applicant"
+  $bots = @()
+  foreach ($line in $botsRaw) {
+    $s = "$line".Trim()
+    if ([string]::IsNullOrWhiteSpace($s)) { continue }
+    $parts = $s -split "`t", 2
+    if ($parts.Count -lt 2) { continue }
+    $bots += [pscustomobject]@{ Applicant = $parts[0].Trim(); Table = $parts[1].Trim() }
+  }
+
+  if ($bots.Count -eq 0) {
+    throw "No bots found in config__table_map"
+  }
+
+  Write-Host "Available bots:"
+  for ($i = 0; $i -lt $bots.Count; $i++) {
+    $n = $i + 1
+    Write-Host ("[{0}] {1}  ({2})" -f $n, $bots[$i].Applicant, $bots[$i].Table)
+  }
+
+  $botIdx = AskChoice "Choose bot number" 1 $bots.Count 1
+  $selectedBot = $bots[$botIdx - 1]
+  $botName = $selectedBot.Applicant
+  $cfgTable = $selectedBot.Table
+
+  $accRaw = Invoke-MariaDbQuery -ComposeFile $ComposeFile -NoHeaders -Query "SELECT DISTINCT account_id FROM $cfgTable ORDER BY account_id"
+  $accounts = @()
+  foreach ($line in $accRaw) {
+    $s = "$line".Trim()
+    if (-not [string]::IsNullOrWhiteSpace($s)) {
+      $accounts += $s
+    }
+  }
+
+  if ($accounts.Count -gt 0) {
+    Write-Host "Available account_id values for $botName:"
+    for ($i = 0; $i -lt $accounts.Count; $i++) {
+      $n = $i + 1
+      Write-Host ("[{0}] {1}" -f $n, $accounts[$i])
+    }
+    $accIdx = AskChoice "Choose account number" 1 $accounts.Count 1
+    $accountId = $accounts[$accIdx - 1]
+  } else {
+    $accountId = Ask "Account ID" "1"
+  }
+
+  $apiKey = AskSecret "API key"
+  $secret = AskSecret "API secret"
+
+  $split = SplitSecretAuto $secret
+  Write-Host ("#INFO: secret auto-split at pos {0}: s0_len={1}, sep='{2}', s1_len={3}" -f $split.Pos, $split.S0.Length, $split.Sep, $split.S1.Length)
+
+  $tableEsc = EscapeSql $cfgTable
+  $keyEsc = EscapeSql $apiKey
+  $s0Esc = EscapeSql $split.S0
+  $s1Esc = EscapeSql $split.S1
+  $sepEsc = EscapeSql $split.Sep
+  $paramKey = "api_key"
+  $paramSecret = "api_secret"
+  $paramS0 = "api_secret_s0"
+  $paramS1 = "api_secret_s1"
+  $paramSep = "api_secret_sep"
+
+  $paramKeyEsc = EscapeSql $paramKey
+  $paramSecretEsc = EscapeSql $paramSecret
+  $paramS0Esc = EscapeSql $paramS0
+  $paramS1Esc = EscapeSql $paramS1
+  $paramSepEsc = EscapeSql $paramSep
+
+  $query = @"
+SET @cfg_table='${tableEsc}';
+SET @q1=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramKeyEsc}', ''',''', '${keyEsc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
+PREPARE s1 FROM @q1; EXECUTE s1; DEALLOCATE PREPARE s1;
+SET @q2=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramSecretEsc}', ''','''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
+PREPARE s2 FROM @q2; EXECUTE s2; DEALLOCATE PREPARE s2;
+SET @q3=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramS0Esc}', ''',''', '${s0Esc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
+PREPARE s3 FROM @q3; EXECUTE s3; DEALLOCATE PREPARE s3;
+SET @q4=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramS1Esc}', ''',''', '${s1Esc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
+PREPARE s4 FROM @q4; EXECUTE s4; DEALLOCATE PREPARE s4;
+SET @q5=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramSepEsc}', ''',''', '${sepEsc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
+PREPARE s5 FROM @q5; EXECUTE s5; DEALLOCATE PREPARE s5;
+"@
+
+  Invoke-MariaDbQuery -ComposeFile $ComposeFile -Query $query | Out-Null
+
+  $verify = @"
+SET @cfg_table='${tableEsc}';
+SET @vq=CONCAT('SELECT param, value FROM ', @cfg_table, ' WHERE account_id=', ${accountId}, ' AND param IN (''${paramKeyEsc}'',''${paramSecretEsc}'',''${paramS0Esc}'',''${paramS1Esc}'',''${paramSepEsc}'') ORDER BY param');
+PREPARE sv FROM @vq; EXECUTE sv; DEALLOCATE PREPARE sv;
+"@
+
+  $rows = Invoke-MariaDbQuery -ComposeFile $ComposeFile -Query $verify
+  Write-Host "#INFO: verification rows:"
+  $rows | ForEach-Object { Write-Host $_ }
+
+  Write-Host "#SUCCESS: db credentials injected for $botName, account $accountId (split secret + separator persisted)"
+}
+
+Write-Host "#SUCCESS: interactive key injection completed"

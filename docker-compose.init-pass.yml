@@ -1,0 +1,38 @@
+version: '3.9'
+
+# Standalone Pass & GPG initialization service
+# 
+# Usage (one-time setup):
+#   docker-compose -f docker-compose.init-pass.yml --profile init run pass-init
+#
+# Or via main compose:
+#   docker-compose --profile init run pass-init
+#
+# This creates:
+#   - GPG master key (batch mode, no passphrase)
+#   - Pass store initialized
+#   - Test credentials for bot_manager
+
+services:
+  pass-init:
+    image: ubuntu:24.04
+    container_name: trd-pass-init
+    restart: "no"
+    
+    volumes:
+      # Mount GPG home to persist keys
+      - ./secrets/gnupg:/root/.gnupg
+      # Mount Pass store to persist encrypted credentials
+      - ./secrets/pass-store:/root/.password-store
+      # Mount init script
+      - ./scripts/init-pass.sh:/init-pass.sh:ro
+    
+    environment:
+      GNUPGHOME: /root/.gnupg
+      GPG_USER_NAME: TradeBot
+      GPG_USER_EMAIL: tradebot@example.local
+      PASS_STORE_DIR: /root/.password-store
+    
+    command: [ "bash", "/init-pass.sh" ]
+    
+    profiles: ["init"]

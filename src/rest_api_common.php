@@ -1,6 +1,6 @@
 <?php
-    include_once('../lib/common.php');
-    include_once('../lib/db_tools.php');
+    include_once(__DIR__.'/lib/common.php');
+    include_once(__DIR__.'/lib/db_tools.php');
     require_once('trading_core.php');
 
     function parse_headers($src) {
@@ -209,15 +209,23 @@
         }
 
         public function get_btc_price(string $ts = 'now'): float {
-            if (0 == $this->btc_price) { 
-                $bp_file = '/tmp/btc_price.last';        
-                $age = time() - filemtime($bp_file);
-                $this->btc_price = file_read_int($bp_file) or 100000;
-                if ($age > 900)
-                    $this->TradeCore()->LogError("~C91#WARN:~C00 used old cached btc_price = %.0f, elps = %.1f hours", $this->btc_price, $age / 3600);
-            }        
+            if (0 == $this->btc_price) {
+                $datafeed =  $this->sqli('datafeed');
+                $table = $this->TableName('candles__btcusd');
+                if (str_in($table, 'ERROR')) {
+                    $table = 'candles__btcusd';
+                }
+                if ($datafeed && $datafeed->table_exists($table)) {
+                    $val = $datafeed->select_value('close', $table, 'ORDER BY ts DESC LIMIT 1');
+                    if (!is_null($val)) {
+                        $this->btc_price = floatval($val);
+                    }
+                }
+                if (0 == $this->btc_price) {
+                    $this->btc_price = 100000;
+                }
+            }
             if ('now' == $ts) {
-                file_put_contents('/tmp/btc_price.last', round($this->btc_price)); // frequently update, storing on tmpfs
                 return $this->btc_price;
             }
 

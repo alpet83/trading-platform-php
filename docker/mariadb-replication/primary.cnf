@@ -1,0 +1,21 @@
+[mysqld]
+# Single-writer primary for stable HA replication.
+server-id=1
+log-bin=/var/lib/mysql/mariadb-bin
+binlog-format=ROW
+log-slave-updates=ON
+sync-binlog=1
+innodb_flush_log_at_trx_commit=1
+
+# Prevent unlimited log growth.
+max_binlog_size=256M
+binlog_expire_logs_seconds=259200
+
+# Safer replica recovery behavior.
+relay-log=/var/lib/mysql/relay-bin
+relay-log-recovery=ON
+relay-log-purge=ON
+relay-log-space-limit=1073741824
+
+# MariaDB GTID mode.
+gtid_strict_mode=ON

@@ -1,0 +1,10 @@
+#!/bin/bash
+FPID=../bitmex2_bot.pid
+LOG=`ls -t logs2.td/engine* | head -1`
+if [ -e $FPID ];  then
+ read -r pid < $FPID
+ tail --pid=$pid -f -n 200 $LOG
+else
+ tail -n 200 $LOG
+fi
+

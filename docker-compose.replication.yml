@@ -1,0 +1,46 @@
+services:
+  mariadb-watchdog-primary:
+    profiles: ["ha-primary"]
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-mariadb-watchdog-primary
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      ROLE: primary
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root_change_me}
+      PRIMARY_HOST: ${PRIMARY_HOST:-mariadb}
+      PRIMARY_PORT: ${PRIMARY_PORT:-3306}
+      REPL_USER: ${MARIADB_REPL_USER:-repl}
+      REPL_PASSWORD: ${MARIADB_REPL_PASSWORD:-repl_change_me}
+      WATCHDOG_INTERVAL_SECONDS: ${WATCHDOG_INTERVAL_SECONDS:-15}
+      MAX_LAG_SECONDS: ${MARIADB_MAX_REPL_LAG_SECONDS:-300}
+    volumes:
+      - ./scripts/replication:/opt/replication:ro
+    command: ["/bin/bash", "/opt/replication/watchdog-loop.sh"]
+
+  mariadb-watchdog-standby:
+    profiles: ["ha-standby"]
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-mariadb-watchdog-standby
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      ROLE: standby
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root_change_me}
+      PRIMARY_HOST: ${PRIMARY_HOST:?PRIMARY_HOST must point to active host DB}
+      PRIMARY_PORT: ${PRIMARY_PORT:-3306}
+      REPL_USER: ${MARIADB_REPL_USER:-repl}
+      REPL_PASSWORD: ${MARIADB_REPL_PASSWORD:-repl_change_me}
+      WATCHDOG_INTERVAL_SECONDS: ${WATCHDOG_INTERVAL_SECONDS:-15}
+      MAX_LAG_SECONDS: ${MARIADB_MAX_REPL_LAG_SECONDS:-300}
+    volumes:
+      - ./scripts/replication:/opt/replication:ro
+    command: ["/bin/bash", "/opt/replication/watchdog-loop.sh"]

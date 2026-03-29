@@ -1,6 +1,32 @@
 <?php
     require_once 'common.php';
-    require_once 'print_r_level.php';
+    $print_level_file = __DIR__.'/print_r_level.php';
+    if (file_exists($print_level_file)) {
+        require_once $print_level_file;
+    }
+    if (!function_exists('printRLevel')) {
+        function printRLevel(mixed $value, int $maxLevel = 2, int $level = 0): string {
+            if ($level >= $maxLevel) {
+                if (is_array($value)) return 'Array('.count($value).')';
+                if (is_object($value)) return 'Object('.get_class($value).')';
+                return var_export($value, true);
+            }
+
+            if (!is_array($value) && !is_object($value)) {
+                return var_export($value, true);
+            }
+
+            $indent = str_repeat('  ', $level);
+            $nextIndent = str_repeat('  ', $level + 1);
+            $rows = [];
+            foreach ((array)$value as $key => $item) {
+                $rows[] = sprintf('%s%s => %s', $nextIndent, strval($key), printRLevel($item, $maxLevel, $level + 1));
+            }
+
+            $open = is_array($value) ? 'Array [' : 'Object('.get_class($value).') [';
+            return $open."\n".implode("\n", $rows)."\n".$indent.']';
+        }
+    }
 
     final class ValueConstraint {
         public ?BoundedValue $owner;

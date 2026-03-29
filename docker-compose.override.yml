@@ -1,0 +1,47 @@
+# ============================================================================
+# docker-compose.override.yml — Test/Development Overrides for HA Pair
+# 
+# USE: docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+# 
+# For production, do NOT use this file. Instead:
+#   - Set env vars in .env file
+#   - Use separate docker-compose.ha-primary.yml / docker-compose.ha-standby.yml
+# ============================================================================
+
+services:
+  mariadb:
+    environment:
+      # === TEST REPLACEMENTS (overrides .env values) ===
+      
+      # Root & app user credentials (test-only)
+      MARIADB_ROOT_PASSWORD: test_root_123
+      MARIADB_PASSWORD: test_trading_456
+      
+      # Replication user & recovery credentials (test-only)
+      MARIADB_REPL_USER: test_repl
+      MARIADB_REPL_PASSWORD: test_repl_789
+      MARIADB_REMOTE_USER: test_remote_master
+      MARIADB_REMOTE_PASSWORD: test_remote_pass_999
+      
+      # Backup & logging (test-friendly)
+      MARIADB_BACKUP_ON_START: 1
+      MARIADB_BACKUP_RETENTION_DAYS: 1
+      MARIADB_BACKUP_DIR: /var/backup/mysql
+      
+      # Watchdog (faster ticks for testing)
+      WATCHDOG_INTERVAL_SECONDS: 5
+      MARIADB_MAX_REPL_LAG_SECONDS: 30
+      
+      # Replication
+      MARIADB_BINLOG_EXPIRE_SECONDS: 3600
+      MARIADB_RELAY_LOG_SPACE_LIMIT: 536870912
+
+      # For standby container (set PRIMARY_HOST to primary container DNS or IP)
+      PRIMARY_HOST: mariadb
+      PRIMARY_PORT: 3306
+
+  web:
+    environment:
+      # Optional: use test DB credentials
+      DB_PASS: test_trading_456
+      DB_USER: trading

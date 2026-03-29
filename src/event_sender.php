@@ -23,10 +23,19 @@
   $log_file = null;
   $test = false;
   $owner = 'default';
+  $owner_log_dir = 'logs'; // fallback when no argv
 
   if (isset($argv[1])) {
     $owner = $argv[1];
-    $test = $argv[2] ?? false;    
+    $test = $argv[2] ?? false;
+    // Prepare per-owner log subdirectory
+    $owner_parts = explode('@', $owner, 2);
+    $exch_lc = strtolower($owner_parts[0]);
+    $acct_id = $owner_parts[1] ?? 'default';
+    $owner_log_dir = "logs/{$exch_lc}_bot/{$acct_id}";
+    if (!is_dir($owner_log_dir)) mkdir($owner_log_dir, 0775, true);
+    global $err_log;
+    $err_log = "{$owner_log_dir}/event_sender.errors.log";    
     if ($test) {
        set_time_limit(25);
        if ($g_queue->start_sender())
@@ -62,7 +71,7 @@
  $g_queue->channel = $owner;
  while (!$test && !is_null($g_queue)) {
     if (!$log_file)
-         $log_file = fopen("logs/event_sender_$owner.log", 'w'); // multiple instances possible 
+         $log_file = fopen("{$owner_log_dir}/event_sender.log", 'w'); // multiple instances possible 
     $json = false;     
     set_time_limit(50);
     usleep(100000);   

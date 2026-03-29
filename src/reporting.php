@@ -38,7 +38,11 @@
             };         
 
             $rec->on_error = function ($rec) {        
-                $out = shell_exec("ping -c 3 vps.vpn");
+                $probe_url = (string)(getenv('TRADEBOT_PHP_HOST') ?: getenv('SIGNALS_API_URL') ?: getenv('SIGNALS_FEED_URL') ?: 'http://host.docker.internal');
+                $probe_host = parse_url($probe_url, PHP_URL_HOST);
+                if (!is_string($probe_host) || '' === trim($probe_host))
+                    $probe_host = 'host.docker.internal';
+                $out = shell_exec("ping -c 3 ".escapeshellarg($probe_host));
                 $extra = '';
                 if (str_in($out, '100% loss')) 
                     $extra = ", ping:\n $out";        

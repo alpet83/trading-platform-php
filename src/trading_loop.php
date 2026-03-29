@@ -162,8 +162,8 @@
 
             $ctx->min_qty = $ti->RoundQty($min_cost / $price);    
             $ctx->max_qty = $ti->RoundQty($max_cost / $price );
-            $ctx->min_amount = $engine->QtyToAmount($pair_id, $price, $btc_price, $ctx->min_qty, 'calc:min_qty'); 
-            $ctx->max_amount = $engine->QtyToAmount($pair_id, $price, $btc_price,  $ctx->max_qty, 'calc:max_qty');  
+            $ctx->min_amount = $engine->QtyToAmount($pair_id, $price, $btc_price, $ctx->min_qty); 
+            $ctx->max_amount = $engine->QtyToAmount($pair_id, $price, $btc_price,  $ctx->max_qty);  
 
             $extreme_qty = $ti->RoundQty(ABNORMAL_HIGH_COST / $price); // стоимость такой величины приведет к зарегистрированному сбою
             $extreme_amount = $engine->QtyToAmount($pair_id, $price, $btc_price, $extreme_qty);
@@ -671,7 +671,7 @@
                 $warns = [];  
                 $total_pos ++;
                 $have_pairs ++;        
-                xdebug_start_trace("/tmp/trd_trace_{$tinfo->pair}.xt", XDEBUG_TRACE_COMPUTERIZED);
+                xdebug_start_trace(tp_debug_tmp_path("trd_trace_{$tinfo->pair}.xt", 'xdebug'), XDEBUG_TRACE_COMPUTERIZED);
                 
                 $lot_size = $tinfo->lot_size;
                 $pair = $tinfo->pair;                            

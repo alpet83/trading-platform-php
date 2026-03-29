@@ -109,6 +109,7 @@
     $header_printed = true; 
     echo "<H2>$title</H2>\n";
     echo button_link("Go Home..", 'index.php')."\n";    
+    echo button_link("Basic Admin..", 'basic-admin.php')."\n";
 
     include_once('admin_pos.php');  
 

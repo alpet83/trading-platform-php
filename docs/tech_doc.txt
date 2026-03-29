@@ -1,0 +1,445 @@
+
+Обработка сигналов:  
+ * поддержание всех объектов сигналов до их исполнения на уровне TradeEngine. 
+ * вывод статистики по сигналам в телегу, если исполнение выходит за параметры
+ * оптимизация выполнения должна учитывать % прогресса сигнала и заданное время выполнения (15-30 мин в зависимости от волы). Чтобы спешка исполнения начиналась при отставании этого %  
+ * лучшая цена исполнения должна быть близка к 5 минутным экстремумам, нет смысла ставить далеко заявки (потенциально вредно)
+ *
+ * дополнительная статистика каждый час: выводить проскальзывание накопительным итогом, игнорить и удалять объекты с более чем часовым исполнением
+ * ПРОБЛЕМА ИЗОХРОННОСТИ ДЛЯ ОЦЕНКИ ПРОСКАЛЬЗЫВАНИЯ: сигналы могут поступать до исполнения предыдущих, тогда как цена начала исполнения фиксируется при создании объекта сигнала!!! 
+    Досрочно закрывать недоисполненный сигнал или расширять активный? Сохранять цены при изменениях целевой позиции, для оценки средней входящей?
+ 
+ 
+READY:
+ * переподключение к БД, контроль пингом  
+ * partiallfilled error in BitMEX(!)
+ * лимитные заявки и прямое исполнение сигналов
+ * маркет-мейкер
+ * грид-боты простейшие
+TODO:
+ * 
+ * расчет дневного результата (дельты депозита) по сделкам, с учетом UPNL. Сравнение с биржевым результатом
+ * отображение рисков по позициям, дополнительная нотификация по заявкам открывающим экстремальные позиции
+ *
+ *
+ *
+------------------------------------------------------------------------------
+=============== СИСТЕМА ВЗАИМНОГО РЕЗЕРВИРОВАНИЯ =============================
+  Инстансы взаимодействуют посредством связанной репликацией БД. Каждый из них мониторит таблицу активности, и в случае отсутствия в ней обновлений активирует торговлю.
+  
+  TABLE bot__redudancy PK(exchange, account_id), TEXT master_host, INT master_pid, INT errors, TIMESTAMP ts_alive, TEXT status 
+  
+TODO:
+ * Ругаться на отсутствие репликации в телегу, после захвата торговой сессии.
+ * Уведомление о старте резерва, после запуска робота или восстановления связи
+
+------------------------------------------------------------------------------ 
+=============== ОПТИМИЗАТОР ИСПОЛНЕНИЯ (КОНЦЕПТ). ============================
+ Отдельный скрипт каждую минуту обрабатывает поток минутных свечей, делая маркировки для каждого ТФ: направление движения цены, факт расширения диапазона. 
+ Исполняющие скрипты соответственно используют такую маркировку, при условии актуализированных данных. Если диапазон расширяется и есть движение цены в сторону открытия позиции,
+ используется наиболее агрессивный выбор цены. Если диапазон не расширяется, или цена движется супротив открытия заявки, используется спокойный выбор цены.     
+ В зависимости от стратегии ленивого или быстрого исполнения, производится разбивка крупных входов на части - с расчетом на поочередное исполнение небольшими объемами.
+ 
+ >>> Результатами обработки ценовых данных, является:
+   1.  целочисленный фактор скорости (от 0 до 15) исполнения
+   2.  максимальный объем заявки, что ограничивает % выполнения сигнала в минуту
+   3.  худшая возможная цена выставления заявки
+   4.  прогнозное время отработки сигнала в условиях оптимизации
+   
+ 
+ 
+ 
+ Блокиратор: в случае экстремальных показаний RSI 1h цену открытия лимитировать соотвествующей последнему значению RSI в пределах "нормы" (30-60), допуская продление исполнения входа 
+ до закрытия следующего часа. После второго часа в перепроданности, разрешать вход очень малыми объемами (100$ в заявке, в минуту). Отмена блокировки при расширении недельного диапазона. 
+ 
+   RSI 1H policies.
+    (< 30) || (> 70), exec time = 120m
+    (< 25) || (> 75), exec time = 480m
+
+ 
+ Наблюдения:
+  1. В случае открытия большой позиции внутри часа, как правило через 2-3 часа откат. 
+  
+  
+
+======================= СТАТИСТИКА ПО ПРИБЫЛЬНОСТИ СИГНАЛОВ =============================
+
+* Учитывается входы-выходы, в ходе которых серия сделок завершается нулевой позицией. 
+* Выводится отчет с учетом применяемого коэффициента к мастер-счету. 
+* Выводится отчет с пересчетом по волатильности. 
+
+  
+Оценка волатильности: экстремумы за 10 дней, образуют диапазон без усреднения. 
+ Загруженные данные таймфрейм 1Д, пропустить через цикл формирования 10Д экстремумов.
+  
+  
+======================= СЕТОЧНОЕ ИСПОЛНЕНИЕ ==========================================
+Концепция ордерблока: набор заявок с одним направлением, равным объемом, и распределением через равные интервалы.
+В режиме ожидания бот может держать два ордерблока на большой дистанции от спреда, уподобляясь маркет-мейкеру. Когда нужно открывать/закрывать позицию, он активизирует третий ордерблок, 
+в который переносит заявки из соответствующего (аски или биды), при этом интервал сжимается до уровня локальной волатильности 10-15 минут. Наполнение исполняющего ордерблока должно 
+зависеть от целевого объема: от 1 до 5 заявок с фиксированным объемом, где последняя соедржит остаток. Выставление заявок внутрь спреда предполагает полное скрытие объема (айсберг). 
+* Если спред очень большой, можно выставлять провокационные противофазные заявки с минимальным объемом, чтобы появился оригинальный ММ. 
+  
+  
+====================== СЕТОЧНЫЕ БОТЫ =================================================
+Первая реализация получилась очень простой:
+ 1. Заданный диапазон цены делиться на заданное количество шагов, получаются уровни сетки.
+ 2. На каждом уровне, в зависимости от текущей цены спреда может быть выставлена лимитка на продажу или покупку
+ 3. Уровень сетки освобождается, когда по ближнему к нему заявка исполняется с противоположным целевому направлению.
+Такая реализация может последовательно набирать и разгружать позицию, которая всякий раз имеет пресказуемое значение на каждом уровне. 
+Чтобы тейкинг происходил реже, но всегда только по прибыльному набору, можно попробовать использовать среднюю цену набора, как фильтр. Такой подход впрочем чаще всего должен 
+блокировать работу сеточного бота. Альтернативой является, при заметном наборе (несколько уровней) позиции - тейкать немного больше настроечного лота. Однако тогда очистка 
+исполненных заявок взаимным коллапсом, вероятно даст отмену закрытия в масштабе общей позиции. Скажем когда большой лонг набран (во время обвала), тейки продажи на падении увеличенные,
+и коллапс большой продажи с обычным откупом, убирает приращение из расчета текущей дельта-позиции и лонг будет восстановлен доп. заявкой. 
+ 
+  
+====================== АРБИТРАЖ И РАСПРЕДЕЛЕНИЕ ЛИКВИДНОСТИ ==========================
+1. Нужно реализовать анализ ликвидности, через оценку объемов проходящих по каждой паре, наличию крупных заявок около спреда (проверка стакана), с выводом универсального индекса
+2. При активированном арбитраже, поступающий сигнал распределяется арбитром на сервере, так чтобы максимальный объем был исполнен там где меньше всего будет проскальзывание. 
+   Далее происходит распределение объема между биржами, небольшими лотами, т.е. скажем крупный закуп распродается, и на остальных биржах происходит откуп. 
+3. Механизм может включать аккаунты-мулы, где объем будет набираться исключительно для распределения ликвидности, но не будет удерживаться долго. Например основные депозиты могут 
+быть спотовые, в то время как мулы будут использовать маржинальные пары (там где спот неликвиден, например BitMEX).
+  
+  
+----------------------------------------------------------------------------- 
+================ Исполняющая система для Deribit: ===========================
+ 1. Обработка публичного API, TODO: instrument info, last prices (ask, bid)
+ 2. Обработка приватного API, TODO: positions, orders,traders, new_order, kill_order 
+ 3. Создание всех таблиц в БД
+ 
+ 
+ -----------------  Deribit tickers ----------------------------
+   for description and config:    
+      api/v2/public/get_instrument?instrument_name=BTC-13JAN23-16000-P
+      api/v2/public/get_instruments?currency=BTC&kind=future"
+  
+      "instrument_name": "BTC-PERPETUAL",      
+      "instrument_id": 124972,
+      "future_type": "reversed",                    
+       
+   Real-time data:    
+      /api/v2/public/ticker?instrument_name=BTC-PERPETUAL
+   "result": {
+    "best_ask_amount": 53040,
+    "best_ask_price": 36290,
+    "best_bid_amount": 4600,
+    "best_bid_price": 36289.5...
+    
+  23.05.23 - initial code implied  
+    
+    
+ --------------  Deribit orders --------------------------
+    post new order:  
+     api/v2/private/buy?amount=40&instrument_name=ETH-PERPETUAL&label=market0000234&type=market
+     api/v2/private/sell?amount=123&instrument_name=ETH-PERPETUAL&price=1.45610000000000013642e%2B02
+    move exists order:  
+     api/v2/private/edit?advanced=implv&amount=4&order_id=438994&price=222
+     api/v2/private/edit_by_label?amount=150&instrument_name=BTC-PERPETUAL&label=i_love_deribit&price=50111
+    cancel exists oders:
+     api/v2/private/cancel?order_id=ETH-SLIS-12  
+     api/v2/private/cancel_by_label?label=label     
+    check single order: 
+     api/v2/private/get_order_state?order_id=ETH-331562"
+     
+ ---------------- Deribit positions ------------------------
+    retrieve single position: 
+      api/v2/private/get_position?instrument_name=BTC-PERPETUAL 
+    retrive several positions:
+      api/v2/private/get_positions?currency=BTC&kind=future"     
+    
+     
+     
+     
+                   
+   
+        
+  
+  
+  
+
+ALTER TABLE `bitfinex__signals` ADD `last_order` INT UNSIGNED NOT NULL AFTER `slippage`, ADD INDEX `order` (`last_order`);
+
+
+UPDATE `bitmex__signals` S 
+ LEFT OUTER JOIN `bitmex__matched_orders` MO 
+ ON MO.signal_id = S.id 
+ SET S.exec_amount = SUM(S.matched) WHERE MO.id > 0;
+ 
+ 
+UPDATE `bitfinex_signals` S 
+ LEFT OUTER JOIN `bitfinex__archive_orders` MO ON MO.signal_id = S.id 
+ SET S.price = MO.price 
+ WHERE (S.price = 0) 
+
+
+UPDATE `$table` S 
+ LEFT OUTER JOIN `$o_table` MO ON MO.signal_id = S.id 
+ SET S.last_order = GREATEST(S.last_order, MO.id)
+ WHERE (S.last_order = 0) AND (MO.id > 0)                                                               
+
+
+
+
+UPDATE `bitfinex__signals` S 
+ LEFT OUTER JOIN `bitfinex__archive_orders` MO ON MO.signal_id = S.id 
+ SET S.start_pos = S.target_pos - MO.qty * (2 * MO.buy - 1)
+ WHERE (MO.qty > 0) 
+
+
+
+SELECT ts, price, pair_id, qty * (2 * buy - 1) as delta FROM `bitmex__matched_orders` ORDER BY `id` DESC
+
+SELECT pair_id, SUM(exec_amount * slippage) as total_slip FROM `bitmex__signals` GROUP BY pair_id
+
+
+UPDATE `bitfinex__archive_orders` AS AO
+ INNER JOIN (SELECT id, status FROM `bitfinex__matched_orders`) MO ON MO.ID = AO.ID
+ SET AO.status = 'matched'  
+ WHERE AO.status = 'lost'
+
+ 5ZeR
+ 
+
+
+#### restore exec_amount!!!
+
+UPDATE `bitfinex__signals` AS S
+INNER JOIN ( SELECT signal_id, SUM(matched) as sig_matched FROM bitfinex__mixed_orders  GROUP BY signal_id ) MO ON MO.signal_id = S.id
+SET S.exec_amount = MO.sig_matched
+WHERE (S.exec_amount = 0)
+
+
+#### restore exec_price
+
+UPDATE `bitfinex__signals` AS S
+INNER JOIN ( SELECT signal_id, SUM(matched * avg_price) as sig_cost, SUM(matched) as sig_matched FROM bitfinex__mixed_orders  GROUP BY signal_id ) MO ON MO.signal_id = S.id
+SET S.exec_price = ABS(MO.sig_cost / MO.sig_matched), S.slippage = 0
+WHERE (S.exec_price = 0) AND (MO.sig_matched != 0)
+
+
+UPDATE `bitfinex__signals` AS S
+ SET slippage = exec_price - price 
+ WHERE target_pos > start_pos;
+
+
+
+# stats
+
+SELECT pair_id, SUM(slippage * exec_qty) FROM `bitmex__signals` GROUP BY `pair_id` DESC
+
+1T: 4SvcPoo1vnu5atkZ3fnDg6cFK4VzD7hHCh	
+2N: 4SvcPoo1jc2H8DruqMtDh6dNATC7uwhkqi                   
+
+CREATE VIEW `bitmex__mixed_orders` AS
+ SELECT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitmex__archive_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitmex__matched_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitmex__pending_orders;
+
+CREATE VIEW IF NOT EXISTS `bitfinex__mixed_orders` AS
+ SELECT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitfinex__archive_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitfinex_matched_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM bitfinex__pending_orders;
+
+
+CREATE VIEW `binance__mixed_orders` AS
+ SELECT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM binance__archive_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM binance__matched_orders
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM binance__pending_orders;
+
+CREATE VIEW `deribit__mixed_orders` AS
+ SELECT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM deribit__archive_orders ORDER BY id DESC
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM deribit__matched_orders ORDER BY id DESC
+  UNION 
+ SELECT DISTINCT id, ts, account_id, pair_id, signal_id, avg_price, price, amount, buy, matched, order_no, status, flags, in_position, comment, updated FROM deribit__pending_orders ORDER BY id DESC;
+
+
+
+ FLUSH TABLES bitfinex__depth__adausd, bitfinex__depth__algusd, bitfinex__depth__atousd, bitfinex__depth__avaxusd, bitfinex__depth__btcusd FOR EXPORT;
+ FLUSH TABLES bitfinex__depth__dogeusd, bitfinex__depth__dotusd, bitfinex__depth__ethusd, bitfinex__depth__filusd, bitfinex__depth__icpusd, bitfinex__depth__linkusd, bitfinex__depth__ltcusd, bitfinex__depth__lunausd, bitfinex__depth__maticusd, bitfinex__depth__nearusd, bitfinex__depth__solusd, bitfinex__depth__trxusd, bitfinex__depth__uniusd, bitfinex__depth__xlmusd, bitfinex__depth__xrp FOR EXPORT
+
+ ALTER TABLE `bitfinex__ext_signals` CHANGE `limit_price` `limit_price` DECIMAL(16,9) NOT NULL DEFAULT '0';
+ ALTER TABLE `bitfinex__ext_signals` CHANGE `take_profit` `take_profit` DECIMAL(16,9) NOT NULL DEFAULT '0';
+ ALTER TABLE `bitfinex__ext_signals` CHANGE `stop_loss` `stop_losss` DECIMAL(16,9) NOT NULL DEFAULT '0';
+
+
+ ### AFTER RESET DB --------------------------
+ RESET MASTER;
+ SHOW MASTER STATUS;
+
+ STOP SLAVE;
+ CHANGE MASTER TO master_host = "10.119.10.51", master_user = "db_master", master_password = "********", master_log_file = "mariadb-bin.000001", master_log_pos = 330;
+ CHANGE MASTER TO master_host = "10.119.10.50", master_user = "db_master2", master_password = "*******", master_log_file = "mariadb-bin.000001", master_log_pos = 330; 
+ 
+ START SLAVE;
+ SHOW SLAVE STATUS;
+
+ mysql -u trader -p trading 
+
+ CREATE TABLE `bitfinex__depth__lunausd` (
+  `ts` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `frame_type` tinyint unsigned NOT NULL,
+  `best_bid` float NOT NULL,
+  `best_ask` float NOT NULL,
+  `frame_data` blob NOT NULL,
+  PRIMARY KEY (`ts`),
+  KEY `frame_type` (`frame_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
+
+
+
+ CREATE USER 'trader'@'%' IDENTIFIED BY '************';
+ GRANT ALL PRIVILEGES ON trading.* TO 'trader'@'%';
+ GRANT USAGE,SUPER,PROCESS ON *.* TO 'trader'@'%';
+ 
+ CREATE USER 'root'@'localhost' IDENTIFIED with mysql_native_password BY '***********';
+ 
+ GRANT ALL PRIVILEGES ON *.* TO 'debian-sys-maint'@'localhost' IDENTIFIED BY '************';
+ 
+  <5th#iyu&cgK
+ 
+ GRANT USAGE,REPLICATION CLIENT,PROCESS,SHOW DATABASES,SHOW VIEW ON *.* TO 'zbx_monitor'@'localhost';
+ FLUSH PRIVILEGES;
+ GlmxD77mntk=
+ 
+ mysql --batch --skip-column-names --execute \
+  'select concat("alter table ",TABLE_SCHEMA,".",TABLE_NAME," import tablespace;") 
+    from information_schema.TABLES where TABLE_SCHEMA="phpmyadmin"' | mysql                                                        13414134
+    
+ 
+ UPDATE `bitmex__signals` BS
+  INNER JOIN `datafeed`.`bitfinex__candles__btcusd` CT ON date_format(BS.ts, '%Y-%m-%d %H:%i:00') = CT.ts
+  SET btc_price = CT.close
+  WHERE btc_price is NULL;
+ 
+ UPDATE `bitmex__signals` BS 
+  INNER JOIN `datafeed`.`bitfinex__candles__btcusd__15m` CT ON date_format(BS.ts,'%Y-%m-%d %H:00:00') = CT.ts 
+  SET btc_price = CT.close 
+  WHERE btc_price is NULL; 
+ 
+ sudo bash 
+ 
+ mkdir ~/.ssh   
+ echo '192.168.13.1' >> /etc/network/gateways.list
+
+ cat /var/log/check_inet_19.log 
+ chmod +x /usr/sbin/*.sh
+
+ tail -f /var/log/heater.log
+ 
+ ping 192.168.13.3
+ ping -c10 192.168.13.153
+ ping -c4 192.168.15.128
+ 
+ mysql -u script -pxrvd257 planar -e "SELECT * FROM full_stats ORDER BY ts DESC LIMIT 30"
+ 
+ watch -n 30 'dmesg | tail -n 30' 
+ watch vcgencmd measure_temp | egrep -o '[0-9]*\.[0-9]*'
+ 
+ echo "rsync -artvP /var/log/heater.log rsync@10.111.10.50:/backup/sync" >> /usr/sbin/alive.sh
+ 
+ nano /etc/iptables.d/rules.v4
+ ls -l /usr/sbin/*.sh
+ ssh admin@192.168.13.1
+ 
+ systemctl status systemd-resolved
+ nano /etc/network/interfaces.d/wlan0
+ 
+ 
+ 
+ 
+ DATAFEED / CLICKHOUSE
+ 
+ SELECT Date(C.ts),SUM(C.volume),D.volume FROM `candles__trxusd` as C
+ INNER JOIN candles__trxusd__1D as D ON Date(D.ts) = Date(C.ts) AND (D.volume < SUM(C.volume)
+ WHERE Year(C.ts) = 2020
+ GROUP BY Date(C.ts);
+ 
+ 
+ CREATE TABLE IF NOT EXISTS `bitmex__ticks__2025` (
+        `ts` DateTime64(3, 'UTC') NOT NULL,
+        `pair_id` Int16 NOT NULL,
+        `buy` Bool NOT NULL,
+        `price` Float32 NOT NULL,
+        `amount` Float32 NOT NULL,
+        `trade_no` String NOT NULL )
+  ENGINE = MySQL('127.0.0.1:3306', 'datafeed', 'bitmex__ticks__2025', 'trader', '***************')
+  SETTINGS connection_pool_size=16, connection_wait_timeout=5, connection_auto_close=true;
+ 
+ 
+CREATE TABLE cm_listings
+(
+    `ts` DateTime,
+    `cm_id` UInt32,
+    `symbol` String,
+    `circulating_supply` Float32,
+    `total_supply` Float32,
+    `supply_coef` Float32,
+    `price` Float32,
+    `volume24_musd` Float32,
+    `volume24_coins` Float32,
+    `gain_daily` Float32,
+    `gain_weekly` Float32
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toStartOfMonth(ts)
+ORDER BY (ts,cm_id)
+SETTINGS index_granularity = 8192, replicated_deduplication_window = 100;
+
+CREATE TABLE datafeed.bitmex__ticks__btcusd
+(
+    `ts` DateTime64(3, 'UTC'),
+    `price` Float32,
+    `amount` Float32,
+    `buy` Bool,
+    `trade_no` String
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toStartOfMonth(ts)
+PRIMARY KEY trade_no
+ORDER BY (trade_no, ts)
+SETTINGS index_granularity = 8192, replicated_deduplication_window = 1
+  
+
+-- Table disk usage
+ SELECT table, formatReadableSize(size) as size, rows, days, formatReadableSize(avgDaySize) as avgDaySize FROM (
+    SELECT
+        table,
+        sum(bytes) AS size,
+        sum(rows) AS rows,
+        min(min_time) AS min_time,
+        max(max_time) AS max_time,
+        toUInt32((max_time - min_time) / 86400) AS days,
+        size / ((max_time - min_time) / 86400) AS avgDaySize
+    FROM system.parts
+    WHERE active
+    GROUP BY table
+    ORDER BY size
+)
+
+SELECT `table`, sum(bytes) AS `size`, sum(rows) AS `rows`, min(min_time) AS min_time, max(max_time) AS max_time, toUInt32((max_time - min_time) / 86400) AS `days`, size / ((max_time - min_time) / 86400) AS `avgDaySize` FROM system.parts WHERE active GROUP BY table ORDER BY size;
+SELECT `database`, `table`, sum(bytes) AS `size`, sum(rows) AS `rows`, min(min_time) AS min_time, max(max_time) AS max_time FROM system.parts WHERE active GROUP BY table, database ORDER BY size; 
+
+ 
+CREATE TABLE bitmex.ticks_archive ( `ts` DateTime64(6, 'UTC'), `symbol` LowCardinality(String), `price` Float32, `amount` Float32, `buy` Bool, `trade_no` String, INDEX symbol symbol TYPE set(0) GRANULARITY 16) ENGINE = ReplacingMergeTree PARTITION BY toStartOfMonth(ts) ORDER BY (ts, trade_no, symbol) SETTINGS index_granularity = 8192;
+
+
+CREATE TABLE IF NOT EXISTS `ticks_test` ( `ts` DateTime64(3, 'UTC') NOT NULL, `price` Float32 NOT NULL, `amount` Float32 NOT NULL,  `buy` Bool NOT NULL, `trade_no` String NOT NULL, INDEX ts ts TYPE minmax GRANULARITY 16 ) ENGINE = ReplacingMergeTree(ts) ORDER BY (trade_no) PARTITION BY toStartOfMonth(ts) SETTINGS  replicated_deduplication_window=100;
+
+CREATE TABLE match_id_map (idx UInt64 NOT NULL, id String NOT NULL, dt Date, INDEX idx idx TYPE minmax GRANULARITY 16, INDEX dt dt TYPE set(0) GRANULARITY 32) ENGINE = ReplacingMergeTree ORDER BY id PARTITION BY toStartOfMonth(dt);
+
+ 
+ -- simple years paritioning
+  ALTER TABLE `%name%` PARTITION BY RANGE (UNIX_TIMESTAMP(ts)) PARTITIONS 9 ( PARTITION past VALUES LESS THAN (1609459200), PARTITION p2021 VALUES LESS THAN (1640995200), PARTITION p2022 VALUES LESS THAN (1672531200), PARTITION p2023 VALUES LESS THAN (1704067200), PARTITION p2024 VALUES LESS THAN (1735689600), PARTITION p2025 VALUES LESS THAN (1767225600), PARTITION p2026 VALUES LESS THAN (1798761600), PARTITION p2027 VALUES LESS THAN (1830297600), PARTITION future VALUES LESS THAN MAXVALUE) 
+ 
+ 
+WTF:  Code: 745. DB::Exception: CPU is overloaded, CPU is waiting for execution way more than executing, ratio of wait time (OSCPUWaitMicroseconds metric) to busy time (OSCPUVirtualTimeMicroseconds metric) is 3.1981606245321355. Min ratio for error (min_os_cpu_wait_time_ratio_to_throw setting) 2, max ratio for error (max_os_cpu_wait_time_ratio_to_throw setting) 6, probability used to decide whether to discard the query 0.29954015613303386. Consider reducing the number of queries or increase backoff between retrie
+
+
+SELECT trade_no, toUnixTimestamp(ts) * 1000 + toMillisecond(ts), buy, price, amount, trade_no FROM `ticks__atomusd`  WHERE (ts >= '2024-04-29 0:00:00') AND ts < ('2024-04-29 1:00:00')

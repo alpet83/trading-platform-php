@@ -26,22 +26,9 @@
   $show_table = rqs_param('show_table', 1);
   $show_report = rqs_param('show_stats', 1);
   $show_usd  = rqs_param('show_usd', true);
-  $btc_price = 80000;
-  $btc_pmap = [];
-
-  $bot_dir = strtolower("/tmp/{$exch}_bot");
+    $btc_price = 80000;
+    $btc_pmap = [];
   mysqli_report(MYSQLI_REPORT_ERROR);  
-  
-
-  $btc_info = null;
-  foreach(['XBTUSD', 'BTCUSD'] as $pair) {
-    $fname = "$bot_dir./$pair.json";
-    if (file_exists($fname))
-        $btc_info = file_load_json($fname);
-  }  
-
-  if (is_object($btc_info) && isset($btc_info->last_price) && $btc_info->last_price > 0)
-      $btc_price = $btc_info->last_price; 
 
 ?>
 <!DOCTYPE html>
@@ -251,12 +238,18 @@
   }      
 
 
-  $pmap_file = "$bot_dir/pairs_map.json";   
-  if (!file_exists($pmap_file))
-    die("#FATAL: not found $pmap_file\n");
+    $pairs_table = strtolower("{$exch}__pairs_map");
+    $pairs_map = [];
+    if ($mysqli->table_exists($pairs_table)) {
+            $pairs_map = $mysqli->select_map('pair_id,pair', $pairs_table);
+    }
+    if (!is_array($pairs_map) || count($pairs_map) === 0)
+        die("#FATAL: not found/empty $pairs_table\n");
 
-  $json = file_get_contents($pmap_file);  
-  $pairs_map = json_decode($json, true);  
+    $btc_row = $mysqli->select_row('last_price', strtolower("{$exch}__tickers"), "WHERE pair_id = 1");
+    if (is_array($btc_row) && floatval($btc_row[0]) > 0) {
+            $btc_price = floatval($btc_row[0]);
+    }
 
   $t_table = "$exch.ticker_map";  // previously was datafeed.{$exch}__ticker_map
   $ticker_map = [];
@@ -546,20 +539,49 @@
 
 
     function ReportForPair(int $pair_id) {
-        global $mysqli, $pairs_map, $ticker_map, $exch, $bot_dir, $price_data, $start, $end; 
+        global $mysqli, $pairs_map, $ticker_map, $exch, $price_data, $start, $end;
         // printf("<h2>Pair #%d</h2>\n", $pair_id);
         $pair = $pairs_map[$pair_id] ?? false;    
         if (false === $pair) {            
             print ("<div class=red>#WARN: pair_id $pair_id not found</div>\n");  
             return;
         }
-        $ticker_file = $bot_dir."/$pair.json"; 
-        if (!file_exists($ticker_file)) {
-            echo ("<div class=red>#FATAL: not found $ticker_file\n</div>");
-            return;
-        }   
-        $json = file_get_contents($ticker_file);
-        $ti = json_decode($json);
+        $tt = strtolower("{$exch}__tickers");
+        $tr = $mysqli->select_row('symbol,last_price,multiplier,flags,tick_size,lot_size', $tt, "WHERE pair_id = $pair_id");
+        $ti = null;
+        if (is_array($tr)) {
+            $symbol = strtoupper((string)($tr[0] ?? $pair));
+            $quote = '';
+            foreach (['USDT', 'USDC', 'USD', 'XBT', 'BTC', 'ETH'] as $suffix) {
+                if ($symbol !== '' && str_ends_with($symbol, $suffix)) {
+                    $quote = $suffix;
+                    break;
+                }
+            }
+            $flags = intval($tr[3] ?? 0);
+            $price_precision = 2;
+            $qty_precision = 4;
+            $tick_size = floatval($tr[4] ?? 0);
+            $lot_size = floatval($tr[5] ?? 0);
+            if ($tick_size > 0 && $tick_size < 1) {
+                $price_precision = max(0, (int)ceil(-log10($tick_size)));
+            }
+            if ($lot_size > 0 && $lot_size < 1) {
+                $qty_precision = max(0, (int)ceil(-log10($lot_size)));
+            }
+            $ti = (object)[
+                'pair' => $pair,
+                'symbol' => $symbol,
+                'last_price' => floatval($tr[1] ?? 0),
+                'multiplier' => floatval($tr[2] ?? 1),
+                'is_inverse' => (bool)($flags & 1),
+                'is_quanto' => (bool)($flags & 2),
+                'quote_currency' => $quote,
+                'pos_mult' => 1.0,
+                'price_precision' => $price_precision,
+                'qty_precision' => $qty_precision,
+            ];
+        }
         $ticker = $ticker_map[$pair_id] ?? false;
         $price_data = [];
         if ($ticker) {
@@ -588,8 +610,8 @@
             $ti->is_btc_pair = ($qcurr == 'XBT' || $qcurr == 'BTC');      
             echo FormatReport($ti, true);
         }    
-        else   
-            printf("<div class=red>#ERROR: failed decode ticker info for %d, loaded: %s</div>\n", $pair_id, $json);
+        else
+            printf("<div class=red>#ERROR: failed load ticker info from DB for pair_id %d</div>\n", $pair_id);
         ob_flush();
     }  
 

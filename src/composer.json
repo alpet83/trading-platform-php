@@ -1,0 +1,12 @@
+{
+    "require": {
+        "influxdata/influxdb-client-php": "^3.7",
+        "php-http/guzzle7-adapter": "^1.1",
+        "smi2/phpclickhouse": "^1.6"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}

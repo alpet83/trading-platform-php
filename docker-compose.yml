@@ -1,0 +1,201 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-mariadb
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/usr/local/bin/mariadb-entrypoint-wrapper.sh"]
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root_change_me}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-trading}
+      MARIADB_USER: ${MARIADB_USER:-trading}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-trading_change_me}
+      MARIADB_BACKUP_ON_START: ${MARIADB_BACKUP_ON_START:-1}
+      MARIADB_BACKUP_RETENTION_DAYS: ${MARIADB_BACKUP_RETENTION_DAYS:-7}
+      MARIADB_BACKUP_DIR: ${MARIADB_BACKUP_DIR:-/var/backup/mysql}
+      MARIADB_BACKUP_PING_TIMEOUT_SECONDS: ${MARIADB_BACKUP_PING_TIMEOUT_SECONDS:-60}
+      TZ: ${TZ:-UTC}
+    command:
+      - "--defaults-file=/etc/mysql/conf.d/primary.cnf"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--server-id=${MARIADB_SERVER_ID:-1}"
+      - "--binlog-expire-logs-seconds=${MARIADB_BINLOG_EXPIRE_SECONDS:-259200}"
+      - "--relay-log-space-limit=${MARIADB_RELAY_LOG_SPACE_LIMIT:-1073741824}"
+      - "--log_error=${MARIADB_ERROR_LOG:-/var/log/mysql/mysql.log}"
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./var/backup/mysql:/var/backup/mysql
+      - ./var/log/mysql:/var/log/mysql
+      - ./secrets:/var/secrets
+      - ./docker/mariadb-init:/docker-entrypoint-initdb.d:ro
+      - ./docker/entrypoints/mariadb-entrypoint-wrapper.sh:/usr/local/bin/mariadb-entrypoint-wrapper.sh:ro
+      - ./docker/mariadb-replication/primary.cnf:/etc/mysql/conf.d/primary.cnf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb --protocol=TCP -h127.0.0.1 -u${MARIADB_USER:-trading} -p${MARIADB_PASSWORD:-trading_change_me} -D${MARIADB_DATABASE:-trading} -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-web
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    command: ["/usr/local/bin/run-web.sh"]
+    environment:
+      TZ: ${TZ:-UTC}
+      SIGNALS_API_URL: ${SIGNALS_API_URL:-http://host.docker.internal}
+      WEB_DOCROOT: ${WEB_DOCROOT:-/app/src/web-ui}
+      WEB_BIND_HOST: ${WEB_BIND_HOST:-0.0.0.0}
+      WEB_BIND_PORT: ${WEB_BIND_PORT:-80}
+      MYSQL_ERROR_LOG_PATH: ${MYSQL_ERROR_LOG_PATH:-/app/var/log/mysql/mysql.log}
+      AUTH_MODE: ${AUTH_MODE:-basic}
+      OTP_MODE: ${OTP_MODE:-off}
+      OTP_CONFIG_FILE: ${OTP_CONFIG_FILE:-/app/var/data/admin_otp.php}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-900}
+      ADMIN_IP_ALLOWLIST: ${ADMIN_IP_ALLOWLIST:-127.0.0.1,::1}
+      ALLOW_LOCAL_ADMIN_BYPASS: ${ALLOW_LOCAL_ADMIN_BYPASS:-false}
+      TRADEBOT_PHP_HOST: ${TRADEBOT_PHP_HOST:-}
+      BINLOG_WARN_BYTES: ${BINLOG_WARN_BYTES:-1073741824}
+      RELAY_WARN_BYTES: ${RELAY_WARN_BYTES:-1073741824}
+    ports:
+      - "${WEB_PUBLISH_IP:-127.0.0.1}:${WEB_PORT:-8088}:80"
+    volumes:
+      - ./src:/app/src
+      - ./docker/lib_common_patch.php:/app/lib/common.php:ro
+      - ./docker/lib_esctext_patch.php:/app/lib/esctext.php:ro
+      - ./docker/lib_db_tools_patch.php:/app/lib/db_tools.php:ro
+      - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./var/log:/app/var/log
+      - ./var/tmp:/app/var/tmp
+      - ./var/data:/app/var/data
+      - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+
+  bot:
+    profiles: ["standalone"]  # Standalone instance disabled by default; bots-hive is the preferred service
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-bot
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    command: ["/usr/local/bin/run-bot.sh"]
+    environment:
+      TZ: ${TZ:-UTC}
+      BOT_IMPL_NAME: ${BOT_IMPL_NAME:-bitmex_bot}
+      SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://host.docker.internal}
+      SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://host.docker.internal}
+      PHP_INCLUDE_PATH: ${PHP_INCLUDE_PATH:-.:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib}
+      DB_LOCAL_HOST: ${DB_LOCAL_HOST:-mariadb}
+      DB_REMOTE_HOST: ${DB_REMOTE_HOST:-mariadb}
+      REDUNDANCY_MODE: ${REDUNDANCY_MODE:-single}
+      BMX_TESTNET: ${BMX_TESTNET:-1}
+      BMX_API_BASE_URL: ${BMX_API_BASE_URL:-}
+    volumes:
+      - ./src:/app/src
+      - ./docker/lib_common_patch.php:/app/lib/common.php:ro
+      - ./docker/lib_esctext_patch.php:/app/lib/esctext.php:ro
+      - ./docker/lib_db_tools_patch.php:/app/lib/db_tools.php:ro
+      - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./var/log:/app/var/log
+      - ./var/tmp:/app/var/tmp
+      - ./var/data:/app/var/data
+      - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+
+  gpg-agent:
+    profiles: ["pass"]
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-gpg-agent
+    restart: unless-stopped
+    command: ["/bin/sh", "-c", "mkdir -p /root/.gnupg; chmod 700 /root/.gnupg; gpgconf --launch gpg-agent; tail -f /dev/null"]
+    environment:
+      TZ: ${TZ:-UTC}
+      GNUPGHOME: /root/.gnupg
+      BOT_PASS_ENCRYPTION_MODE: ${BOT_PASS_ENCRYPTION_MODE:-none}
+    volumes:
+      - ./var/log:/app/var/log
+      - ${GPG_HOME_DIR:-./secrets/gnupg}:/root/.gnupg
+    healthcheck:
+      test: ["CMD-SHELL", "if [ \"${BOT_PASS_ENCRYPTION_MODE:-none}\" != \"encrypted\" ]; then exit 0; fi; gpg-connect-agent /bye >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  bots-hive:
+    image: trd-bot-manager:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-trd}-bots-hive
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    command: ["/usr/local/bin/run-bot-manager.sh"]
+    environment:
+      TZ: ${TZ:-UTC}
+      SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://host.docker.internal}
+      SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://host.docker.internal}
+      BOT_CREDENTIAL_SOURCE: db
+      PHP_INCLUDE_PATH: ${PHP_INCLUDE_PATH:-.:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib}
+      DB_LOCAL_HOST: ${DB_LOCAL_HOST:-mariadb}
+      DB_REMOTE_HOST: ${DB_REMOTE_HOST:-mariadb}
+      REDUNDANCY_MODE: ${REDUNDANCY_MODE:-single}
+      BOT_PASS_ENCRYPTION_MODE: none
+      BOT_GPG_WAIT_ENABLED: "0"
+      BOT_TRADER_PASSWORD: ${BOT_TRADER_PASSWORD:-placeholder}
+      BOT_DB_API_KEY_PARAM: ${BOT_DB_API_KEY_PARAM:-api_key}
+      BOT_DB_API_SECRET_PARAM: ${BOT_DB_API_SECRET_PARAM:-api_secret}
+    volumes:
+      - ./src:/app/src
+      - ./docker/entrypoints/run-bot-manager.sh:/usr/local/bin/run-bot-manager.sh:ro
+      - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./var/log:/app/var/log
+      - ./var/tmp:/app/var/tmp
+      - ./var/data:/app/var/data
+      - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+      - ${PASS_STORE_DIR:-./secrets/pass-store}:/root/.password-store:ro
+      - ${GPG_HOME_DIR:-./secrets/gnupg}:/root/.gnupg
+    networks:
+      - trd_default
+
+  datafeed:
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-datafeed
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    command: ["/usr/local/bin/run-datafeed.sh"]
+    environment:
+      TZ: ${TZ:-UTC}
+      DATAFEED_MANAGER_LOOP_SECONDS: ${DATAFEED_MANAGER_LOOP_SECONDS:-15}
+      DATAFEED_MANAGER_HEARTBEAT_SECONDS: ${DATAFEED_MANAGER_HEARTBEAT_SECONDS:-30}
+      DATAFEED_MANAGER_LOG_PATH: ${DATAFEED_MANAGER_LOG_PATH:-/app/var/log/datafeed/main.log}
+      DATAFEED_MANAGER_LOADERS_DIR: ${DATAFEED_MANAGER_LOADERS_DIR:-/app/datafeed/src}
+    volumes:
+      - ./src:/app/src
+      - ./docker/entrypoints/run-datafeed.sh:/usr/local/bin/run-datafeed.sh:ro
+      - ./var/log:/app/var/log
+      - ./var/tmp:/app/var/tmp
+      - ./var/data:/app/var/data
+      - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+      - ./secrets/db_config.php:/app/datafeed/lib/db_config.php:ro
+
+volumes:
+  mariadb-data:
+    name: ${COMPOSE_PROJECT_NAME:-trd}_mariadb_data
+
+networks:
+  trd_default:
+    external: true
+    name: trd_default

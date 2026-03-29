@@ -1,0 +1,5 @@
+src/data
+src/logs
+var/lib/mysql
+var/log/mysql
+var/backup/mysql

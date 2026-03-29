@@ -1,6 +1,6 @@
 <?php
-  include_once('../lib/common.php');
-  include_once('../lib/db_tools.php');
+    include_once(__DIR__.'/lib/common.php');
+    include_once(__DIR__.'/lib/db_tools.php');
 
   define ('Y', true);
   define ('N', false);  
@@ -792,17 +792,25 @@
         $this->list_name    = $name;
         $this->is_fixed     = $fixed;      
         $this->imp_fields = $this->trade_core->ConfigValue('order_fields', $this->imp_fields);
-        $proto_name = strtolower($engine->exchange.'__pending_orders');
         $table_name = $this->TableName();
-        $mysqli = $this->trade_core->mysqli;     
+        $mysqli = $this->trade_core->mysqli;
 
         if (false === strpos($name, 'pending') && !$mysqli->table_exists($table_name)) {
-            $res = $mysqli->try_query("CREATE TABLE `$table_name` LIKE $proto_name;", MYSQLI_STORE_RESULT, true); // дополнительные таблицы пусть автоматом создает
+            $proto_sql_file = __DIR__ . '/sql/proto_orders.sql';
+            if (is_file($proto_sql_file)) {
+                $tmpl = file_get_contents($proto_sql_file);
+                $sql  = str_replace('`__TABLE_NAME__`', "`$table_name`", $tmpl);
+                $res  = $mysqli->try_query($sql, MYSQLI_STORE_RESULT, true);
+            } else {
+                // fallback: clone from exchange-level prototype table
+                $proto_name = strtolower($engine->exchange . '__pending_orders');
+                $res = $mysqli->try_query("CREATE TABLE `$table_name` LIKE $proto_name;", MYSQLI_STORE_RESULT, true);
+            }
             if ($res)
                 $this->trade_core->LogOrder("~C92#SUCCESS:~C00 created table $table_name");
-            else 
-                throw new Exception("#FATAL: cannot create table $table_name");              
-        }    
+            else
+                throw new Exception("#FATAL: cannot create table $table_name");
+        }
 
         
         $this->AddField('predecessor', 'INT(10) DEFAULT 0', 'id');

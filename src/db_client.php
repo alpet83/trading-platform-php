@@ -13,6 +13,15 @@
         protected  $db_local_host = 'db-local.lan'; // typically must be specified in /etc/hosts, due configuration loaded from DB
         protected  $db_remote_host = 'db-remote.lan';
 
+        protected function RedundancyMode(): string {
+            $mode = strtolower(trim((string)(getenv('REDUNDANCY_MODE') ?: 'paired')));
+            return strlen($mode) ? $mode : 'paired';
+        }
+
+        protected function IsSingleRedundancyMode(): bool {
+            return in_array($this->RedundancyMode(), ['single', 'standalone', 'none', 'off'], true);
+        }
+
         public function CheckDBConnection(string $kind = '', bool $force = false): ?mysqli_ex {
             global $db_servers;
             $key = 'mysqli';
@@ -33,7 +42,14 @@
                 if ('' == $kind)
                     $this->conn_attempts ++;
 
-                $host = 'remote' == $kind ? $this->db_remote_host : $this->db_local_host; 
+                if ('remote' == $kind && $this->IsSingleRedundancyMode()) {
+                    $this->$key = null;
+                    return null;
+                }
+
+                $local_host = getenv('DB_LOCAL_HOST') ?: $this->db_local_host;
+                $remote_host = getenv('DB_REMOTE_HOST') ?: $this->db_remote_host;
+                $host = 'remote' == $kind ? $remote_host : $local_host; 
                 $error = $mysqli ? $mysqli->error : 'not init yet';
                 $this->LogMsg("~C91 #WARN:~C00 database connection %s to host %s lost (%s), %d attempt reconnect...", $kind, $host, $error, $this->conn_attempts); 
                 if (is_object($mysqli))

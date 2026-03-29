@@ -1,6 +1,6 @@
 <?php
-    include_once('../lib/common.php');
-    include_once('../lib/db_tools.php');
+    include_once(__DIR__.'/lib/common.php');
+    include_once(__DIR__.'/lib/db_tools.php');
     require_once('trading_core.php');
     require_once('rest_api_common.php');
 

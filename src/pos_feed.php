@@ -2,7 +2,7 @@
 class PositionFeed {
     public $applicant;
     protected $trade_core;
-    protected $feed_server = 'http://vps.vpn'; // must be specified in /etc/hosts
+    protected $feed_server = 'http://host.docker.internal';
 
     public $fails = 0;
 
@@ -11,7 +11,8 @@ class PositionFeed {
     }
 
     function Initialize () {
-      $this->feed_server = $this->trade_core->ConfigValue('position_feed_url', $this->feed_server);
+      $default_feed = getenv('SIGNALS_FEED_URL') ?: $this->feed_server;
+      $this->feed_server = rtrim($this->trade_core->ConfigValue('position_feed_url', $default_feed), '/');
     }
 
     function LoadPairsConfig(&$trade_coef_map): array {

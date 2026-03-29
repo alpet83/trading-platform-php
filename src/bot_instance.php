@@ -9,7 +9,11 @@
   else 
     die("#FATAL: implementation not specified!\n");
 
-  set_include_path(".:./lib:../lib:/usr/sbin/lib");
+  $include_path = getenv('PHP_INCLUDE_PATH');
+  if (false === $include_path || '' === trim($include_path)) {
+    $include_path = ".:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib";
+  }
+  set_include_path($include_path);
   require_once('common.php');
   require_once('esctext.php');
   
@@ -18,7 +22,7 @@
   log_cmsg("~C95 --------- =========================================~C92 $ds~C95 ==================================================== ---------~C00");
   log_cmsg("~C93 #START:~C00 bot instance %s~C00...", $impl_name);
 
-  error_reporting(E_ALL);
+  error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
   // echo ("1.\n");
   require_once('lib/db_config.php');
   // echo ("2.\n");
@@ -34,11 +38,12 @@
      die("#FATAL: implementation name $impl_name not recognized!\n");  
 
   $implementation = "impl_$exch.php";
-  if (!file_exists($implementation))
-    die("#FATAL: not exists $implementation\n");
+  $implementation_path = __DIR__."/$implementation";
+  if (!file_exists($implementation_path))
+    die("#FATAL: not exists $implementation_path\n");
 
 
-  require_once($implementation);
+  require_once($implementation_path);
   // echo ("4.\n");
 
 

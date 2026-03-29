@@ -125,17 +125,30 @@ $table = $engine->TableName('mm_limit');
 $limit_orders_raw = $mysqli->select_rows('*', $table, 'ORDER BY pair_id ASC, updated DESC', MYSQLI_OBJECT);
 $limit_orders = format_orders($limit_orders_raw, $pairs_map);
 
-$positions_table = $exchange.'__positions';
-$pos_params = "LEFT JOIN `$exchange"."__tickers` AS T ON T.pair_id = P.pair_id\n";
-$pos_params .= "LEFT JOIN `$exchange"."__ticker_map` AS TM ON TM.pair_id = P.pair_id\n";
+$positions_table = $engine->TableName('positions');
+$tickers_table = $engine->TableName('tickers');
+$ticker_map_table = $engine->TableName('ticker_map');
+$pos_params = "LEFT JOIN `$tickers_table` AS T ON T.pair_id = P.pair_id\n";
+$pos_params .= "LEFT JOIN `$ticker_map_table` AS TM ON TM.pair_id = P.pair_id\n";
 $pos_params .= "WHERE account_id = $account_id\n";
 $pos_params .= "ORDER BY pair";
 
-$positions_raw = $mysqli->select_rows('P.*,T.last_price,COALESCE(T.symbol, TM.symbol) as pair', "`$positions_table` as P", $pos_params, MYSQLI_ASSOC);
+$positions_raw = $mysqli->select_rows('P.*,T.last_price,T.tick_size,T.lot_size,COALESCE(T.symbol, TM.symbol) as pair', "`$positions_table` as P", $pos_params, MYSQLI_ASSOC);
 
 $positions = [];
-$bot_dir = strtolower("/tmp/{$bot}");
-$json_cache = [];
+
+function tp_calc_precision($step): ?int {
+    $v = floatval($step);
+    if ($v <= 0) {
+        return null;
+    }
+    $p = 0;
+    while ($v < 1 && $p < 12) {
+        $v *= 10;
+        $p++;
+    }
+    return $p;
+}
 
 if (is_array($positions_raw)) {
     foreach ($positions_raw as $row) {
@@ -144,26 +157,8 @@ if (is_array($positions_raw)) {
         if (is_null($pair)) $pair = "#$pair_id";
         if (is_array($pair)) $pair = $pair[0];
 
-        $price_precision = null;
-        $qty_precision = null;
-        if (!isset($json_cache[$pair])) {
-            $ticker_file = $bot_dir."/$pair.json";
-            if (file_exists($ticker_file)) {
-                $json = file_get_contents($ticker_file);
-                $ti = json_decode($json);
-                if (is_object($ti)) {
-                    $json_cache[$pair] = $ti;
-                } else {
-                    $json_cache[$pair] = null;
-                }
-            } else {
-                $json_cache[$pair] = null;
-            }
-        }
-        if ($json_cache[$pair]) {
-            $price_precision = $json_cache[$pair]->price_precision ?? null;
-            $qty_precision = $json_cache[$pair]->qty_precision ?? null;
-        }
+        $price_precision = tp_calc_precision($row['tick_size'] ?? 0);
+        $qty_precision = tp_calc_precision($row['lot_size'] ?? 0);
 
         $positions[] = [
             'ts' => $row['ts_current'],

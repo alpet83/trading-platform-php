@@ -1,0 +1,41 @@
+# =============================================================================
+# docker-compose.mcp-debug.yml — MCP debug injection overlay
+#
+# Does ONE thing: attaches bots-hive to mcp_debug_net so nginx-router
+# can reach mcp_server.py running INSIDE bots-hive on port 8084.
+#
+# mcp_server.py runs side-by-side with bot_manager inside bots-hive,
+# giving it full access to /app/src, spawned bot processes, and local env.
+# This is the correct "reverse-shell" pattern — not an isolated sidecar.
+#
+# USAGE:
+#   # One-time:
+#   docker network create mcp_debug_net
+#
+#   # Start hive with debug network attached:
+#   docker compose -f docker-compose.yml -f docker-compose.mcp-debug.yml up -d --force-recreate bots-hive
+#
+#   # Install python3 + start mcp_server.py inside the running container:
+#   ./scripts/mcp_inject.sh
+#
+#   # Verify:
+#   curl http://localhost:8008/mcp/trd-bots-hive/process/list
+#
+# CQDS — set mcp_server_url for the project:
+#   UPDATE projects SET mcp_server_url='http://nginx-router:8008/mcp/trd-bots-hive'
+#   WHERE id IN (34, 35);
+# =============================================================================
+
+services:
+  bots-hive:
+    networks:
+      - trd_default
+      - mcp_debug_net
+
+networks:
+  trd_default:
+    external: true
+    name: trd_default
+  mcp_debug_net:
+    external: true
+    name: mcp_debug_net

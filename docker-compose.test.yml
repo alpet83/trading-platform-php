@@ -1,0 +1,146 @@
+# ============================================================================
+# docker-compose.test.yml
+# 
+# Complete local HA pair test: PRIMARY (port 3306) + STANDBY (port 3307)
+# 
+# USE:
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml down
+# 
+# Or use the test-ha-replication-pair.sh script (recommended)
+# ============================================================================
+
+version: '3.9'
+
+services:
+  # PRIMARY: Standard MariaDB instance (port 3306)
+  mariadb-primary:
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trd}-mariadb-primary
+    restart: "no"
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: test_root_123
+      MARIADB_DATABASE: trading
+      MARIADB_USER: trading
+      MARIADB_PASSWORD: test_trading_456
+      MARIADB_AUTO_UPGRADE: 1
+      
+      # Replication config for PRIMARY
+      MARIADB_SERVER_ID: 1
+      MARIADB_BINLOG_EXPIRE_SECONDS: 3600
+      MARIADB_RELAY_LOG_SPACE_LIMIT: 536870912
+      
+      # For replication channel setup
+      MARIADB_REPL_USER: test_repl
+      MARIADB_REPL_PASSWORD: test_repl_789
+      MARIADB_REMOTE_USER: test_remote_master
+      MARIADB_REMOTE_PASSWORD: test_remote_pass_999
+      
+    volumes:
+      - ./var/lib/mysql-test-primary:/var/lib/mysql
+    
+    command: >
+      mariadbd
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --server-id=1
+  
+  # STANDBY: Secondary MariaDB instance (port 3307)
+  mariadb-standby:
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trd}-mariadb-standby
+    restart: "no"
+    ports:
+      - "3307:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: test_root_123
+      MARIADB_DATABASE: trading
+      MARIADB_USER: trading
+      MARIADB_PASSWORD: test_trading_456
+      MARIADB_AUTO_UPGRADE: 1
+      
+      # Replication config for STANDBY
+      MARIADB_SERVER_ID: 2
+      MARIADB_RELAY_LOG_SPACE_LIMIT: 536870912
+      
+      # Standby should be read-only initially
+      # (enforced via watchdog or manual SET GLOBAL read_only=ON)
+      
+      # Replication channel credentials
+      MARIADB_REPL_USER: test_repl
+      MARIADB_REPL_PASSWORD: test_repl_789
+      MARIADB_REMOTE_USER: test_remote_master
+      MARIADB_REMOTE_PASSWORD: test_remote_pass_999
+      
+    volumes:
+      - ./var/lib/mysql-test-standby:/var/lib/mysql
+    
+    command: >
+      mariadbd
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --server-id=2
+      --read-only=ON
+    
+    depends_on:
+      - mariadb-primary
+  
+  # WATCHDOG-PRIMARY: Enforces read_only=OFF on primary
+  watchdog-primary:
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trd}-watchdog-primary
+    restart: "no"
+    environment:
+      ROLE: primary
+      MYSQL_HOST: mariadb-primary
+      MYSQL_PORT: 3306
+      MYSQL_ROOT_PASSWORD: test_root_123
+      PRIMARY_HOST: mariadb-primary
+      PRIMARY_PORT: 3306
+      REPL_USER: test_repl
+      REPL_PASSWORD: test_repl_789
+      WATCHDOG_INTERVAL_SECONDS: 5
+      MAX_LAG_SECONDS: 30
+    
+    volumes:
+      - ./scripts/replication:/opt/replication:ro
+    
+    command: [ "/bin/bash", "/opt/replication/watchdog-loop.sh" ]
+    
+    depends_on:
+      - mariadb-primary
+  
+  # WATCHDOG-STANDBY: Enforces read_only=ON, auto-rejoin on divergence
+  watchdog-standby:
+    image: mariadb:11
+    container_name: ${COMPOSE_PROJECT_NAME:-trd}-watchdog-standby
+    restart: "no"
+    environment:
+      ROLE: standby
+      MYSQL_HOST: mariadb-standby
+      MYSQL_PORT: 3306
+      MYSQL_ROOT_PASSWORD: test_root_123
+      PRIMARY_HOST: mariadb-primary
+      PRIMARY_PORT: 3306
+      REPL_USER: test_repl
+      REPL_PASSWORD: test_repl_789
+      WATCHDOG_INTERVAL_SECONDS: 5
+      MAX_LAG_SECONDS: 30
+    
+    volumes:
+      - ./scripts/replication:/opt/replication:ro
+    
+    command: [ "/bin/bash", "/opt/replication/watchdog-loop.sh" ]
+    
+    depends_on:
+      - mariadb-primary
+      - mariadb-standby
+
+volumes:
+  # Keep these separate for test vs. production
+  db-data:
+    driver: local
+  backup-data:
+    driver: local

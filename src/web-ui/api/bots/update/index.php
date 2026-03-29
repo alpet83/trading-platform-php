@@ -4,6 +4,20 @@ chdir('../../../');
 
 require_once('api_helper.php');
 
+function normalize_signals_setup(array $cfg): array {
+    $setupId = intval($cfg['setup_id'] ?? 0);
+    if ($setupId > 0) {
+        $cfg['signals_setup'] = json_encode([['setup' => $setupId, 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+    } elseif (isset($cfg['signals_setup'])) {
+        $raw = trim((string)$cfg['signals_setup']);
+        if (preg_match('/^\d+$/', $raw)) {
+            $cfg['signals_setup'] = json_encode([['setup' => intval($raw), 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+        }
+    }
+    unset($cfg['setup_id']);
+    return $cfg;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     send_error('Only POST method allowed', 405);
     exit;
@@ -28,6 +42,8 @@ if (!$config || !is_array($config)) {
     send_error('Missing or invalid config field (must be array)', 400);
     exit;
 }
+
+$config = normalize_signals_setup((array)$config);
 
 mysqli_report(MYSQLI_REPORT_OFF);
 $mysqli = init_remote_db('trading');

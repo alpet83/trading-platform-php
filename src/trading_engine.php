@@ -326,7 +326,7 @@ class TradingEngine {
         if (!is_array($core->pairs_map))
             throw new Exception('trade_core->pairs_map is invalid value!');
 
-        $this->hist_dir = __DIR__.'/data/history';
+        $this->hist_dir = getcwd().'/data/history';
         check_mkdir($this->hist_dir);           
 
 
@@ -395,7 +395,7 @@ class TradingEngine {
             throw new Exception("LoadTickers failed on engine init"); // first time, required for price update
         }    
         
-        check_mkdir(__DIR__.'/'.$this->account_id);         
+        check_mkdir(getcwd().'/data/'.$this->account_id);         
         $this->LogMsg("~C96#PERF:~C00 Loading orders from DB...");      
         // $this->trade_core->LogMsg("Processing $cname -> Initialize for exchange {$this->exchange}...");
         $this->archive_orders = new OrderList($this, 'archive_orders', true); // canceled without matching
@@ -758,11 +758,20 @@ class TradingEngine {
     }
 
     public function  SaveTickersToDB() { // historical info save
+        $core = $this->TradeCore();
         $table = $this->TableName('ticker_history');
+        if (0 === strpos($table, '#ERROR:')) {
+            static $warned_missing_table = false;
+            if (!$warned_missing_table) {
+                $core->LogMsg("~C31#WARN:~C00 SaveTickersToDB skipped, ticker_history table is unavailable: %s", $table);
+                $warned_missing_table = true;
+            }
+            return;
+        }
+
         $query = "INSERT IGNORE INTO $table (ts, `pair_id`, `ask`, `bid`, `last`, `fair_price`, `daily_vol`) VALUES\n";
         $lines = [];
         $ts = 'nope';
-        $core = $this->TradeCore();
         $is_history = false !== strpos($table, $this->history_db);
         $mysqli = $is_history ? $core->CheckDBConnection('datafeed') : $this->sqli();      
         
@@ -781,13 +790,27 @@ class TradingEngine {
             $tinfo->SaveToDB(); // update runtime rows in __tickers table                                  
             $ts = date_ms(SQL_TIMESTAMP3, $tinfo->updated);
             $pp = $tinfo->price_precision;
+            $ask = (float)$tinfo->ask_price;
+            $bid = (float)$tinfo->bid_price;
+            $last = (float)$tinfo->last_price;
+            $fair = (float)$tinfo->fair_price;
+            $daily = (float)$tinfo->daily_vol;
+            if (!is_finite($ask) || !is_finite($bid) || !is_finite($last) || !is_finite($fair) || !is_finite($daily)) {
+                $core->LogMsg("~C31#WARN:~C00 SaveTickersToDB skip pair_id=%d due invalid numeric ticker value", $pair_id);
+                continue;
+            }
             $lines []= sprintf("(\"%s\", %d, %.{$pp}f, %.{$pp}f, %.{$pp}f, %.{$pp}f,  %.2f)", 
-                $ts, $pair_id, $tinfo->ask_price, $tinfo->bid_price,  $tinfo->last_price, $tinfo->fair_price, $tinfo->daily_vol);
+                $ts, $pair_id, $ask, $bid, $last, $fair, $daily);
 
             $json_file = "{$core->tmp_dir}/{$tinfo->pair}.json"; // for external use / web updates
             if (!file_exists($json_file) || filemtime($json_file) * 1000 < $tinfo->updated)    
                 file_put_contents($json_file, $tinfo->SaveToJSON());
         }
+
+            if (0 == count($lines)) {
+                return;
+            }
+
         $query .= implode(",\n", $lines).";";
 
         if (!$mysqli->try_query($query))

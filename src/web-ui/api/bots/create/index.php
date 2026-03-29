@@ -3,6 +3,21 @@
 chdir('../../../');
 
 require_once('api_helper.php');
+require_once('../lib/bot_creator.php');
+
+function normalize_signals_setup(array $cfg): array {
+    $setupId = intval($cfg['setup_id'] ?? 0);
+    if ($setupId > 0) {
+        $cfg['signals_setup'] = json_encode([['setup' => $setupId, 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+    } elseif (isset($cfg['signals_setup'])) {
+        $raw = trim((string)$cfg['signals_setup']);
+        if (preg_match('/^\d+$/', $raw)) {
+            $cfg['signals_setup'] = json_encode([['setup' => intval($raw), 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+        }
+    }
+    unset($cfg['setup_id']);
+    return $cfg;
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     send_error('Only POST method allowed', 405);
@@ -10,6 +25,44 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $user_rights = get_user_rights();
+
+if (!str_in($user_rights, 'admin')) {
+    send_error("Rights restricted to $user_rights", 403);
+    exit;
+}
+
+$bot_name   = $_POST['bot_name'] ?? null;
+$account_id = $_POST['account_id'] ?? null;
+$config     = $_POST['config'] ?? null;
+
+if (!$bot_name || !$account_id || !$config || !is_array($config)) {
+    send_error('Missing required fields: bot_name, account_id, config (must be array)', 400);
+    exit;
+}
+
+$config = normalize_signals_setup((array)$config);
+
+mysqli_report(MYSQLI_REPORT_OFF);
+$mysqli = init_remote_db('trading');
+if (!$mysqli) {
+    send_error('Database connection failed', 500);
+    exit;
+}
+
+$result = bot_create($mysqli, (string)$bot_name, (int)$account_id, (array)$config);
+
+if (!$result['ok']) {
+    send_error($result['error'], $result['code'] ?? 500);
+    exit;
+}
+
+$created_config = $mysqli->select_map('param,value', 'config__' . strtolower((string)$bot_name));
+
+send_response([
+    'applicant'  => $result['applicant'],
+    'account_id' => $result['account_id'],
+    'config'     => $created_config,
+]);
 
 if (!str_in($user_rights, 'admin')) {
     send_error("Rights restricted to $user_rights", 403);

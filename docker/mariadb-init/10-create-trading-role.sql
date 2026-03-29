@@ -1,0 +1,14 @@
+CREATE DATABASE IF NOT EXISTS `trading`;
+CREATE DATABASE IF NOT EXISTS `datafeed`;
+CREATE DATABASE IF NOT EXISTS `binance`;
+CREATE DATABASE IF NOT EXISTS `bitmex`;
+CREATE DATABASE IF NOT EXISTS `bitfinex`;
+CREATE DATABASE IF NOT EXISTS `bybit`;
+CREATE USER IF NOT EXISTS 'trading'@'%' IDENTIFIED BY 'QGZwDPaZlaqUU5HsPIqo4bnc';
+GRANT ALL PRIVILEGES ON `trading`.* TO 'trading'@'%';
+GRANT ALL PRIVILEGES ON `datafeed`.* TO 'trading'@'%';
+GRANT ALL PRIVILEGES ON `binance`.* TO 'trading'@'%';
+GRANT ALL PRIVILEGES ON `bitmex`.* TO 'trading'@'%';
+GRANT ALL PRIVILEGES ON `bitfinex`.* TO 'trading'@'%';
+GRANT ALL PRIVILEGES ON `bybit`.* TO 'trading'@'%';
+FLUSH PRIVILEGES;

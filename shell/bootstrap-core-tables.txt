@@ -1,0 +1,6 @@
+# Baseline tables for minimal instance API and bot control bootstrap.
+config__hosts
+config__table_map
+bot__activity
+bot__orders_ids
+bot__redudancy

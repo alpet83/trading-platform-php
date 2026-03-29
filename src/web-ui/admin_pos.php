@@ -2,7 +2,7 @@
     include_once('lib/common.php');
     include_once('lib/db_tools.php');
     include_once('lib/db_config.php');    
-    include_once('table_render.php');
+    include_once('../lib/table_render.php');
     require_once('lib/admin_ip.php');
 
     $user_rights = 'trade'; // default     
@@ -13,9 +13,13 @@
     $acc_id = rqs_param('account', -1);
     $exch = rqs_param('exch', 'default');
     $exch = rqs_param('exchange', $exch);
+    $bot = rqs_param('bot', '');
 
     $script = $_SERVER['SCRIPT_NAME'];
     $url_back = "$script?exch=$exch";
+    if ($bot !== '') {
+        $url_back .= '&bot=' . urlencode($bot);
+    }
 
     $title = "$acc_id $exch pos";
 
@@ -47,32 +51,44 @@ skip_head:
     function go_back() { <?php echo " document.location=\"$url_back\";\n"; ?> }
 </script>
 <?php
-    $bot = $exch.'_bot';
+    if ($bot === '') {
+        $bot = $exch . '_bot';
+    }
     $cfg_table = $mysqli->select_value('table_name', 'config__table_map', "WHERE applicant = '$bot'");
     if (!$cfg_table)
         die("#ERROR: not found entry for bot $bot in config");
 
     if ($acc_id < 0)
-        $acc_id = $mysqli->select_value('account_id', $cfg_table, "WHERE param = 'exchange'"); // default first
+        $acc_id = intval($mysqli->select_value('account_id', $cfg_table)); // default first
 
-    $table = $exch.'__positions';
+    $cfg = $mysqli->select_map('param,value', $cfg_table, "WHERE account_id = $acc_id");
+    if (is_array($cfg) && isset($cfg['exchange']) && $cfg['exchange'] !== '') {
+        $exch = strtolower($cfg['exchange']);
+    }
+
+    $bot_prefix = $cfg_table;
+    if (strpos($bot_prefix, 'config__') === 0) {
+        $bot_prefix = substr($bot_prefix, 8);
+    }
+
+    $table = $bot_prefix . '__positions';
 
     $self = $_SERVER['PHP_SELF'];
     mysqli_report(MYSQLI_REPORT_OFF);
 
     //  $dict = file_get_contents($pmap_file);
-    $pairs_map = $mysqli->select_map('pair_id,symbol', $exch.'__tickers');
-    $append = $mysqli->select_map('pair_id,symbol', $exch.'__ticker_map');
+    $pairs_map = $mysqli->select_map('pair_id,symbol', $bot_prefix.'__tickers');
+    $append = $mysqli->select_map('pair_id,symbol', $bot_prefix.'__ticker_map');
     if (is_array($append))
         $pairs_map = array_replace($pairs_map, $append);
     
-    $params = "LEFT JOIN `$exch"."__tickers` AS T ON T.pair_id = P.pair_id\n";
-    $params .= "LEFT JOIN `$exch"."__ticker_map` AS TM ON TM.pair_id = P.pair_id\n";
+    $params = "LEFT JOIN `$bot_prefix"."__tickers` AS T ON T.pair_id = P.pair_id\n";
+    $params .= "LEFT JOIN `$bot_prefix"."__ticker_map` AS TM ON TM.pair_id = P.pair_id\n";
     $params .= "WHERE account_id = $acc_id\n";
     $params .= "ORDER BY pair";
 
     $rows = $mysqli->select_rows('P.*,T.last_price,COALESCE(T.symbol, TM.symbol) as pair', "`$table` as P", $params, MYSQLI_ASSOC);
-    if (!$rows)
+    if (!is_array($rows))
         die("#FATAL: load failed from table $table, for account_id = $acc_id\n");
 
     foreach ($rows as $i => $row)
@@ -130,6 +146,9 @@ skip_head:
         die('');
     }    
     echo "<h2>Position offset configuraton for account #$acc_id</h2>";
+    if (count($rows) === 0) {
+        echo "<div style='color:#ffcb6b'>No position rows yet for this bot/account.</div>";
+    }
 ?>
     <pre></pre>
     <table cellpadding=7 border=1 style='border-collapse:collapse;'>
@@ -156,6 +175,7 @@ skip_head:
         echo "  <tr><td>$ts<td>$pair<td>$cpos<td>$tpos<td>$price<td>$rpnl<td>$upnl\n";
         echo "<td><form action='$self' method='GET'>\n";
         echo "    <input type='hidden' name='exch' value='$exch'/>\n";
+        echo "    <input type='hidden' name='bot' value='$bot'/>\n";
         echo "    <input type='hidden' name='account' value='$acc_id'/>\n";
         echo "    <input type='hidden' name='pair_id' value='$pair_id'/>\n";
         echo "    <input type='text'   name='offset' value='$offset' $active/>\n";
