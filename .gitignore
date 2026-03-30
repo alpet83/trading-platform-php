@@ -1,9 +1,11 @@
 var/
 misc/
 secrets/
+!secrets/
 .env
 !secrets/.gitkeep
 !secrets/db_config.php.example
+!secrets/signals_db_config.php.example
 
 # Runtime-generated compatibility files from alpet-libs-php.
 src/common.php
