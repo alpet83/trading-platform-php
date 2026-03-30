@@ -15,23 +15,8 @@ $ErrorActionPreference = "Stop"
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
 
-function Get-GitHubZip([string]$Url, [string]$DestDir) {
-  $tmpZip = Join-Path $env:TEMP ("gh_dep_" + [System.IO.Path]::GetRandomFileName() + ".zip")
-  Info "#INFO: Downloading $Url ..."
-  Invoke-WebRequest -Uri $Url -OutFile $tmpZip -UseBasicParsing
-  Info "#INFO: Extracting to $DestDir ..."
-  Expand-Archive -Path $tmpZip -DestinationPath $DestDir -Force
-  Remove-Item $tmpZip -Force
-}
-
-function Find-Or-Fetch-SiblingRepo([string]$RepoRoot, [string[]]$Names, [string]$GitHubZipUrl, [string]$LogName) {
+function Find-SiblingRepo([string]$RepoRoot, [string[]]$Names) {
   $parent = Split-Path $RepoRoot -Parent
-  foreach ($name in $Names) {
-    $candidate = Join-Path $parent $name
-    if (Test-Path $candidate) { return $candidate }
-  }
-  Info "#INFO: $LogName not found locally — downloading from GitHub..."
-  Get-GitHubZip -Url $GitHubZipUrl -DestDir $parent
   foreach ($name in $Names) {
     $candidate = Join-Path $parent $name
     if (Test-Path $candidate) { return $candidate }
@@ -190,17 +175,20 @@ if ($CleanStart) {
   docker-compose -f $ComposeFile down --remove-orphans
 }
 
-$alpetLibsPath = Find-Or-Fetch-SiblingRepo $ProjectRoot `
-  @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master") `
-  "https://github.com/alpet83/alpet-libs-php/archive/refs/heads/main.zip" `
-  "alpet-libs-php"
-if (-not $alpetLibsPath) { Fail "Failed to obtain alpet-libs-php — check internet connection" }
-$alpetLibsPathDocker = $alpetLibsPath -replace '\\', '/'
+$depsScript = Join-Path $PSScriptRoot "deps_check_download.ps1"
+if (-not (Test-Path $depsScript)) {
+  Fail "Missing dependency helper: $depsScript"
+}
 
-Find-Or-Fetch-SiblingRepo $ProjectRoot `
-  @("datafeed", "datafeed-main", "datafeed-master") `
-  "https://github.com/alpet83/datafeed/archive/refs/heads/main.zip" `
-  "datafeed" | Out-Null
+Info "#STEP 0.5/7: check and download dependencies (alpet-libs-php, datafeed)"
+& $depsScript -RepoRoot $ProjectRoot
+if ($LASTEXITCODE -ne 0) {
+  Fail "Dependency check/download failed"
+}
+
+$alpetLibsPath = Find-SiblingRepo $ProjectRoot @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master")
+if (-not $alpetLibsPath) { Fail "alpet-libs-php not found after dependency step" }
+$alpetLibsPathDocker = $alpetLibsPath -replace '\\', '/'
 
 Info "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
 Prepare-DeployPasswords
