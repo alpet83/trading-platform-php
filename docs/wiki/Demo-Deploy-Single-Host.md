@@ -3,6 +3,20 @@
 This is the primary demo deployment flow for running all main containers on one host.
 It is written for practical onboarding and links to detailed docs only when needed.
 
+## Quick Mental Model (Before Commands)
+
+On one host, you typically work with two container assemblies:
+
+1. Legacy signals assembly (`docker-compose.signals-legacy.yml`)
+	Role: expose legacy signals API bridge (`signals-legacy`) and its DB.
+2. Trading assembly (`docker-compose.yml`)
+	Role: run trading stack (`mariadb`, `web`, optional bot/datafeed).
+
+For a minimal demo deploy, two assemblies are enough:
+
+1. Bring up legacy signals first (dependency source for signals URLs).
+2. Bring up trading group second (`deploy-simple.sh` or `deploy-simple.ps1`).
+
 ## Scope
 
 This flow covers:
@@ -30,7 +44,29 @@ If you are on Windows, keep [QUICKSTART_WINDOWS.md](../QUICKSTART_WINDOWS.md) op
 
 Security baseline: [PRODUCTION_SECURITY.md](../PRODUCTION_SECURITY.md).
 
-## 2) Run One-Command Base Deploy
+## 2) Deploy Stage A: Legacy Signals (Dependency Source)
+
+Linux/Git Bash:
+
+```bash
+sh scripts/deploy-signals-legacy.sh
+```
+
+PowerShell:
+
+```powershell
+./scripts/deploy-signals-legacy.ps1
+```
+
+What this stage does:
+
+1. Ensures `secrets/signals_db_config.php` exists (copied from example if missing).
+2. Starts `signals-legacy-db` and `signals-legacy` from overlay compose.
+3. Runs quick HTTP probe for legacy endpoint.
+
+Details: [SIGNALS_LEGACY_CONTAINER.md](../SIGNALS_LEGACY_CONTAINER.md).
+
+## 3) Deploy Stage B: Trading Group
 
 Linux/Git Bash:
 
@@ -53,7 +89,7 @@ What this stage does (high-level):
 
 Reference details: [COMMANDS_REFERENCE.md](../COMMANDS_REFERENCE.md).
 
-## 3) Validate Base Services
+## 4) Validate Base Services
 
 Run:
 
@@ -72,36 +108,32 @@ If checks fail, inspect logs:
 docker compose logs --tail 100 mariadb web
 ```
 
-## 4) Optional: Enable Legacy Signals API Container
+## 5) Validate Cross-Assembly Path
 
-If you need the legacy bridge API (`signals-server`), start with compose overlay:
+1. Legacy endpoint responds on `${SIGNALS_LEGACY_PORT:-8090}`.
+2. Trading API/admin endpoints respond on `${WEB_PORT:-8088}`.
+3. If you use signals forwarding, verify `SIGNALS_API_URL` points to legacy bridge URL.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.signals-legacy.yml up -d
-```
-
-Follow and validate with: [SIGNALS_LEGACY_CONTAINER.md](../SIGNALS_LEGACY_CONTAINER.md).
-
-## 5) Optional: Enable Datafeed Container
+## 6) Optional: Enable Datafeed Container
 
 If your scenario includes datafeed loaders, ensure datafeed source is available and then start the stack with current compose settings.
 
 Datafeed notes: [DATAFEED_DEPS.md](../DATAFEED_DEPS.md).
 
-## 6) Optional: Configure Bot Credentials
+## 7) Optional: Configure Bot Credentials
 
 If you plan to execute trades, inject exchange credentials using project scripts.
 
 Start from: [COMMANDS_REFERENCE.md](../COMMANDS_REFERENCE.md) and [BOT_MANAGER_AND_PASS.md](../BOT_MANAGER_AND_PASS.md).
 
-## 7) Post-Deploy Checklist
+## 8) Post-Deploy Checklist
 
 1. `docker compose ps` shows healthy containers.
 2. Base admin/API endpoints respond.
-3. If legacy API enabled, its endpoint responds.
+3. Legacy API endpoint responds.
 4. Secrets are local and not exposed in git status.
 
-## 8) Next Paths
+## 9) Next Paths
 
 1. Production hardening: [PRODUCTION_SECURITY.md](../PRODUCTION_SECURITY.md)
 2. Volumes/secrets model: [DOCKER_VOLUMES_AND_SECRETS.md](../DOCKER_VOLUMES_AND_SECRETS.md)

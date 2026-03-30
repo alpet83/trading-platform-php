@@ -20,6 +20,20 @@ Set real values in `secrets/signals_db_config.php`:
 
 ## 2) Start stack with legacy signals API
 
+Linux/Git Bash helper:
+
+```bash
+sh scripts/deploy-signals-legacy.sh
+```
+
+PowerShell helper:
+
+```powershell
+./scripts/deploy-signals-legacy.ps1
+```
+
+Manual compose equivalent:
+
 ```bash
 docker-compose -f docker-compose.yml -f docker-compose.signals-legacy.yml up -d
 ```
