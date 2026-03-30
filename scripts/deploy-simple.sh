@@ -30,6 +30,50 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
+fetch_github_zip() {
+  url="$1"
+  dest_dir="$2"
+  log_name="$3"
+  tmp_zip="/tmp/gh_dep_$$_${log_name}.zip"
+  log "#INFO: Downloading $log_name from GitHub..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$tmp_zip" || fail "Failed to download $url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "$url" -O "$tmp_zip" || fail "Failed to download $url"
+  else
+    fail "Neither curl nor wget found; cannot auto-download $log_name"
+  fi
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q "$tmp_zip" -d "$dest_dir"
+  else
+    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$tmp_zip" "$dest_dir" \
+      || fail "Cannot extract ZIP — install unzip or python3"
+  fi
+  rm -f "$tmp_zip"
+}
+
+find_or_fetch_sibling() {
+  repo_root="$1"
+  names="$2"
+  zip_url="$3"
+  log_name="$4"
+  parent_dir="$(dirname "$repo_root")"
+  for name in $names; do
+    if [ -d "$parent_dir/$name" ]; then
+      echo "$parent_dir/$name"
+      return 0
+    fi
+  done
+  fetch_github_zip "$zip_url" "$parent_dir" "$log_name"
+  for name in $names; do
+    if [ -d "$parent_dir/$name" ]; then
+      echo "$parent_dir/$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
 generate_password() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 36 | tr -dc 'A-Za-z0-9' | head -c 28
@@ -220,6 +264,16 @@ main() {
   require_cmd docker-compose
   require_cmd docker
   require_cmd sh
+
+  find_or_fetch_sibling "$ROOT_DIR" \
+    "alpet-libs-php alpet-libs-php-main alpet-libs-php-master" \
+    "https://github.com/alpet83/alpet-libs-php/archive/refs/heads/main.zip" \
+    "alpet-libs-php" > /dev/null
+
+  find_or_fetch_sibling "$ROOT_DIR" \
+    "datafeed datafeed-main datafeed-master" \
+    "https://github.com/alpet83/datafeed/archive/refs/heads/main.zip" \
+    "datafeed" > /dev/null
 
   log "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
   prepare_deploy_passwords

@@ -15,9 +15,24 @@ $ErrorActionPreference = "Stop"
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
 
-function Find-AlpetLibs([string]$RepoRoot) {
+function Get-GitHubZip([string]$Url, [string]$DestDir) {
+  $tmpZip = Join-Path $env:TEMP ("gh_dep_" + [System.IO.Path]::GetRandomFileName() + ".zip")
+  Info "#INFO: Downloading $Url ..."
+  Invoke-WebRequest -Uri $Url -OutFile $tmpZip -UseBasicParsing
+  Info "#INFO: Extracting to $DestDir ..."
+  Expand-Archive -Path $tmpZip -DestinationPath $DestDir -Force
+  Remove-Item $tmpZip -Force
+}
+
+function Find-Or-Fetch-SiblingRepo([string]$RepoRoot, [string[]]$Names, [string]$GitHubZipUrl, [string]$LogName) {
   $parent = Split-Path $RepoRoot -Parent
-  foreach ($name in @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master")) {
+  foreach ($name in $Names) {
+    $candidate = Join-Path $parent $name
+    if (Test-Path $candidate) { return $candidate }
+  }
+  Info "#INFO: $LogName not found locally — downloading from GitHub..."
+  Get-GitHubZip -Url $GitHubZipUrl -DestDir $parent
+  foreach ($name in $Names) {
     $candidate = Join-Path $parent $name
     if (Test-Path $candidate) { return $candidate }
   }
@@ -62,9 +77,9 @@ function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
   $lines = Get-Content -Path $Path
   $updated = $false
   for ($i = 0; $i -lt $lines.Count; $i++) {
-    if ($lines[$i] -match "^([\s]*)" + [regex]::Escape($Key) + ":[\s]*") {
+    if ($lines[$i] -match "^(\s*)" + [regex]::Escape($Key) + ":\s*") {
       $indent = $Matches[1]
-      $lines[$i] = "$indent$Key: $Value"
+      $lines[$i] = "${indent}${Key}: ${Value}"
       $updated = $true
     }
   }
@@ -175,11 +190,17 @@ if ($CleanStart) {
   docker-compose -f $ComposeFile down --remove-orphans
 }
 
-$alpetLibsPath = Find-AlpetLibs $ProjectRoot
-if (-not $alpetLibsPath) {
-  Fail "Cannot find alpet-libs-php. Unzip it to $(Split-Path $ProjectRoot -Parent)\alpet-libs-php (or alpet-libs-php-main / alpet-libs-php-master)"
-}
+$alpetLibsPath = Find-Or-Fetch-SiblingRepo $ProjectRoot `
+  @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master") `
+  "https://github.com/alpet83/alpet-libs-php/archive/refs/heads/main.zip" `
+  "alpet-libs-php"
+if (-not $alpetLibsPath) { Fail "Failed to obtain alpet-libs-php — check internet connection" }
 $alpetLibsPathDocker = $alpetLibsPath -replace '\\', '/'
+
+Find-Or-Fetch-SiblingRepo $ProjectRoot `
+  @("datafeed", "datafeed-main", "datafeed-master") `
+  "https://github.com/alpet83/datafeed/archive/refs/heads/main.zip" `
+  "datafeed" | Out-Null
 
 Info "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
 Prepare-DeployPasswords
