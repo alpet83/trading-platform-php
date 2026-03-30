@@ -5,6 +5,9 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+DEPLOY_OVERRIDE_FILE="${DEPLOY_OVERRIDE_FILE:-docker-compose.override.yml}"
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-.env}"
+DEPLOY_GENERATE_PASSWORDS="${DEPLOY_GENERATE_PASSWORDS:-auto}"
 DEPLOY_TIMEOUT_SECONDS="${DEPLOY_TIMEOUT_SECONDS:-180}"
 DEPLOY_DB_WAIT_INTERVAL="${DEPLOY_DB_WAIT_INTERVAL:-3}"
 WEB_PORT_VALUE="${WEB_PORT:-8088}"
@@ -25,6 +28,146 @@ fail() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+generate_password() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 36 | tr -dc 'A-Za-z0-9' | head -c 28
+    return
+  fi
+
+  if [ -r /dev/urandom ]; then
+    tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 28
+    return
+  fi
+
+  date +%s | tr -dc '0-9'
+}
+
+set_env_value() {
+  file="$1"
+  key="$2"
+  value="$3"
+
+  if [ ! -f "$file" ]; then
+    : > "$file"
+  fi
+
+  if grep -q "^${key}=" "$file"; then
+    escaped_value="$(printf '%s' "$value" | sed 's/[\\/&]/\\\\&/g')"
+    sed -i "s|^${key}=.*$|${key}=${escaped_value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+set_override_value() {
+  file="$1"
+  key="$2"
+  value="$3"
+
+  if [ ! -f "$file" ]; then
+    log "#WARN: $file not found, skip ${key} update"
+    return 0
+  fi
+
+  tmp_file="${file}.tmp"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { updated = 0 }
+    {
+      pattern = "^[[:space:]]*" key ":[[:space:]]*"
+      if ($0 ~ pattern) {
+        indent = ""
+        if (match($0, /^[[:space:]]*/)) {
+          indent = substr($0, RSTART, RLENGTH)
+        }
+        print indent key ": " value
+        updated = 1
+        next
+      }
+      print
+    }
+    END {
+      if (updated == 0) {
+        exit 2
+      }
+    }
+  ' "$file" > "$tmp_file" || {
+    rc="$?"
+    rm -f "$tmp_file"
+    if [ "$rc" -eq 2 ]; then
+      log "#WARN: key ${key} not found in $file"
+      return 0
+    fi
+    return "$rc"
+  }
+
+  mv "$tmp_file" "$file"
+}
+
+prepare_deploy_passwords() {
+  mode="$DEPLOY_GENERATE_PASSWORDS"
+  case "$mode" in
+    yes|no|auto) ;;
+    *) fail "DEPLOY_GENERATE_PASSWORDS must be one of: auto|yes|no" ;;
+  esac
+
+  if [ "$mode" = "auto" ]; then
+    if [ -t 0 ]; then
+      printf '%s' "#PROMPT: Generate random passwords and update $DEPLOY_OVERRIDE_FILE + $DEPLOY_ENV_FILE? [Y/n] "
+      read -r answer || answer=""
+      case "${answer:-Y}" in
+        y|Y|yes|YES|'') mode="yes" ;;
+        *) mode="no" ;;
+      esac
+    else
+      mode="no"
+      log "#INFO: non-interactive session; skip password generation (set DEPLOY_GENERATE_PASSWORDS=yes to force)."
+    fi
+  fi
+
+  if [ "$mode" = "no" ]; then
+    log "#INFO: password preflight skipped by user choice"
+    return 0
+  fi
+
+  if [ ! -f "$DEPLOY_ENV_FILE" ]; then
+    if [ -f ".env.example" ]; then
+      cp ".env.example" "$DEPLOY_ENV_FILE"
+      log "#INFO: created $DEPLOY_ENV_FILE from .env.example"
+    else
+      cat > "$DEPLOY_ENV_FILE" <<'EOF'
+COMPOSE_PROJECT_NAME=trd
+TZ=UTC
+MARIADB_DATABASE=trading
+MARIADB_USER=trading
+WEB_PORT=8088
+WEB_PUBLISH_IP=127.0.0.1
+EOF
+      log "#INFO: created minimal $DEPLOY_ENV_FILE"
+    fi
+  fi
+
+  mariadb_root_password="$(generate_password)"
+  mariadb_password="$(generate_password)"
+  mariadb_repl_password="$(generate_password)"
+  mariadb_remote_password="$(generate_password)"
+  bot_trader_password="$(generate_password)"
+
+  set_env_value "$DEPLOY_ENV_FILE" "MARIADB_ROOT_PASSWORD" "$mariadb_root_password"
+  set_env_value "$DEPLOY_ENV_FILE" "MARIADB_PASSWORD" "$mariadb_password"
+  set_env_value "$DEPLOY_ENV_FILE" "TRADING_DB_PASSWORD" "$mariadb_password"
+  set_env_value "$DEPLOY_ENV_FILE" "MARIADB_REPL_PASSWORD" "$mariadb_repl_password"
+  set_env_value "$DEPLOY_ENV_FILE" "MARIADB_REMOTE_PASSWORD" "$mariadb_remote_password"
+  set_env_value "$DEPLOY_ENV_FILE" "BOT_TRADER_PASSWORD" "$bot_trader_password"
+
+  set_override_value "$DEPLOY_OVERRIDE_FILE" "MARIADB_ROOT_PASSWORD" "$mariadb_root_password"
+  set_override_value "$DEPLOY_OVERRIDE_FILE" "MARIADB_PASSWORD" "$mariadb_password"
+  set_override_value "$DEPLOY_OVERRIDE_FILE" "MARIADB_REPL_PASSWORD" "$mariadb_repl_password"
+  set_override_value "$DEPLOY_OVERRIDE_FILE" "MARIADB_REMOTE_PASSWORD" "$mariadb_remote_password"
+  set_override_value "$DEPLOY_OVERRIDE_FILE" "DB_PASS" "$mariadb_password"
+
+  log "#INFO: randomized credentials applied to $DEPLOY_ENV_FILE and $DEPLOY_OVERRIDE_FILE"
 }
 
 wait_for_db_health() {
@@ -78,22 +221,25 @@ main() {
   require_cmd docker
   require_cmd sh
 
-  log "#STEP 1/6: bootstrap runtime and generate secrets/db_config.php with random trading password"
+  log "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
+  prepare_deploy_passwords
+
+  log "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
   sh shell/bootstrap_container_env.sh
 
-  log "#STEP 2/6: build images for mariadb/web"
+  log "#STEP 3/7: build images for mariadb/web"
   docker-compose -f "$COMPOSE_FILE" build mariadb web
 
-  log "#STEP 3/6: start mariadb"
+  log "#STEP 4/7: start mariadb"
   docker-compose -f "$COMPOSE_FILE" up -d mariadb
 
-  log "#STEP 4/6: wait for mariadb health"
+  log "#STEP 5/7: wait for mariadb health"
   wait_for_db_health || fail "mariadb was not healthy within ${DEPLOY_TIMEOUT_SECONDS}s"
 
-  log "#STEP 5/6: start web(api + admin ui)"
+  log "#STEP 6/7: start web(api + admin ui)"
   docker-compose -f "$COMPOSE_FILE" up -d web
 
-  log "#STEP 6/6: test admin/api endpoints"
+  log "#STEP 7/7: test admin/api endpoints"
   test_web_endpoints || fail "web endpoint checks failed"
 
   log ""
