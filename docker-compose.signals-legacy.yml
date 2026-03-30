@@ -1,52 +1,70 @@
 services:
+  signals-legacy-db:
+    image: mariadb:11
+    container_name: sigsys-db
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      MARIADB_DATABASE: ${SIGNALS_LEGACY_DB_NAME:-trading}
+      MARIADB_USER: ${SIGNALS_LEGACY_DB_USER:-${MARIADB_USER:-trading}}
+      MARIADB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-${MARIADB_PASSWORD:-legacy_change_me}}
+      MARIADB_ROOT_PASSWORD: ${SIGNALS_LEGACY_DB_ROOT_PASSWORD:-${MARIADB_ROOT_PASSWORD:-legacy_root_change_me}}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    volumes:
+      - signals-legacy-db-data:/var/lib/mysql
+      - signals-legacy-db-socket:/run/mysqld
+      - ./signals-server/trading_proto.sql:/docker-entrypoint-initdb.d/10-trading_proto.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   signals-legacy:
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-trd}-signals-legacy
+    container_name: sigsys
     restart: unless-stopped
     depends_on:
-      mariadb:
+      signals-legacy-db:
         condition: service_healthy
     command: ["/usr/local/bin/run-signals-legacy.sh"]
     environment:
       TZ: ${TZ:-UTC}
       SIGNALS_WEB_DOCROOT: ${SIGNALS_WEB_DOCROOT:-/app/signals-server}
       SIGNALS_BIND_HOST: ${SIGNALS_BIND_HOST:-0.0.0.0}
-      SIGNALS_BIND_PORT: ${SIGNALS_BIND_PORT:-8081}
-      TRADEBOT_PHP_HOST: ${TRADEBOT_PHP_HOST:-http://web}
-      SIGNALS_API_URL: ${SIGNALS_API_URL:-http://signals-legacy:8081}
-      BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bots-hive}
+      SIGNALS_BIND_PORT: ${SIGNALS_BIND_PORT:-80}
+      SIGNALS_API_URL: ${SIGNALS_API_URL:-http://signals-legacy/}
+      SIGNALS_VWAP_URL: ${SIGNALS_VWAP_URL:-http://web/bot/get_vwap.php}
+      MYSQL_SOCKET_PATH: ${MYSQL_SOCKET_PATH:-/run/mysqld/mysqld.sock}
+      SIGNALS_LEGACY_DB_HOST: ${SIGNALS_LEGACY_DB_HOST:-signals-legacy-db}
+      SIGNALS_LEGACY_DB_NAME: ${SIGNALS_LEGACY_DB_NAME:-trading}
+      SIGNALS_LEGACY_DB_USER: ${SIGNALS_LEGACY_DB_USER:-${MARIADB_USER:-trading}}
+      SIGNALS_LEGACY_DB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-${MARIADB_PASSWORD:-legacy_change_me}}
+      TELEGRAM_API_KEY: ${TELEGRAM_API_KEY:-}
+      TELEGRAM_API_TOKEN_FILE: ${TELEGRAM_API_TOKEN_FILE:-/etc/api-token}
+      BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bot}
     ports:
-      - "${SIGNALS_LEGACY_PORT:-8090}:8081"
+      - "${SIGNALS_LEGACY_PORT:-8090}:80"
     volumes:
       - ./signals-server:/app/signals-server
       - ./src:/app/src
       - ./docker/entrypoints/run-signals-legacy.sh:/usr/local/bin/run-signals-legacy.sh:ro
       - ./secrets/signals_db_config.php:/usr/local/etc/php/db_config.php:ro
+      - signals-legacy-db-socket:/run/mysqld
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
 
-  web:
-    depends_on:
-      signals-legacy:
-        condition: service_started
-    environment:
-      SIGNALS_API_URL: ${SIGNALS_API_URL:-http://signals-legacy:8081}
+volumes:
+  signals-legacy-db-data:
+  signals-legacy-db-socket:
 
-  bot:
-    depends_on:
-      signals-legacy:
-        condition: service_started
-    environment:
-      SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://signals-legacy:8081}
-      SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://signals-legacy:8081}
-
-  bots-hive:
-    depends_on:
-      signals-legacy:
-        condition: service_started
-    environment:
-      SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://signals-legacy:8081}
-      SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://signals-legacy:8081}
+networks:
+  default:
+    external: true
+    name: trd_default

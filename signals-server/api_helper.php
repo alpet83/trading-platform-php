@@ -2,6 +2,7 @@
 
 require_once('lib/common.php');
 require_once('lib/db_tools.php');
+require_once('lib/admin_ip.php');
 if (file_exists('/usr/local/etc/php/db_config.php'))
    require_once('/usr/local/etc/php/db_config.php'); // DOCKER hosting 
 else
@@ -23,7 +24,6 @@ set_exception_handler(function (Throwable $E) {
 function check_auth() {
     global $log_file;
     $headers = array_change_key_case(getallheaders(), CASE_LOWER);
-    $token = '?';
     $log_fn = '/tmp/api-debug.log';
     $log_file = fopen($log_fn, 'w');
     if (is_resource($log_file)) {
@@ -35,17 +35,57 @@ function check_auth() {
 
     if (array_key_exists('authorization', $headers)) 
     try {
-        $token = FRONTEND_TOKEN;
-        if ($headers['authorization'] === "Bearer {$token}") {
+        if ($headers['authorization'] === "Bearer ".FRONTEND_TOKEN) {
             return;
         }
-        $token .= ':' . $headers['authorization'];
     }
     catch (Throwable $E) { 
         log_msg("#EXCEPTION in check_auth: %s from %s:\n %s", $E->getMessage(), $E->getFile().':'.$E->getLine(), $E->getTraceAsString());        
     }
-    send_error(['m' => "Unauthorized by [$token]/Token not specified/Wrong IP", 'h' => $headers], 401);
+
+    if (tp_api_allow_local_bootstrap_admin()) {
+        return;
+    }
+
+    send_error('Unauthorized', 401);
     exit;
+}
+
+function tp_api_registered_users_count(): ?int {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
+    foreach (['signals_system', 'trading'] as $db_name) {
+        $mysqli = init_remote_db($db_name);
+        if (!$mysqli instanceof mysqli_ex) {
+            continue;
+        }
+
+        if (!$mysqli->table_exists('chat_users')) {
+            $mysqli->close();
+            continue;
+        }
+
+        $count = intval($mysqli->select_value('COUNT(*)', 'chat_users'));
+        $mysqli->close();
+        $cached = max(0, $count);
+        return $cached;
+    }
+
+    $cached = null;
+    return $cached;
+}
+
+function tp_api_allow_local_bootstrap_admin(): bool {
+    $remote = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    if ($remote === '' || !is_admin_ip($remote)) {
+        return false;
+    }
+
+    $count = tp_api_registered_users_count();
+    return $count !== null && $count === 0;
 }
 
 function get_user_rights() {
@@ -78,6 +118,10 @@ function get_user_rights() {
         return trim($raw);
     }
 
+    if (tp_api_allow_local_bootstrap_admin()) {
+        return 'view,trade,admin';
+    }
+
     return $default_rights;
 }
 
@@ -95,5 +139,5 @@ function send_error($message, $http_code = 500) {
     log_msg("#HTTP_SERVER_ERROR: %s from:\n %s", print_r($message, true), format_backtrace(0)); 
     if (500 == $http_code)
        error_log("#HTTP_SERVER_ERROR: ".print_r($message, true)." from ".print_r($trace, true));
-    echo json_encode(['error' => $message, 'backtrace' => $trace], JSON_PRETTY_PRINT);
+    echo json_encode(['error' => $message], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 }

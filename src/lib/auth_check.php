@@ -60,6 +60,48 @@ if (!function_exists('tp_fetch_user_rights_by_telegram')) {
     }
 }
 
+if (!function_exists('tp_registered_users_count')) {
+    function tp_registered_users_count(): ?int {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $db_candidates = ['signals_system', 'trading'];
+        foreach ($db_candidates as $db_name) {
+            $mysqli = init_remote_db($db_name);
+            if (!$mysqli instanceof mysqli_ex) {
+                continue;
+            }
+
+            if (!$mysqli->table_exists('chat_users')) {
+                $mysqli->close();
+                continue;
+            }
+
+            $count = intval($mysqli->select_value('COUNT(*)', 'chat_users'));
+            $mysqli->close();
+            $cached = max(0, $count);
+            return $cached;
+        }
+
+        $cached = null;
+        return $cached;
+    }
+}
+
+if (!function_exists('tp_allow_local_bootstrap_admin')) {
+    function tp_allow_local_bootstrap_admin(): bool {
+        $remote = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        if ($remote === '' || !is_admin_ip($remote)) {
+            return false;
+        }
+
+        $count = tp_registered_users_count();
+        return $count !== null && $count === 0;
+    }
+}
+
 if (!function_exists('get_user_rights')) {
     function get_user_rights(): string {
         if (isset($_SESSION['user_rights']) && is_string($_SESSION['user_rights'])) {
@@ -69,6 +111,9 @@ if (!function_exists('get_user_rights')) {
         $mode = tp_auth_mode();
         if ($mode === 'basic') {
             $remote = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            if (tp_allow_local_bootstrap_admin()) {
+                return 'view,trade,admin';
+            }
             if (is_admin_ip($remote)) {
                 return 'view,trade,admin';
             }
@@ -108,6 +153,10 @@ if (!function_exists('get_user_rights')) {
             if (is_admin_ip($remote)) {
                 return 'view,trade,admin';
             }
+        }
+
+        if (tp_allow_local_bootstrap_admin()) {
+            return 'view,trade,admin';
         }
 
         return 'none';
