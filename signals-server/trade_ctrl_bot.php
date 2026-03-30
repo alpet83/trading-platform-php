@@ -1,88 +1,146 @@
 <?php
- require_once("lib/common.php");
- require_once("lib/esctext.php");
- require_once("lib/db_tools.php");
+    set_include_path(get_include_path().':/app/src:/app/src/lib:/usr/local/lib/php');
+    if (file_exists('/usr/local/etc/php/db_config.php'))
+    require_once('/usr/local/etc/php/db_config.php');
+    require_once("lib/common.php");
+    require_once("lib/esctext.php");
+    require_once("lib/db_tools.php");
 
- require ('telegram-bot/vendor/autoload.php'); //Подключаем библиотеку
- use Telegram\Bot\Api;
+    $telegram_autoload_candidates = [
+    __DIR__.'/telegram-bot/vendor/autoload.php',
+    __DIR__.'/vendor/autoload.php',
+    '/app/src/vendor/autoload.php'
+    ];
 
- date_default_timezone_set("Asia/Nicosia");
+    $telegram_autoload = false;
+    foreach ($telegram_autoload_candidates as $autoload) {
+    if (file_exists($autoload)) {
+      $telegram_autoload = $autoload;
+      break;
+    }
+    }
 
- define('GET_ALERTS',      'get-alerts');
- define('GET_REPORTS',     'get-reports');
- define('GET_SMS',         'get-sms');
+    if (false === $telegram_autoload) {
+    die("#FATAL: Telegram SDK autoload not found. Install dependency (for example irazasyed/telegram-bot-sdk) and rerun.\n");
+    }
 
- define('CMD_SIGNAL',      'signal');
- define('CMD_STATUS',      'bot_status');
- define('CMD_RESTART',     'restart');  
- define('CMD_EDIT_COEF',   'pos_coef');
- define('CMD_EDIT_OFFSET', 'pos_offset');
+    require_once($telegram_autoload); // РџРѕРґРєР»СЋС‡Р°РµРј Telegram SDK
+    use Telegram\Bot\Api;
 
- $log_file = fopen('/var/log/trade_ctrl_bot.log', 'w');
+    date_default_timezone_set("Asia/Nicosia");
 
- $hostname = file_get_contents('/etc/hostname');
- $hostname = trim($hostname);
+    define('GET_ALERTS',      'get-alerts');
+    define('GET_REPORTS',     'get-reports');
+    define('GET_SMS',         'get-sms');
 
- // Bot server host — configure in db_config.php or as an env var
- $bot_server = getenv('BOT_SERVER_HOST') ?: '127.0.0.1';
+    define('CMD_SIGNAL',      'signal');
+    define('CMD_STATUS',      'bot_status');
+    define('CMD_RESTART',     'restart');  
+    define('CMD_EDIT_COEF',   'pos_coef');
+    define('CMD_EDIT_OFFSET', 'pos_offset');
 
- $hr = date('H');
+    $log_file = fopen('/var/log/trade_ctrl_bot.log', 'w');
 
- $event_id = 0;
+    $hostname = file_get_contents('/etc/hostname');
+    $hostname = trim($hostname);
 
- function connect_mysql()
- {
-    global $mysqli;
-    $mysqli = new mysqli_ex(null, MYSQL_USER, MYSQL_PASSWORD, 'trading', null, '/run/mysqld/mysqld.sock');
+    // Deprecated host hint for direct bot calls. In shared trd_default network keep default as service "bot".
+    $bot_server = getenv('BOT_SERVER_HOST') ?: 'bot';
+
+    $hr = date('H');
+
+    $event_id = 0;
+
+    function connect_mysql()
+    {
+    global $mysqli, $db_configs;
+    $db_name = getenv('SIGNALS_LEGACY_DB_NAME') ?: 'trading';
+    $db_host = getenv('SIGNALS_LEGACY_DB_HOST') ?: 'signals-legacy-db';
+    $db_sock = getenv('MYSQL_SOCKET_PATH') ?: '/run/mysqld/mysqld.sock';
+    $db_user = getenv('SIGNALS_LEGACY_DB_USER') ?: (defined('MYSQL_USER') ? MYSQL_USER : ($db_configs[$db_name][0] ?? ($db_configs['trading'][0] ?? 'trading')));
+    $db_pass = getenv('SIGNALS_LEGACY_DB_PASSWORD') ?: (defined('MYSQL_PASSWORD') ? MYSQL_PASSWORD : ($db_configs[$db_name][1] ?? ($db_configs['trading'][1] ?? '')));
+     if ($db_sock && file_exists($db_sock)) {
+       try {
+         $mysqli = new mysqli_ex(null, $db_user, $db_pass, $db_name, null, $db_sock);
+         return $mysqli;
+       }
+       catch (Throwable $e) {
+         // Fall back to TCP host mode when socket auth/permissions do not match.
+         $mysqli = null;
+       }
+     }
+
+     $mysqli = new mysqli_ex($db_host, $db_user, $db_pass, $db_name);
     return $mysqli;
- }
+    }
 
- connect_mysql();
+    connect_mysql();
 
- if (!$mysqli || $mysqli->connect_error)
+    if (!$mysqli || $mysqli->connect_error)
       die ("#FATAL: cannot connect to local DB server\n");
 
+    function resolve_telegram_token() {
+    if (defined('TELEGRAM_API_KEY') && strlen(trim(strval(TELEGRAM_API_KEY))) > 0)
+    return trim(strval(TELEGRAM_API_KEY));
 
- $telegram = new Api(TELEGRAM_API_KEY);
+    $env_token = getenv('TELEGRAM_API_KEY');
+    if ($env_token && strlen(trim(strval($env_token))) > 0)
+    return trim(strval($env_token));
 
- $location = __DIR__;
- $cwd = getcwd();
+    $token_file = getenv('TELEGRAM_API_TOKEN_FILE') ?: '/etc/api-token';
+    if ($token_file && file_exists($token_file)) {
+    $file_token = trim(strval(file_get_contents($token_file)));
+    if (strlen($file_token) > 0)
+      return $file_token;
+    }
 
- log_msg("#INIT: script started from $location, cwd = $cwd, PID = ".getmypid());
- log_msg(" telegram object created...");
- $pid = getmypid();
- file_put_contents('/var/run/trade_ctrl_bot.pid', $pid);
+    return '';
+    }
 
- $sendQuestion = array();
- $customKeyboard = [['/bot-status', '/ping']];
- $reply_markup = $telegram->replyKeyboardMarkup(array('keyboard' => $customKeyboard, 'resize_keyboard' => true, 'one_time_keyboard' => false));
+    $telegram_token = resolve_telegram_token();
+    if ('' == $telegram_token)
+    die("#FATAL: TELEGRAM_API_KEY is not set (constant/env/file)\n");
 
- function send_buttons(int $chat) {
-   global $telegram, $reply_markup;
-   try {
+    $telegram = new Api($telegram_token);
+
+    $location = __DIR__;
+    $cwd = getcwd();
+
+    log_msg("#INIT: script started from $location, cwd = $cwd, PID = ".getmypid());
+    log_msg(" telegram object created...");
+    $pid = getmypid();
+    file_put_contents('/var/run/trade_ctrl_bot.pid', $pid);
+
+    $sendQuestion = array();
+    $customKeyboard = [['/bot-status', '/ping']];
+    $reply_markup = $telegram->replyKeyboardMarkup(array('keyboard' => $customKeyboard, 'resize_keyboard' => true, 'one_time_keyboard' => false));
+
+    function send_buttons(int $chat) {
+    global $telegram, $reply_markup;
+    try {
      $mparams = array('chat_id' => $chat, 'text'=> 'usual commands', 'reply_markup' => $reply_markup, 'disable_notification' => true);
      $telegram->sendMessage($mparams);
-   }
-   catch (Exception $E) {
+    }
+    catch (Exception $E) {
       $msg = sprintf("~C91 #EXCEPTION(send_buttons)~C00: used params ", $E->getMessage(), print_r($mparams, true));
       log_cmsg($msg); 
-   }   
- }
+    }   
+    }
 
- $admin_id = -1;
- $exceptions = 0;
+    $admin_id = -1;
+    $exceptions = 0;
 
- $allowed_privs = array();
+    $allowed_privs = array();
 
- function check_allowed(int $user_id, string $priv) {
-   global $allowed_privs;
-   if (!isset($allowed_privs[$user_id])) return false;
-   if (false !== array_search($priv, $allowed_privs[$user_id])) return true;
-   echo " not allowed [$priv] for $user_id";
-   return false;
- }
+    function check_allowed(int $user_id, string $priv) {
+    global $allowed_privs;
+    if (!isset($allowed_privs[$user_id])) return false;
+    if (false !== array_search($priv, $allowed_privs[$user_id])) return true;
+    echo " not allowed [$priv] for $user_id";
+    return false;
+    }
 
-  function disable_user(int $chat_id) {
+    function disable_user(int $chat_id) {
     global $mysqli, $users;
     $mysqli->try_query("UPDATE `chat_users` SET enabled = 0 WHERE chat_id = $chat_id");
     foreach ($users as $key => $rec) 
@@ -90,11 +148,11 @@
       unset($users[$key]);
       break;
     }    
-  } 
+    } 
 
- function process_send(string $text, mixed $res): bool {
+    function process_send(string $text, mixed $res): bool {
     global $tag, $event_id,  $mysqli, $telegram;
-    // добавление меток сообщений в лог, чтобы их потом удалить из чата
+    // РґРѕР±Р°РІР»РµРЅРёРµ РјРµС‚РѕРє СЃРѕРѕР±С‰РµРЅРёР№ РІ Р»РѕРі, С‡С‚РѕР±С‹ РёС… РїРѕС‚РѕРј СѓРґР°Р»РёС‚СЊ РёР· С‡Р°С‚Р°
     if (!is_object($res)) { 
       log_cmsg('~C91 #ERROR:~C00 invalid res = %s ', var_export($res, true));
       return false;
@@ -120,7 +178,7 @@
           $telegram->pinChatMessage(['chat_id' => $chat->id, 'message_id' => $msg_id]);
           return true;
         }
-        if (false !== strpos($text, 'Volume report')) return true; // эти надо сохранить
+        if (false !== strpos($text, 'Volume report')) return true; // СЌС‚Рё РЅР°РґРѕ СЃРѕС…СЂР°РЅРёС‚СЊ
         if (false !== stripos($text, 'Hourly report'))  $t_exp += 8 * 3600; 
         if (false !== stripos($text, 'Startup report')) $t_exp += 20 * 3600;
       }      
@@ -140,18 +198,18 @@
     }
     else 
       log_cmsg("~C91 #WARN:~C00 not OK: %s", var_export($res, true));
- 
+
     return true; 
- }
+    }
 
 
- function on_msg_deleted(int $chat_id, int $msg_id, string $tag) {
-   global $mysqli;
-   $mysqli->try_query("DELETE FROM chat_log WHERE (id = $msg_id) and (chat = $chat_id)");  
-   if ('ORDER' == $tag || 'ALERT' == $tag)
+    function on_msg_deleted(int $chat_id, int $msg_id, string $tag) {
+    global $mysqli;
+    $mysqli->try_query("DELETE FROM chat_log WHERE (id = $msg_id) and (chat = $chat_id)");  
+    if ('ORDER' == $tag || 'ALERT' == $tag)
       $mysqli->try_query("UPDATE `events` SET `attach` = NULL WHERE id = $msg_id");
- }
- function cleanup() {
+    }
+    function cleanup() {
     global $telegram, $mysqli;    
     $rows = $mysqli->select_rows('id, chat, tag, ts_del', 'chat_log', "WHERE NOW() >= ts_del", MYSQLI_ASSOC);
     if (!is_array($rows) || 0 == count($rows)) {
@@ -224,11 +282,11 @@
       } 
 
     } // foreach batch 
- }
+    }
 
 
- function send_msg(int $chat, $flags, $text): bool
- {
+    function send_msg(int $chat, $flags, $text): bool
+    {
     global $telegram, $exceptions;
     if (0 == $chat) return false;
 
@@ -257,42 +315,42 @@
       $result = false;
     }
     return $result;
- }
+    }
 
- define('ATTACH_FLAG_IMAGE', 8);
- define('ATTACH_FLAG_SILENT', 1);
- function send_attach(int $chat, $flags, $caption, $attach, $fname = 'attach'): bool {
-   global $telegram, $exceptions;
-   if (0 == $chat) return false;
+    define('ATTACH_FLAG_IMAGE', 8);
+    define('ATTACH_FLAG_SILENT', 1);
+    function send_attach(int $chat, $flags, $caption, $attach, $fname = 'attach'): bool {
+    global $telegram, $exceptions;
+    if (0 == $chat) return false;
 
-   $caption = str_replace('<pre>', '', $caption);
-   $path = "./chat$chat/";
-   if (!file_exists($path)) mkdir($path);
-   $fname = $path.$fname;
+    $caption = str_replace('<pre>', '', $caption);
+    $path = "./chat$chat/";
+    if (!file_exists($path)) mkdir($path);
+    $fname = $path.$fname;
 
-   if ($flags & 4) {
+    if ($flags & 4) {
      $words = explode(' ', $caption);
      $fname = $path.$words[0];
      array_shift($words);
      $caption = implode(' ', $words);
-   }
+    }
 
 
-   $img_ext = array('.png', '.jpg', '.gif', '.bmp', '.tiff');
-   $doc_ext = array('.dat', '.txt', '.docx', '.xlsx', '.jpg', '.png', '.gif', '.log');
+    $img_ext = array('.png', '.jpg', '.gif', '.bmp', '.tiff');
+    $doc_ext = array('.dat', '.txt', '.docx', '.xlsx', '.jpg', '.png', '.gif', '.log');
 
 
 
-   $mparams = [
+    $mparams = [
         'chat_id'              => $chat,
         'caption'              => $caption,
         'parse_mode'           => 'HTML',
         'disable_notification' => (0 != ($flags & ATTACH_FLAG_SILENT))
            ];
 
-   $ftype = ($flags & 0xf00) >> 8;
-   $result = false;
-   try {
+    $ftype = ($flags & 0xf00) >> 8;
+    $result = false;
+    try {
 
       if ($flags & ATTACH_FLAG_IMAGE) {
          $fname .= $img_ext[$ftype];
@@ -309,7 +367,7 @@
          $res = $telegram->sendDocument($mparams);
          $result = process_send($caption, $res);
       }
-   } catch (Exception $e) {
+    } catch (Exception $e) {
      if (strpos($e->getMessage(), 'user is deactivated') !== false) {
       log_cmsg('~C91#CLEANUP:~C00 user $chat is deactivated, removing from chat_users');
       disable_user($chat);
@@ -317,54 +375,54 @@
      log_cmsg ("~C91 #EXCEPTION(send_attach($chat, $flags)):~C00 catched %s, stack: %s ", $e->getMessage(), $e->getTraceAsString());
      $exceptions ++;
      $result = false;
-   }
-   // TODO: post timer to delete file
-   //  unlink($fname) 
-   return $result;
- }
+    }
+    // TODO: post timer to delete file
+    //  unlink($fname) 
+    return $result;
+    }
 
- $params = [
+    $params = [
         'offset'  => '0',
         'limit'   => '16',
         'timeout' => '30',
       ];
 
- if (!$argv) $argv = [ 0, 0, 0 ];
+    if (!$argv) $argv = [ 0, 0, 0 ];
 
- $run = 1000;
+    $run = 1000;
 
- function sig_handler($signo)
- {
+    function sig_handler($signo)
+    {
     global $run;
     log_msg("received signal $signo");
     $run = 2;
- }
+    }
 
- // pcntl_signal(SIGKILL, "sig_handler");
- pcntl_signal(SIGTERM, "sig_handler");
- pcntl_signal(SIGHUP,  "sig_handler");
+    // pcntl_signal(SIGKILL, "sig_handler");
+    pcntl_signal(SIGTERM, "sig_handler");
+    pcntl_signal(SIGHUP,  "sig_handler");
 
- $ts_start = date(SQL_TIMESTAMP);
- $show_status = 0;
- $con_errors = 0;
- $id = -1;
- $prev = 0;
- $chats = [];
- $tag = 'NOPE';
+    $ts_start = date(SQL_TIMESTAMP);
+    $show_status = 0;
+    $con_errors = 0;
+    $id = -1;
+    $prev = 0;
+    $chats = [];
+    $tag = 'NOPE';
 
- echo format_color("~C97%s~C00\n", '-----------=================== Script restarted ===================-------------');
+    echo format_color("~C97%s~C00\n", '-----------=================== Script restarted ===================-------------');
 
- 
- define('PHP_ERRORS', '/var/log/php_errors.log');
- if (file_exists(PHP_ERRORS)) {
+
+    define('PHP_ERRORS', '/var/log/php_errors.log');
+    if (file_exists(PHP_ERRORS)) {
     $lines = file_get_contents(PHP_ERRORS);
     $last = array_slice(explode("\n", $lines), -20);
     foreach ($last as $line)
       if (false !== strpos($line, __FILE__)) 
          log_cmsg("~C91#PHP_ERROR_LAST:~C00 %s". $line);
- }   
- // MAIN LOOP 
- try {
+    }   
+    // MAIN LOOP 
+    try {
     $wrong_chats = [];
     $post_map = [];
     while ($run >= 0 && $con_errors < 10)
@@ -594,7 +652,7 @@
               echo " message ignored by uid $uid\n";
           } // if (updl)
 
-        // достаточно отправить лишь несколько последних сообщений
+        // РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РѕС‚РїСЂР°РІРёС‚СЊ Р»РёС€СЊ РЅРµСЃРєРѕР»СЊРєРѕ РїРѕСЃР»РµРґРЅРёС… СЃРѕРѕР±С‰РµРЅРёР№
         $rows = $mysqli->select_from('id,ts,host,tag,event,flags,value,attach,chat', 'events', 'ORDER BY ts DESC LIMIT 25');
         $events = array();
         while ($rows && $row = $rows->fetch_array(MYSQLI_NUM))
@@ -611,7 +669,7 @@
         foreach ($events as $evt)
         {
             list($event_id, $ts, $from, $tag, $event, $flags, $value, $attach, $chat) = $evt;
-            
+
             $host = $mysqli->select_value('name', 'hosts', "WHERE id = $from");
             if ($host && 'Unknown' !== $host)
                 $from = $host; 
@@ -624,13 +682,13 @@
               echo " #DBG: Ignored event with type [$tag]: $event \n";
               continue;
             }
-            // схема вывода сообщения в выделенный канал: оно не будет попадать в раздельные чаты пользователей.
+            // СЃС…РµРјР° РІС‹РІРѕРґР° СЃРѕРѕР±С‰РµРЅРёСЏ РІ РІС‹РґРµР»РµРЅРЅС‹Р№ РєР°РЅР°Р»: РѕРЅРѕ РЅРµ Р±СѓРґРµС‚ РїРѕРїР°РґР°С‚СЊ РІ СЂР°Р·РґРµР»СЊРЅС‹Рµ С‡Р°С‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№.
             if ($chat > 0 && !isset($wrong_chats[$chat]) && 'ALERT' != $tag) try {              
               if (isset($post_map[$chat]) && $post_map[$chat] >= $event_id) continue;          // skip already posted
 
               $last_post = $mysqli->select_value('ts_last', 'channels', "WHERE chat_id = $chat");
-              if (strtotime($ts) + 900 <= strtotime($last_post)) continue; // пропуск, с учетом гонки
-              
+              if (strtotime($ts) + 900 <= strtotime($last_post)) continue; // РїСЂРѕРїСѓСЃРє, СЃ СѓС‡РµС‚РѕРј РіРѕРЅРєРё
+
 
               $ch_id = "-100$chat";   
               $already = $mysqli->select_value('event_id', 'chat_log', "WHERE event_id = $event_id");
@@ -642,7 +700,7 @@
                 else
                   $post = send_msg($ch_id, $flags, "[$ts]. #$tag($from): $event, value=$value");
               }
-               
+
               if ($post) {
                 $post_map[$chat] = $event_id;                 
                 if (is_null($already)) {
@@ -684,7 +742,7 @@
                   //echo " #SKIP: send alerts not allowed for $uname #$chat\n";
                   continue;  
               } 
-              
+
 
               if ('SMS' == $tag) {            
                 $flags = 8;
@@ -725,11 +783,11 @@
           cleanup();
       $prev = $hour;
     }
-  } catch (Exception $E) {
+    } catch (Exception $E) {
     log_cmsg("~C07~C91 #EXCEPTION:~C00 in global scope catched:~C97 ".$E->getMessage());
     log_cmsg("~C93 #TRACE:~C92  ".$E->getTraceAsString());      
-  }   
+    }   
 
- // $telegram->sendMessage($params);
- $mysqli->close();
-?>
+    // $telegram->sendMessage($params);
+    $mysqli->close();
+    ?>

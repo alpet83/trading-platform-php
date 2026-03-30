@@ -1,11 +1,23 @@
 <?php
-    require_once('lib/common.php');
-    require_once('lib/db_tools.php');
-    require_once('lib/esctext.php');
-    require_once('lib/ip_check.php');
+    /*
+     * Legacy signal editor/controller.
+     *
+     * Responsibilities:
+     * - authenticate UI/API access for signal viewing and editing;
+     * - apply incoming signal mutations and position updates;
+     * - orchestrate data loading from signal_data.php and rendering from signal_views.php.
+     */
+    $app_root = dirname(__DIR__);
+    require_once($app_root.'/src/lib/common.php');
+    require_once($app_root.'/src/lib/db_tools.php');
+    require_once($app_root.'/src/lib/esctext.php');
+    require_once($app_root.'/src/lib/ip_check.php');
     require_once('/usr/local/etc/php/db_config.php');
-    require_once('signal_data.php');
-    require_once('signal_views.php');
+    require_once(__DIR__.'/signal_data.php');
+    require_once(__DIR__.'/signal_views.php');
+
+    $user_rights = 'view trade admin';
+    $user_id = 0;
 
     $output_format = detect_output_format();
     if (php_sapi_name() != 'cli') {
@@ -75,11 +87,11 @@
     $setup_list = rqs_param('setup-list', false);
     $qview = 'quick' == rqs_param('view', 'html');
 
-    $source = $_SERVER['REMOTE_ADDR'];
+    $source = $_SERVER['REMOTE_ADDR'] ?? 'local';
     $touched = false;
     $signal = false;
 
-    // РќР°СЃС‚СЂРѕР№РєР° Р»РѕРіРёСЂРѕРІР°РЅРёСЏ
+    // Р СњР В°РЎРѓРЎвЂљРЎР‚Р С•Р в„–Р С”Р В° Р В»Р С•Р С–Р С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘РЎРЏ
     $sfx = $input ? 'edit' : 'view';
     $sfx .=  "-$setup";
     $log_file = fopen(__DIR__."/logs/sig_$sfx.log", $input ? 'a' : 'w');
@@ -91,7 +103,7 @@
     $tstart = pr_time();
     log_msg("#START: connecting to DB...");
 
-    // РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Р‘Р”
+    // Р СџР С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР ВµР Р…Р С‘Р Вµ Р С” Р вЂР вЂќ
     mysqli_report(MYSQLI_REPORT_OFF);
     $mysqli = init_remote_db('trading');
     $table_name = 'signals';
@@ -107,7 +119,7 @@
 
     flush();
 
-    // Р—Р°РіСЂСѓР·РєР° Р±Р°Р·РѕРІС‹С… РґР°РЅРЅС‹С…
+    // Р вЂ”Р В°Р С–РЎР‚РЎС“Р В·Р С”Р В° Р В±Р В°Р В·Р С•Р Р†РЎвЂ№РЎвЂ¦ Р Т‘Р В°Р Р…Р Р…РЎвЂ№РЎвЂ¦
     $pairs_map = $mysqli->select_map('symbol,id', 'pairs_map', "WHERE id > 0 AND contract_ratio > 0");
     $id_map = array_flip($pairs_map);
     unset($pairs_map['null']);
@@ -138,7 +150,7 @@
         }
     }
 
-    // Р¤РёР»СЊС‚СЂ
+    // Р В¤Р С‘Р В»РЎРЉРЎвЂљРЎР‚
     $filter_id = 0;
     if ($filter) {
         if (isset($pairs_map[$filter])) {
@@ -152,7 +164,7 @@
             response($output_format, $output, $code);
         }
 
-        // РћР±СЂР°Р±РѕС‚РєР° С†РІРµС‚Р° С‚РѕР»СЊРєРѕ РµСЃР»Рё РїР°СЂР°РјРµС‚СЂ color СЏРІРЅРѕ СѓРєР°Р·Р°РЅ Р РЅРµ РїСѓСЃС‚РѕР№
+        // Р С›Р В±РЎР‚Р В°Р В±Р С•РЎвЂљР С”Р В° РЎвЂ Р Р†Р ВµРЎвЂљР В° РЎвЂљР С•Р В»РЎРЉР С”Р С• Р ВµРЎРѓР В»Р С‘ Р С—Р В°РЎР‚Р В°Р СР ВµРЎвЂљРЎР‚ color РЎРЏР Р†Р Р…Р С• РЎС“Р С”Р В°Р В·Р В°Р Р… Р В Р Р…Р Вµ Р С—РЎС“РЎРѓРЎвЂљР С•Р в„–
         $color = rqs_param("color", null);
         if ($color !== null && $color !== '' && $color !== '-') {
             $lc = strlen($color);
@@ -197,7 +209,7 @@
         response($output_format, $output, $code);
     }
 
-    // СѓРґР°Р»РµРЅРёРµ СЃРёРіРЅР°Р»Р°
+    // РЎС“Р Т‘Р В°Р В»Р ВµР Р…Р С‘Р Вµ РЎРѓР С‘Р С–Р Р…Р В°Р В»Р В°
     if ($delete) {
         $delete = intval($delete);
         $result = $mysqli->try_query("DELETE FROM $table_name WHERE (id = $delete) AND (setup = $setup);");
@@ -210,7 +222,7 @@
         }
     }
 
-    // РѕР±СЂР°Р±РѕС‚РєР° СЃРёРіРЅР°Р»РѕРІ
+    // Р С•Р В±РЎР‚Р В°Р В±Р С•РЎвЂљР С”Р В° РЎРѓР С‘Р С–Р Р…Р В°Р В»Р С•Р Р†
     if (str_in($user_rights, 'trade')) {
         if (!$qview) echo "<!-- \n";
 
@@ -219,7 +231,7 @@
         $edit_comment = rqs_param('edit_comment', 0);
         $text = rqs_param('text', '');
 
-        // РћР±РЅРѕРІР»РµРЅРёРµ РїР°СЂР°РјРµС‚СЂРѕРІ СЃРёРіРЅР°Р»РѕРІ
+        // Р С›Р В±Р Р…Р С•Р Р†Р В»Р ВµР Р…Р С‘Р Вµ Р С—Р В°РЎР‚Р В°Р СР ВµРЎвЂљРЎР‚Р С•Р Р† РЎРѓР С‘Р С–Р Р…Р В°Р В»Р С•Р Р†
         if ('null' !== $amount)
             sig_param_set($mysqli, $table_name, $setup, 'sig_id', 'mult', $amount, 0, $touched);
 
@@ -232,7 +244,7 @@
         if ($edit_comment)
             sig_param_set($mysqli, $table_name, $setup, 'edit_comment', 'comment', $text, 0, $touched);
 
-        // РџРµСЂРµРєР»СЋС‡РµРЅРёРµ С„Р»Р°РіРѕРІ
+        // Р СџР ВµРЎР‚Р ВµР С”Р В»РЎР‹РЎвЂЎР ВµР Р…Р С‘Р Вµ РЎвЂћР В»Р В°Р С–Р С•Р Р†
         sig_toggle_flag($mysqli, $table_name, $setup, 'toggle_tp', SIG_FLAG_TP);
         sig_toggle_flag($mysqli, $table_name, $setup, 'toggle_sl', SIG_FLAG_SL);
         sig_toggle_flag($mysqli, $table_name, $setup, 'toggle_lp', SIG_FLAG_LP);
@@ -240,13 +252,13 @@
 
         log_cmsg("#REQUEST: dump: %s\n", print_r($_REQUEST, true));
 
-        // РћР±СЂР°Р±РѕС‚РєР° РІС…РѕРґСЏС‰РµРіРѕ СЃРёРіРЅР°Р»Р°
+        // Р С›Р В±РЎР‚Р В°Р В±Р С•РЎвЂљР С”Р В° Р Р†РЎвЂ¦Р С•Р Т‘РЎРЏРЎвЂ°Р ВµР С–Р С• РЎРѓР С‘Р С–Р Р…Р В°Р В»Р В°
         if ($input || has_individual_signal_params()) {
             process_input_signal($mysqli, $table_name, $setup, $grid_flag, $input, $pairs_map, $cm_symbols, $user_id, $source, $touched, $id_added, $signal, $output_format);
         }
 
         if ($qview) {
-            // РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ С‚РѕР»СЊРєРѕ РµСЃР»Рё РЅРµС‚ РЅРё signal, РЅРё РёРЅРґРёРІРёРґСѓР°Р»СЊРЅС‹С… РїР°СЂР°РјРµС‚СЂРѕРІ
+            // Р СџРЎР‚Р ВµР Т‘РЎС“Р С—РЎР‚Р ВµР В¶Р Т‘Р ВµР Р…Р С‘Р Вµ РЎвЂљР С•Р В»РЎРЉР С”Р С• Р ВµРЎРѓР В»Р С‘ Р Р…Р ВµРЎвЂљ Р Р…Р С‘ signal, Р Р…Р С‘ Р С‘Р Р…Р Т‘Р С‘Р Р†Р С‘Р Т‘РЎС“Р В°Р В»РЎРЉР Р…РЎвЂ№РЎвЂ¦ Р С—Р В°РЎР‚Р В°Р СР ВµРЎвЂљРЎР‚Р С•Р Р†
             if (!$input && !has_individual_signal_params()) {
                 echo "#WARN: data param not specified\n";
                 print_r($_REQUEST);
@@ -258,7 +270,7 @@
         printf("<!-- Rights restricted to %s -->\n", $user_rights);
     }
 
-    // Р—Р°РіСЂСѓР·РєР° СЃРёРіРЅР°Р»РѕРІ РёР· Р‘Р”
+    // Р вЂ”Р В°Р С–РЎР‚РЎС“Р В·Р С”Р В° РЎРѓР С‘Р С–Р Р…Р В°Р В»Р С•Р Р† Р С‘Р В· Р вЂР вЂќ
     $rows = load_signals($mysqli, $setup, $grid_flag, $filter_id);
 
     if (count($rows) == 0) {
@@ -273,13 +285,13 @@
         }
     }
 
-    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РїРµСЂРµРјРµРЅРЅС‹С… РґР»СЏ VWAP
+    // Р ВР Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘РЎРЏ Р С—Р ВµРЎР‚Р ВµР СР ВµР Р…Р Р…РЎвЂ№РЎвЂ¦ Р Т‘Р В»РЎРЏ VWAP
     $vwap_prices = [];
     $vwap_fails = [];
     $vwap_cache = [];
     $cache_hits = 0;
 
-    // Р—Р°РіСЂСѓР·РєР° VWAP С†РµРЅ
+    // Р вЂ”Р В°Р С–РЎР‚РЎС“Р В·Р С”Р В° VWAP РЎвЂ Р ВµР Р…
     if (!$filter) {
         $vwap_good = load_vwap_prices($rows, $id_map, $mysqli, $action, $vwap_prices, $vwap_cache, $vwap_fails, $cache_hits);
 
@@ -302,7 +314,7 @@
 
     $display_data = prepare_display_data($processed_data, $colors, $btc_pair_id, $eth_pair_id, $setup, $work_t);
 
-    // Р’С‹РІРѕРґ
+    // Р вЂ™РЎвЂ№Р Р†Р С•Р Т‘
     function response($output_format, $content, $code = 200) {
         if ($output_format === 'json') {
             ob_clean();
