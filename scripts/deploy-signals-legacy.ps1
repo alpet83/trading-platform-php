@@ -1,5 +1,5 @@
 param(
-  [string]$ProjectRoot = "P:/opt/docker/trading-platform-php",
+  [string]$ProjectRoot = "",
   [string]$BaseComposeFile = "docker-compose.yml",
   [string]$LegacyComposeFile = "docker-compose.signals-legacy.yml",
   [bool]$PrepareSecrets = $true,
@@ -11,6 +11,10 @@ $ErrorActionPreference = "Stop"
 
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
+
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+  $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+}
 
 Set-Location $ProjectRoot
 

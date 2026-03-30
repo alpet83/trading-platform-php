@@ -1,5 +1,5 @@
 param(
-  [string]$ProjectRoot = "P:/opt/docker/trading-platform-php",
+  [string]$ProjectRoot = "",
   [string]$ComposeFile = "docker-compose.yml",
   [int]$DbWaitTimeoutSec = 180,
   [int]$DbWaitIntervalSec = 3,
@@ -14,6 +14,15 @@ $ErrorActionPreference = "Stop"
 
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
+
+function Find-AlpetLibs([string]$RepoRoot) {
+  $parent = Split-Path $RepoRoot -Parent
+  foreach ($name in @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master")) {
+    $candidate = Join-Path $parent $name
+    if (Test-Path $candidate) { return $candidate }
+  }
+  return $null
+}
 
 function New-RandomPassword([int]$Length = 28) {
   Add-Type -AssemblyName System.Security
@@ -145,6 +154,10 @@ function Invoke-NativeNoThrow([scriptblock]$Command) {
   return $LASTEXITCODE
 }
 
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+  $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+}
+
 Set-Location $ProjectRoot
 
 $publishIp = "127.0.0.1"
@@ -162,15 +175,18 @@ if ($CleanStart) {
   docker-compose -f $ComposeFile down --remove-orphans
 }
 
-if (-not (Test-Path "P:/GitHub/alpet-libs-php")) {
-  Fail "Missing P:/GitHub/alpet-libs-php"
+$alpetLibsPath = Find-AlpetLibs $ProjectRoot
+if (-not $alpetLibsPath) {
+  Fail "Cannot find alpet-libs-php. Unzip it to $(Split-Path $ProjectRoot -Parent)\alpet-libs-php (or alpet-libs-php-main / alpet-libs-php-master)"
 }
+$alpetLibsPathDocker = $alpetLibsPath -replace '\\', '/'
 
 Info "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
 Prepare-DeployPasswords
 
 Info "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
-docker run --rm -e ALPET_LIBS_REPO=/alpet-libs -v P:/GitHub/alpet-libs-php:/alpet-libs -v ${PWD}:/work -w /work alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
+$projRootDocker = $ProjectRoot -replace '\\', '/'
+docker run --rm -e ALPET_LIBS_REPO=/alpet-libs -v "${alpetLibsPathDocker}:/alpet-libs" -v "${projRootDocker}:/work" -w /work alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
 if ($LASTEXITCODE -ne 0) { Fail "Bootstrap stage failed" }
 
 Info "#STEP 3/7: build images for mariadb/web"

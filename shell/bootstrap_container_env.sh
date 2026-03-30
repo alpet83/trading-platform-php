@@ -10,7 +10,16 @@ SCHEMA_DUMP="$ROOT_DIR/trading-structure.sql"
 CORE_TABLES_LIST="$ROOT_DIR/shell/bootstrap-core-tables.txt"
 SCHEMA_GENERATOR="$ROOT_DIR/shell/generate_bootstrap_schema.sh"
 
-ALPET_LIBS_REPO="${ALPET_LIBS_REPO:-P:/GitHub/alpet-libs-php}"
+if [ -z "${ALPET_LIBS_REPO:-}" ]; then
+  _parent_dir="$(dirname "$ROOT_DIR")"
+  for _name in alpet-libs-php alpet-libs-php-main alpet-libs-php-master; do
+    if [ -d "$_parent_dir/$_name" ]; then
+      ALPET_LIBS_REPO="$_parent_dir/$_name"
+      break
+    fi
+  done
+  ALPET_LIBS_REPO="${ALPET_LIBS_REPO:-P:/GitHub/alpet-libs-php}"
+fi
 TRADING_DB_USER="${TRADING_DB_USER:-trading}"
 TRADING_DB_PASSWORD="${TRADING_DB_PASSWORD:-}"
 MARIADB_DATABASE="${MARIADB_DATABASE:-trading}"
