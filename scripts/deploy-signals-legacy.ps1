@@ -43,7 +43,7 @@ if ($LASTEXITCODE -ne 0) {
   Fail "Failed to start signals-legacy services"
 }
 
-$legacyPort = 8090
+$legacyPort = 8480
 $envPath = Join-Path $ProjectRoot ".env"
 if (Test-Path $envPath) {
   $line = Select-String -Path $envPath -Pattern '^SIGNALS_LEGACY_PORT=' | Select-Object -First 1

@@ -150,12 +150,12 @@
     }
 
     if ($remote)  {
-    ip_check();
     $account_id = intval(rqs_param('src_account', 256));
     $view = rqs_param('view', 'json');
     $setup_raw = isset($_GET['setup']) ? (string)$_GET['setup'] : (string)rqs_param('setup', '0');
     $out = rqs_param('format', 'json');
     track_get_signals_request($mysqli, $remote_ip, $account_id, $setup_raw, $view, $out);
+    ip_check();
     }
 
     function parse_setup_list(string $raw): array {

@@ -1,27 +1,33 @@
 <?php
-  include_once('lib/common.php');
-  include_once('lib/config.php');
-  include_once('lib/db_tools.php');
- 
-  $db_user = 'posfeed';
-  $db_pass = '48jkxR#JSD~97naSUx2';
-  init_db('trading');
-  
-  $verbose = false;  
+    include_once('lib/common.php');
+    include_once('lib/config.php');
+    include_once('lib/db_tools.php');
 
-  $src = '{"TimeUtc":"2021-02-09T21:14:30.1029482Z","AccountPositionsList":[{"AccountID":10,"Positions":[{"Symbol":"SPY","HypeQty":1.0},{"Symbol":"DIA","HypeQty":-1.0}]}],"IsManual":true}';
-  
-  $parse_iter = 0;
-  
-  
-  function dbg_log($msg) {
+  if (file_exists('/usr/local/etc/php/db_config.php'))
+    require_once('/usr/local/etc/php/db_config.php');
+  else
+    require_once('lib/db_config.php');
+
+  mysqli_report(MYSQLI_REPORT_OFF);
+  $mysqli = init_remote_db('trading');
+  if (!$mysqli)
+    die("#FATAL: cannot connect to DB!\n");
+    
+    $verbose = false;  
+
+    $src = '{"TimeUtc":"2021-02-09T21:14:30.1029482Z","AccountPositionsList":[{"AccountID":10,"Positions":[{"Symbol":"SPY","HypeQty":1.0},{"Symbol":"DIA","HypeQty":-1.0}]}],"IsManual":true}';
+    
+    $parse_iter = 0;
+    
+    
+    function dbg_log($msg) {
      global $verbose;
      if ($verbose) 
         echo tss().' '.$msg;
      
-  }  
-  
-  function parse_list($src) {
+    }  
+    
+    function parse_list($src) {
     global $mysqli, $verbose, $parse_iter;
     
     $parse_iter ++;
@@ -41,7 +47,7 @@
     // if ($verbose) print_r($rec);
       
     if (isset($rec['AccountPositionsList']))
-   
+    
     
       // ACCOUNT LOOP -----------------------------------------------------------
       foreach ($rec['AccountPositionsList'] as $acc) {
@@ -139,32 +145,32 @@
         echo "OK";
         
       }   
-  } 
-  if (!$mysqli)
+    } 
+    if (!$mysqli)
     die("not connected to DB!\n");
-  
-  
-  
-  $source = rqs_param('source', 'POST');
-  
-  // debug mode
-  if (strpos($source, 'LOG') !== false) {                                  
+    
+    
+    
+    $source = rqs_param('source', 'POST');
+    
+    // debug mode
+    if (strpos($source, 'LOG') !== false) {                                  
     $data = file('position.log');
     echo '<pre>';
     $verbose = true;
     foreach ($data as $line)
       parse_list($line);
-  }
-  
-  // production mode
-  elseif (strpos($source, 'POST') !== false) {
+    }
+    
+    // production mode
+    elseif (strpos($source, 'POST') !== false) {
     $src = file_get_contents('php://input');
     $verbose = false;
     parse_list($src);  
-  }
-  else
+    }
+    else
     echo "#ERROR: wrong source specified!\n ";
 
-  if ($mysqli)
+    if ($mysqli)
     $mysqli->close();
 ?>

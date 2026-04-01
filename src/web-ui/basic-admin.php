@@ -25,36 +25,36 @@ function is_local_client(string $remote): bool {
 }
 
 function normalize_signals_setup_cfg(array $cfg, string $fallback): array {
-  $setupId = 0;
-  if (isset($cfg['setup_id'])) {
+    $setupId = 0;
+    if (isset($cfg['setup_id'])) {
     $setupId = intval($cfg['setup_id']);
-  }
+    }
 
-  if ($setupId > 0) {
+    if ($setupId > 0) {
     $cfg['signals_setup'] = json_encode([['setup' => $setupId, 'qty' => 1]], JSON_UNESCAPED_UNICODE);
-  } elseif (isset($cfg['signals_setup'])) {
+    } elseif (isset($cfg['signals_setup'])) {
     $raw = trim((string)$cfg['signals_setup']);
     if (preg_match('/^\d+$/', $raw)) {
       $cfg['signals_setup'] = json_encode([['setup' => intval($raw), 'qty' => 1]], JSON_UNESCAPED_UNICODE);
     } elseif ($raw === '') {
       $cfg['signals_setup'] = $fallback;
     }
-  }
+    }
 
-  unset($cfg['setup_id']);
-  return $cfg;
+    unset($cfg['setup_id']);
+    return $cfg;
 }
 
 function extract_setup_id_from_cfg(string $signalsSetup): int {
-  $raw = trim($signalsSetup);
-  if ($raw === '') {
+    $raw = trim($signalsSetup);
+    if ($raw === '') {
     return 1;
-  }
-  if (preg_match('/^\d+$/', $raw)) {
+    }
+    if (preg_match('/^\d+$/', $raw)) {
     return intval($raw);
-  }
-  $decoded = json_decode($raw, true);
-  if (is_array($decoded)) {
+    }
+    $decoded = json_decode($raw, true);
+    if (is_array($decoded)) {
     if (isset($decoded['setup'])) {
       return max(1, intval($decoded['setup']));
     }
@@ -63,16 +63,20 @@ function extract_setup_id_from_cfg(string $signalsSetup): int {
         return max(1, intval($row['setup']));
       }
     }
-  }
-  if (preg_match('/setup[^0-9-]*([0-9]+)/i', $raw, $m)) {
+    }
+    if (preg_match('/setup[^0-9-]*([0-9]+)/i', $raw, $m)) {
     return max(1, intval($m[1]));
-  }
-  return 1;
+    }
+    return 1;
 }
 
 $remote = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $allowed = is_local_client($remote);
 $defaultSignalsSetup = '[{"setup":1,"qty":1}]';
+$defaultSignalsFeedUrl = trim((string)(getenv('SIGNALS_FEED_URL') ?: getenv('BOT_SIGNALS_FEED_URL') ?: 'http://signals-legacy/'));
+if ($defaultSignalsFeedUrl === '') {
+    $defaultSignalsFeedUrl = 'http://signals-legacy/';
+}
 
 $otpInfo = '';
 $otpErr = '';
@@ -84,8 +88,8 @@ $firstBot = '';
 $selectedBot = trim((string)($_GET['bot_select'] ?? $_POST['bot_select'] ?? ''));
 
 if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-  $action = trim((string)($_POST['action'] ?? ''));
-  if ($action === 'otp_generate') {
+    $action = trim((string)($_POST['action'] ?? ''));
+    if ($action === 'otp_generate') {
     $res = admin_otp_activate_once($remote);
     if (!empty($res['ok'])) {
       $token = (string)$res['token'];
@@ -95,7 +99,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
       $otpErr = (string)($res['error'] ?? 'OTP generation failed');
     }
-  } elseif ($action === 'otp_set_mode') {
+    } elseif ($action === 'otp_set_mode') {
     $newMode = strtolower(trim((string)($_POST['otp_mode'] ?? '')));
     if (in_array($newMode, ['off', 'on', 'required'], true)) {
       $modeState = admin_otp_load_state();
@@ -109,7 +113,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
       $otpErr = 'Invalid mode value';
     }
-  } elseif ($action === 'create_bot') {
+    } elseif ($action === 'create_bot') {
     mysqli_report(MYSQLI_REPORT_OFF);
     $botMysqli = init_remote_db('trading');
     if ($botMysqli) {
@@ -129,7 +133,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
       $botErr = 'Database not available';
     }
-  } elseif ($action === 'update_bot_cfg') {
+    } elseif ($action === 'update_bot_cfg') {
     $applicant = trim((string)($_POST['applicant'] ?? ''));
     $cfg = normalize_signals_setup_cfg((array)($_POST['cfg'] ?? $_POST['config'] ?? []), $defaultSignalsSetup);
     mysqli_report(MYSQLI_REPORT_OFF);
@@ -160,6 +164,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             'max_order_cost',
             'max_limit_distance',
             'signals_setup',
+            'signals_feed_url',
             'report_color',
             'debug_pair',
             'api_secret_sep',
@@ -186,20 +191,20 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
       }
     }
-  }
+    }
 }
 
 $dbState = [
-  'connected' => false,
-  'error' => '',
-  'role' => 'unknown',
-  'replication_ok' => false,
-  'replication_note' => 'n/a',
-  'seconds_behind' => null,
-  'binlog_bytes' => 0,
-  'relay_bytes' => 0,
-  'binlog_warn' => false,
-  'relay_warn' => false,
+    'connected' => false,
+    'error' => '',
+    'role' => 'unknown',
+    'replication_ok' => false,
+    'replication_note' => 'n/a',
+    'seconds_behind' => null,
+    'binlog_bytes' => 0,
+    'relay_bytes' => 0,
+    'binlog_warn' => false,
+    'relay_warn' => false,
 ];
 
 $mysqlLogTail = '';
@@ -208,29 +213,29 @@ $mysqlLogPath = trim((string)(getenv('MYSQL_ERROR_LOG_PATH') ?: '/app/var/log/my
 mysqli_report(MYSQLI_REPORT_OFF);
 $mysqli = init_remote_db('trading');
 if ($mysqli) {
-  $dbState['connected'] = true;
+    $dbState['connected'] = true;
 
-  $replica = null;
-  $replicaRes = @$mysqli->query('SHOW REPLICA STATUS');
-  if ($replicaRes instanceof mysqli_result) {
+    $replica = null;
+    $replicaRes = @$mysqli->query('SHOW REPLICA STATUS');
+    if ($replicaRes instanceof mysqli_result) {
     $replica = $replicaRes->fetch_assoc();
     $replicaRes->free();
-  } else {
+    } else {
     $slaveRes = @$mysqli->query('SHOW SLAVE STATUS');
     if ($slaveRes instanceof mysqli_result) {
       $replica = $slaveRes->fetch_assoc();
       $slaveRes->free();
     }
-  }
+    }
 
-  if (is_array($replica) && count($replica) > 0) {
+    if (is_array($replica) && count($replica) > 0) {
     $dbState['role'] = 'replica';
     $io = strtolower((string)($replica['Replica_IO_Running'] ?? $replica['Slave_IO_Running'] ?? 'no'));
     $sql = strtolower((string)($replica['Replica_SQL_Running'] ?? $replica['Slave_SQL_Running'] ?? 'no'));
     $dbState['replication_ok'] = ($io === 'yes' && $sql === 'yes');
     $dbState['seconds_behind'] = $replica['Seconds_Behind_Master'] ?? null;
     $dbState['replication_note'] = sprintf('io=%s, sql=%s', $io, $sql);
-  } else {
+    } else {
     $masterRes = @$mysqli->query('SHOW MASTER STATUS');
     if ($masterRes instanceof mysqli_result) {
       $row = $masterRes->fetch_assoc();
@@ -239,32 +244,32 @@ if ($mysqli) {
       $dbState['replication_ok'] = true;
       $dbState['replication_note'] = ($dbState['role'] === 'primary') ? 'master binlog active' : 'no replica configured';
     }
-  }
+    }
 
-  $binlogRes = @$mysqli->query('SHOW BINARY LOGS');
-  if ($binlogRes instanceof mysqli_result) {
+    $binlogRes = @$mysqli->query('SHOW BINARY LOGS');
+    if ($binlogRes instanceof mysqli_result) {
     $sum = 0;
     while ($r = $binlogRes->fetch_assoc()) {
       $sum += intval($r['File_size'] ?? 0);
     }
     $binlogRes->free();
     $dbState['binlog_bytes'] = $sum;
-  }
+    }
 
-  $relayRes = @$mysqli->query("SHOW GLOBAL STATUS LIKE 'Relay_log_space'");
-  if ($relayRes instanceof mysqli_result) {
+    $relayRes = @$mysqli->query("SHOW GLOBAL STATUS LIKE 'Relay_log_space'");
+    if ($relayRes instanceof mysqli_result) {
     $relay = $relayRes->fetch_assoc();
     $relayRes->free();
     $dbState['relay_bytes'] = intval($relay['Value'] ?? 0);
-  }
+    }
 
-  $binWarn = intval(getenv('BINLOG_WARN_BYTES') ?: '1073741824');
-  $relWarn = intval(getenv('RELAY_WARN_BYTES') ?: '1073741824');
-  $dbState['binlog_warn'] = ($dbState['binlog_bytes'] >= $binWarn && $binWarn > 0);
-  $dbState['relay_warn'] = ($dbState['relay_bytes'] >= $relWarn && $relWarn > 0);
+    $binWarn = intval(getenv('BINLOG_WARN_BYTES') ?: '1073741824');
+    $relWarn = intval(getenv('RELAY_WARN_BYTES') ?: '1073741824');
+    $dbState['binlog_warn'] = ($dbState['binlog_bytes'] >= $binWarn && $binWarn > 0);
+    $dbState['relay_warn'] = ($dbState['relay_bytes'] >= $relWarn && $relWarn > 0);
 
-  $tableMap = $mysqli->select_map('applicant,table_name', 'config__table_map', 'ORDER BY applicant');
-  if (is_array($tableMap)) {
+    $tableMap = $mysqli->select_map('applicant,table_name', 'config__table_map', 'ORDER BY applicant');
+    if (is_array($tableMap)) {
     foreach ($tableMap as $applicant => $cfgTable) {
       if ($firstBot === '') {
         $firstBot = (string)$applicant;
@@ -300,71 +305,72 @@ if ($mysqli) {
         'missing' => $missing,
       ];
     }
-  }
+    }
 
-  if ($selectedBot === '' && $firstBot !== '') {
+    if ($selectedBot === '' && $firstBot !== '') {
     $selectedBot = $firstBot;
-  }
+    }
 
-  @$mysqli->close();
+    @$mysqli->close();
 } else {
-  $dbState['error'] = 'DB inaccessible';
-  if (is_file($mysqlLogPath) && is_readable($mysqlLogPath)) {
+    $dbState['error'] = 'DB inaccessible';
+    if (is_file($mysqlLogPath) && is_readable($mysqlLogPath)) {
     $lines = @file($mysqlLogPath, FILE_IGNORE_NEW_LINES);
     if (is_array($lines) && count($lines) > 0) {
       $slice = array_slice($lines, -60);
       $mysqlLogTail = implode("\n", $slice);
     }
-  }
+    }
 }
 
 function fmt_bytes(int $v): string {
-  if ($v <= 0) return '0 B';
-  $u = ['B', 'KB', 'MB', 'GB', 'TB'];
-  $i = 0;
-  $x = (float)$v;
-  while ($x >= 1024.0 && $i < count($u) - 1) {
+    if ($v <= 0) return '0 B';
+    $u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $i = 0;
+    $x = (float)$v;
+    while ($x >= 1024.0 && $i < count($u) - 1) {
     $x /= 1024.0;
     $i++;
-  }
-  return sprintf('%.2f %s', $x, $u[$i]);
+    }
+    return sprintf('%.2f %s', $x, $u[$i]);
 }
 
 $selectedBotData = null;
 foreach ($botsList as $b) {
-  if ($selectedBot !== '' && $b['applicant'] === $selectedBot) {
+    if ($selectedBot !== '' && $b['applicant'] === $selectedBot) {
     $selectedBotData = $b;
     break;
-  }
+    }
 }
 
 $formBotName = $selectedBotData ? preg_replace('/_bot$/', '', (string)$selectedBotData['applicant']) : 'bitmex';
 $formAccountId = $selectedBotData ? intval($selectedBotData['account_id']) : 1;
 $formCfg = [
-  'exchange' => $selectedBotData['config']['exchange'] ?? 'bitmex',
-  'trade_enabled' => $selectedBotData['config']['trade_enabled'] ?? '0',
-  'position_coef' => $selectedBotData['config']['position_coef'] ?? '0.010000',
-  'monitor_enabled' => $selectedBotData['config']['monitor_enabled'] ?? '1',
-  'min_order_cost' => $selectedBotData['config']['min_order_cost'] ?? '20',
-  'max_order_cost' => $selectedBotData['config']['max_order_cost'] ?? '100',
-  'max_limit_distance' => $selectedBotData['config']['max_limit_distance'] ?? '0.003',
-  'signals_setup' => $selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup,
-  'setup_id' => extract_setup_id_from_cfg((string)($selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup)),
-  'report_color' => $selectedBotData['config']['report_color'] ?? '32,42,56',
-  'debug_pair' => $selectedBotData['config']['debug_pair'] ?? 'XBTUSD',
-  'api_secret_sep' => $selectedBotData['config']['api_secret_sep'] ?? '-',
+    'exchange' => $selectedBotData['config']['exchange'] ?? 'bitmex',
+    'trade_enabled' => $selectedBotData['config']['trade_enabled'] ?? '0',
+    'position_coef' => $selectedBotData['config']['position_coef'] ?? '0.010000',
+    'monitor_enabled' => $selectedBotData['config']['monitor_enabled'] ?? '1',
+    'min_order_cost' => $selectedBotData['config']['min_order_cost'] ?? '20',
+    'max_order_cost' => $selectedBotData['config']['max_order_cost'] ?? '100',
+    'max_limit_distance' => $selectedBotData['config']['max_limit_distance'] ?? '0.003',
+    'signals_setup' => $selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup,
+    'signals_feed_url' => $selectedBotData['config']['signals_feed_url'] ?? $defaultSignalsFeedUrl,
+    'setup_id' => extract_setup_id_from_cfg((string)($selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup)),
+    'report_color' => $selectedBotData['config']['report_color'] ?? '32,42,56',
+    'debug_pair' => $selectedBotData['config']['debug_pair'] ?? 'XBTUSD',
+    'api_secret_sep' => $selectedBotData['config']['api_secret_sep'] ?? '-',
 ];
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TradeBot Basic Admin</title>
-  <link rel="stylesheet" href="dark-theme.css">
-  <link rel="stylesheet" href="apply-theme.css">
-  <link rel="stylesheet" href="colors.css">
-  <style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TradeBot Basic Admin</title>
+    <link rel="stylesheet" href="dark-theme.css">
+    <link rel="stylesheet" href="apply-theme.css">
+    <link rel="stylesheet" href="colors.css">
+    <style>
     body { margin: 0; padding: 24px; font-family: Arial, sans-serif; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
     .card { border: 1px solid #4a4a4a; border-radius: 8px; background: rgba(20, 20, 20, 0.92); padding: 16px; }
@@ -382,22 +388,22 @@ $formCfg = [
     .mono { font-family: Consolas, monospace; font-size: 12px; }
     .mono-pre { font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
     .otp { font-size: 16px; letter-spacing: 1px; font-weight: bold; }
-  </style>
+    </style>
 </head>
 <body>
-  <h1>TradeBot Basic Admin</h1>
-  <p class="muted">Bootstrap interface for local deployment when TS admin is not deployed on the same machine.</p>
+    <h1>TradeBot Basic Admin</h1>
+    <p class="muted">Bootstrap interface for local deployment when TS admin is not deployed on the same machine.</p>
 
-  <div class="card" style="margin-bottom:16px;">
+    <div class="card" style="margin-bottom:16px;">
     <div><b>Client:</b> <span class="mono"><?php echo htmlspecialchars($remote, ENT_QUOTES, 'UTF-8'); ?></span></div>
     <?php if ($allowed): ?>
       <div class="ok">Local access enabled (passwordless bootstrap mode).</div>
     <?php else: ?>
       <div class="err">Access is not local/private. Bootstrap actions are disabled.</div>
     <?php endif; ?>
-  </div>
+    </div>
 
-  <div class="grid">
+    <div class="grid">
     <section class="card">
       <h2>Admin OTP (Single-Use)</h2>
       <div class="muted">Mode: <span class="mono"><?php echo htmlspecialchars(admin_otp_mode(), ENT_QUOTES, 'UTF-8'); ?></span></div>
@@ -529,6 +535,9 @@ $formCfg = [
           <label>Signals Setup ID <span class="muted">(simple mode, auto-syncs JSON)</span>
             <input name="config[setup_id]" type="number" min="1" value="<?php echo intval($formCfg['setup_id']); ?>" <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
+          <label>Signals Feed URL <span class="muted">(defaults from env SIGNALS_FEED_URL)</span>
+            <input name="config[signals_feed_url]" value="<?php echo htmlspecialchars((string)$formCfg['signals_feed_url'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="http://signals-legacy/" <?php echo $allowed ? '' : 'disabled'; ?>>
+          </label>
           <label>Report Color
             <input name="config[report_color]" value="<?php echo htmlspecialchars((string)$formCfg['report_color'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
@@ -568,6 +577,6 @@ $formCfg = [
         <a href="/basic-admin.php" rel="noopener">Reload Basic Admin</a>
       </div>
     </section>
-  </div>
+    </div>
 </body>
 </html>

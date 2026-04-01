@@ -41,6 +41,7 @@ IGNORE_DIRS = {
 EXCLUDE_GLOBS = (
     "var/**",
     "secrets/**",
+    ".envs/**",
     ".env",
     ".env.*",
     "src/data/**",
@@ -50,9 +51,11 @@ EXCLUDE_GLOBS = (
     "src/logs2.td/**",
     "scripts/commit_prepare_datafeed.ps1",
     "scripts/commit_prepare_datafeed.cmd",
+    "scripts/commit_prepare.py",
     "scripts/commit_prepare_report.json",
     "src/.bitmex.api_key",
     "src/.bitmex.key",
+    "src/lib/.allowed_ip.lst",
     "src/lib/db_config.php",
     "src/lib/hosts_cfg.php",
     "src/[0-9]*/**",
@@ -61,6 +64,8 @@ EXCLUDE_GLOBS = (
     "signals-server.ts/test/**",
     "signals-server.ts/tests/**",
     "signals-server.ts/sandwiches/**",
+    # Third-party SDK/vendor drops must never be synced from runtime.
+    "signals-server/telegram-bot/**",
     "misc/**",
     "trading-structure.sql",
     # Runtime-generated compatibility files sourced from alpet-libs-php.
@@ -124,6 +129,11 @@ SUSPICIOUS_NEW_PATH_PATTERNS = (
     r"(^|/)db_config\.php$",
 )
 
+DEFAULT_TEST_COMMANDS = (
+    "docker compose -f docker-compose.yml config",
+    "docker compose -f docker-compose.signals-legacy.yml config",
+)
+
 
 @dataclass
 class FileEvent:
@@ -139,6 +149,15 @@ class PatternHit:
     line: int
     pattern: str
     snippet: str
+
+
+@dataclass
+class TestResult:
+    command: str
+    returncode: int
+    elapsed_sec: float
+    stdout_tail: str
+    stderr_tail: str
 
 
 def iso_utc(ts: float | None) -> str | None:
@@ -340,7 +359,72 @@ def parse_args() -> argparse.Namespace:
         default=r"p:\opt\docker\trading-platform-php\scripts\commit_prepare_report.json",
         help="Path to JSON report",
     )
+    parser.add_argument(
+        "--run-tests",
+        action="store_true",
+        default=True,
+        help="Run test commands as a commit gate (default: enabled)",
+    )
+    parser.add_argument(
+        "--skip-tests",
+        action="store_true",
+        help="Skip test command execution",
+    )
+    parser.add_argument(
+        "--test-cmd",
+        action="append",
+        default=[],
+        help="Custom test command (can be provided multiple times)",
+    )
+    parser.add_argument(
+        "--test-timeout",
+        type=int,
+        default=900,
+        help="Per-test timeout in seconds",
+    )
     return parser.parse_args()
+
+
+def run_test_commands(commands: list[str], cwd: Path, timeout_sec: int) -> tuple[list[TestResult], list[TestResult]]:
+    passed: list[TestResult] = []
+    failed: list[TestResult] = []
+
+    for cmd in commands:
+        t0 = datetime.now(timezone.utc).timestamp()
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(cwd),
+                shell=True,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
+            elapsed = datetime.now(timezone.utc).timestamp() - t0
+            result = TestResult(
+                command=cmd,
+                returncode=proc.returncode,
+                elapsed_sec=round(elapsed, 3),
+                stdout_tail="\n".join((proc.stdout or "").splitlines()[-40:]),
+                stderr_tail="\n".join((proc.stderr or "").splitlines()[-40:]),
+            )
+        except subprocess.TimeoutExpired as exc:
+            elapsed = datetime.now(timezone.utc).timestamp() - t0
+            result = TestResult(
+                command=cmd,
+                returncode=124,
+                elapsed_sec=round(elapsed, 3),
+                stdout_tail="\n".join(((exc.stdout or "") if isinstance(exc.stdout, str) else "").splitlines()[-40:]),
+                stderr_tail=("timeout expired" if not exc.stderr else str(exc.stderr)[-2000:]),
+            )
+
+        if result.returncode == 0:
+            passed.append(result)
+        else:
+            failed.append(result)
+
+    return passed, failed
 
 
 def main() -> int:
@@ -396,6 +480,13 @@ def main() -> int:
         rel_posix = str(f.relative_to(target)).replace("\\", "/")
         pending_hits.extend(scan_forbidden_refs(f, rel_posix, compiled))
 
+    tests_enabled = bool(args.run_tests) and not bool(args.skip_tests)
+    test_commands = list(args.test_cmd) if args.test_cmd else list(DEFAULT_TEST_COMMANDS)
+    test_passed: list[TestResult] = []
+    test_failed: list[TestResult] = []
+    if tests_enabled:
+        test_passed, test_failed = run_test_commands(test_commands, source, max(30, int(args.test_timeout)))
+
     summary = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "mode": "apply" if apply_changes else "dry-run",
@@ -412,6 +503,10 @@ def main() -> int:
         "suspicious_new_paths": len(suspicious_new_paths),
         "pending_files_scanned": len(pending_files),
         "pending_forbidden_hits": len(pending_hits),
+        "tests_enabled": tests_enabled,
+        "tests_total": len(test_commands) if tests_enabled else 0,
+        "tests_passed": len(test_passed),
+        "tests_failed": len(test_failed),
     }
 
     report = {
@@ -421,6 +516,9 @@ def main() -> int:
         "deleted_candidates": deleted,
         "suspicious_new_paths": suspicious_new_paths,
         "pending_forbidden_hits": [h.__dict__ for h in pending_hits],
+        "test_commands": test_commands if tests_enabled else [],
+        "test_passed": [t.__dict__ for t in test_passed],
+        "test_failed": [t.__dict__ for t in test_failed],
         "git_status_short": git_status_short(target),
     }
 
@@ -450,8 +548,27 @@ def main() -> int:
         if len(pending_hits) > 25:
             print(f"  ... and {len(pending_hits) - 25} more")
 
+    if tests_enabled:
+        print("Test gate results:")
+        for t in test_passed:
+            print(f"  + PASS ({t.elapsed_sec:.2f}s): {t.command}")
+        for t in test_failed:
+            print(f"  - FAIL ({t.elapsed_sec:.2f}s, rc={t.returncode}): {t.command}")
+            if t.stdout_tail:
+                print("    stdout tail:")
+                for ln in t.stdout_tail.splitlines()[-10:]:
+                    print(f"      {ln}")
+            if t.stderr_tail:
+                print("    stderr tail:")
+                for ln in t.stderr_tail.splitlines()[-10:]:
+                    print(f"      {ln}")
+
     print("Target git status:")
     print(report["git_status_short"] or "(clean)")
+
+    if test_failed:
+        print("commit_prepare guard: tests failed, refusing commit preparation until fixed.")
+        return 2
 
     return 0
 

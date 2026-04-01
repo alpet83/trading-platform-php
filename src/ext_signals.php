@@ -189,7 +189,7 @@
         public function __isset ( $key ) {
             return isset ($this->raw[$key]);
         }
-  
+    
         public function __set ($key, $value) {
             /*
             $order_field = false !== strpos($key, '_order');      
@@ -451,7 +451,7 @@
                 }             
             }
             if ($total >= 50) {
-                file_put_contents("{$this->account_id}/sig_{$this->id}.cln", "$total = ".json_encode($dump_map, JSON_PRETTY_PRINT));
+                file_put_contents("data/{$this->account_id}/sig_{$this->id}.cln", "$total = ".json_encode($dump_map, JSON_PRETTY_PRINT));
             }
 
             if (0 == count($match_map)) return 'no pairs';
@@ -569,7 +569,7 @@
 
 
         protected function CDP_Log(string $content) {
-            $cdp_file = "{$this->account_id}/sig_{$this->id}.cdp";                   
+            $cdp_file = "data/{$this->account_id}/sig_{$this->id}.cdp";
             $lines = file_exists($cdp_file) ? file($cdp_file) : [];                      
             $lines = array_slice($lines, -1000); // keep last 1000 lines before
             $lines []= $content;            
@@ -1121,7 +1121,7 @@
             $core->LogMsg("#DBG: using query [%s] for ext signal %s => record in DB updated", $query, strval($this)); /*/
 
         if ($this->limit_price > 1e6 )
-           file_add_contents("{$this->account_id}/sig_{$this->id}.change.log", sprintf("%s %s %s\n", tss(), $query, $this->last_source)); 
+           file_add_contents("data/{$this->account_id}/sig_{$this->id}.change.log", sprintf("%s %s %s\n", tss(), $query, $this->last_source));
       }  
 
       public function SetLastMatched(mixed $order) {
@@ -1131,10 +1131,10 @@
          }   
          return false;
       }
- } // class ExternalSignal
+    } // class ExternalSignal
 
 
- class GridSignal extends ExternalSignal {
+    class GridSignal extends ExternalSignal {
 
     // активные заявки сетки, участвуют в gen_orders
     public  $grid = []; // map [id] => OrderInfo    
@@ -1142,7 +1142,7 @@
     
     public  $spread_price = 0;  // цена от которой строилась сетка в последний раз
     public  $center_price = 0;  // цена равновесия сетки, когда поровну бидов и асков
-  
+    
     public  $last_state = '';
 
     public  $take_level = '';  // справочный уровень,  разрешающий выставить заявку сетки, даже если цена близко
@@ -1323,10 +1323,10 @@
       $this->Cleanup(true);
       $this->SaveToDB();
     }
- }
+    }
 
 
- class OffsetSignal extends ExternalSignal {
+    class OffsetSignal extends ExternalSignal {
     
     public function __toString() {      
         return sprintf("ID:%d, last:%.5f", $this->id, $this->amount);
@@ -1381,9 +1381,9 @@
             $this->Cleanup();  // не слишком часто
         $this->SaveToDB();
     }
- }
+    }
 
- class SignalFeed implements ArrayAccess, Countable {
+    class SignalFeed implements ArrayAccess, Countable {
     protected $signals = [];    
     public    $core = null; // class TradingCore
     public    $engine = null; // class TradingEngine
@@ -1432,7 +1432,7 @@
       $table = $this->engine->TableName('ext_signals');
       $dump = $mysqli->select_rows('*', $table, 'WHERE id = 742', MYSQLI_ASSOC);
       if (is_array($dump)) 
-          file_put_contents("{$this->engine->account_id}/ext_signals_dump-exit.json", json_encode($dump)."\n");
+          file_put_contents("data/{$this->engine->account_id}/ext_signals_dump-exit.json", json_encode($dump)."\n");
     }
 
     public function offsetExists(mixed $offset): bool {
@@ -1755,7 +1755,7 @@
         $start = $mysqli->select_value('MIN(id)', $table, 'WHERE (closed=0) and (id > 0)'); 
         $this->signal_info = $mysqli->select_map('signal_id, COUNT(ts) as count, MIN(ts) as first_order_ts, MAX(ts) as last_order_ts, MIN(id) as first_order, MAX(id) as last_order', 
                                 $ord_table, "WHERE (account_id = $acc_id) AND (signal_id > 0) GROUP BY signal_id", MYSQLI_OBJECT);
-        file_save_json("{$engine->account_id}/ext_signals_meta.json", $this->signal_info);                                
+        file_save_json("data/{$engine->account_id}/ext_signals_meta.json", $this->signal_info);                                
 
         $need_set = OFLAG_DIRECT;
         $skip_set = OFLAG_OUTBOUND | OFLAG_RESTORED;
@@ -1945,7 +1945,7 @@
                                 $imported, $acceptable, $url, count($this->signals), $ccnt, count($used_pairs), json_encode(array_keys($skipped)), $failed);
         return $imported;
     }     
-  
+    
     public function Update() {
         $core = $this->core;
         $engine = $this->engine;

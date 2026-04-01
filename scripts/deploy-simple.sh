@@ -30,48 +30,11 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
-fetch_github_zip() {
-  url="$1"
-  dest_dir="$2"
-  log_name="$3"
-  tmp_zip="/tmp/gh_dep_$$_${log_name}.zip"
-  log "#INFO: Downloading $log_name from GitHub..."
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$tmp_zip" || fail "Failed to download $url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q "$url" -O "$tmp_zip" || fail "Failed to download $url"
-  else
-    fail "Neither curl nor wget found; cannot auto-download $log_name"
+verify_datafeed_manager_source() {
+  manager_path="$ROOT_DIR/../datafeed/src/datafeed_manager.php"
+  if [ ! -f "$manager_path" ]; then
+    fail "required manager source missing: $manager_path"
   fi
-  if command -v unzip >/dev/null 2>&1; then
-    unzip -q "$tmp_zip" -d "$dest_dir"
-  else
-    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$tmp_zip" "$dest_dir" \
-      || fail "Cannot extract ZIP — install unzip or python3"
-  fi
-  rm -f "$tmp_zip"
-}
-
-find_or_fetch_sibling() {
-  repo_root="$1"
-  names="$2"
-  zip_url="$3"
-  log_name="$4"
-  parent_dir="$(dirname "$repo_root")"
-  for name in $names; do
-    if [ -d "$parent_dir/$name" ]; then
-      echo "$parent_dir/$name"
-      return 0
-    fi
-  done
-  fetch_github_zip "$zip_url" "$parent_dir" "$log_name"
-  for name in $names; do
-    if [ -d "$parent_dir/$name" ]; then
-      echo "$parent_dir/$name"
-      return 0
-    fi
-  done
-  return 1
 }
 
 generate_password() {
@@ -214,6 +177,29 @@ EOF
   log "#INFO: randomized credentials applied to $DEPLOY_ENV_FILE and $DEPLOY_OVERRIDE_FILE"
 }
 
+# Colloquium/CQDS: docker-compose ожидает ./secrets/cqds_db_password (без DB_ROOT_PASSWD в сессии).
+ensure_cqds_db_secret_if_repo_present() {
+  cqds_root="${CQDS_ROOT:-$ROOT_DIR/../cqds}"
+  secrets_dir="$cqds_root/secrets"
+  f="$secrets_dir/cqds_db_password"
+  if [ ! -d "$cqds_root" ] || [ ! -f "$cqds_root/docker-compose.yml" ]; then
+    log "#INFO: CQDS not found at $cqds_root, skip cqds_db_password"
+    return 0
+  fi
+  mkdir -p "$secrets_dir"
+  if [ -s "$f" ]; then
+    log "#INFO: $f already present, leaving unchanged"
+    return 0
+  fi
+  cqds_pw="$(generate_password)"
+  (
+    umask 077
+    printf '%s' "$cqds_pw" >"$f"
+  )
+  chmod 600 "$f" 2>/dev/null || true
+  log "#INFO: created $f (random password for CQDS PostgreSQL)"
+}
+
 wait_for_db_health() {
   elapsed=0
   while [ "$elapsed" -lt "$DEPLOY_TIMEOUT_SECONDS" ]; do
@@ -258,25 +244,27 @@ test_web_endpoints() {
   }
   echo "api-entrypoint-ok\n";
   '
+
+  docker-compose -f "$COMPOSE_FILE" exec -T web php -r '
+  $u = "http://127.0.0.1/bot/get_vwap.php?pair_id=3&limit=5&exchange=bitmex";
+  $s = @file_get_contents($u);
+  if ($s === false) {
+    fwrite(STDERR, "warn: get_vwap probe unavailable\n");
+    exit(0);
+  }
+  echo "get-vwap-probe=" . substr(trim($s), 0, 80) . "\n";
+  '
 }
 
 main() {
   require_cmd docker-compose
+  verify_datafeed_manager_source
   require_cmd docker
   require_cmd sh
 
-  find_or_fetch_sibling "$ROOT_DIR" \
-    "alpet-libs-php alpet-libs-php-main alpet-libs-php-master" \
-    "https://github.com/alpet83/alpet-libs-php/archive/refs/heads/main.zip" \
-    "alpet-libs-php" > /dev/null
-
-  find_or_fetch_sibling "$ROOT_DIR" \
-    "datafeed datafeed-main datafeed-master" \
-    "https://github.com/alpet83/datafeed/archive/refs/heads/main.zip" \
-    "datafeed" > /dev/null
-
   log "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
   prepare_deploy_passwords
+  ensure_cqds_db_secret_if_repo_present
 
   log "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
   sh shell/bootstrap_container_env.sh

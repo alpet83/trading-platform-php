@@ -74,9 +74,9 @@
         .ra {   text-align: right; }        
         /* console colors   */
     </style>
-    <link rel="stylesheet" href="css/dark-theme.css">
-    <link rel="stylesheet" href="css/apply-theme.css">
-    <link rel="stylesheet" href="css/colors.css">  
+    <link rel="stylesheet" href="dark-theme.css">
+    <link rel="stylesheet" href="apply-theme.css">
+    <link rel="stylesheet" href="colors.css">  
     <script type="text/javascript">
         function dumpBySignal(sig) {
             document.location = '<?php echo $filtered; ?>&signal=' + sig;
@@ -87,7 +87,7 @@
     </script>  
 </HEAD>  
 <BODY>
-<?php    
+<?php
     $acc_id = $core->trade_engine->account_id;
     $sod = gmdate('Y-m-d 0:00');      
     
@@ -112,12 +112,12 @@
     
     echo "<h2>$title</h2>\n";
 ?>
- 
- <table border=1  style='border-collapse: collapse;'>
- <thead>
-  <tr><th>ID<th>Time<th>Host<th>Batch<th>Signal<th>Pair<th>Price<th>Amount<th>Position<th>Comment</tr>
- </thead>
- <?php    
+    
+    <table border=1  style='border-collapse: collapse;'>
+    <thead>
+    <tr><th>ID<th>Time<th>Host<th>Batch<th>Signal<th>Pair<th>Price<th>Amount<th>Position<th>Comment</tr>
+    </thead>
+<?php
     $_SESSION['bot'] = $bot;
     $_SESSION['account_id'] = $acc_id;
     $signals = [];    
@@ -275,8 +275,8 @@
 
     session_write_close();
 SKIP:       
- ?>
- </html>
+?>
+    </html>
 
 
 

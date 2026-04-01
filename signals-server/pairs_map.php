@@ -4,7 +4,6 @@
     
     mysqli_report(MYSQLI_REPORT_OFF);  
     include_once('/usr/local/etc/php/db_config.php');
-    $db_user = 'trader';  
     $mysqli = init_remote_db('trading');
 
     if (!$mysqli)

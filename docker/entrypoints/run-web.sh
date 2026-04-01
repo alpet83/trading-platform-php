@@ -29,4 +29,4 @@ require_file "$WEB_DOCROOT/index.php"
 
 cd "$WEB_DOCROOT"
 echo "Starting PHP API/Web UI server at ${WEB_BIND_HOST}:${WEB_BIND_PORT}, docroot=${WEB_DOCROOT}"
-exec php -d include_path=".:/app/src/web-ui:/app/src:/app/src/lib:/usr/local/lib/php" -S "${WEB_BIND_HOST}:${WEB_BIND_PORT}" -t "$WEB_DOCROOT"
+exec php -d include_path=".:/app/src/web-ui:/app/src:/app/src/lib:/usr/local/lib/php" -S "${WEB_BIND_HOST}:${WEB_BIND_PORT}" -t "$WEB_DOCROOT" "$WEB_DOCROOT/router.php"

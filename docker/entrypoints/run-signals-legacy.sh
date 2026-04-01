@@ -59,9 +59,10 @@ require_file /app/src/esctext.php
 require_file /app/src/lib/db_tools.php
 require_file "$SIGNALS_WEB_DOCROOT/sig_edit.php"
 require_file "$SIGNALS_WEB_DOCROOT/api_helper.php"
+require_file "$SIGNALS_WEB_DOCROOT/router.php"
 
 ensure_telegram_sdk
 
 cd "$SIGNALS_WEB_DOCROOT"
 echo "Starting legacy signals PHP API at ${SIGNALS_BIND_HOST}:${SIGNALS_BIND_PORT}, docroot=${SIGNALS_WEB_DOCROOT}"
-exec php -d include_path=".:$SIGNALS_WEB_DOCROOT:/app/src:/app/src/lib:/usr/local/lib/php" -S "${SIGNALS_BIND_HOST}:${SIGNALS_BIND_PORT}" -t "$SIGNALS_WEB_DOCROOT"
+exec php -d include_path=".:$SIGNALS_WEB_DOCROOT:/app/src:/app/src/lib:/usr/local/lib/php" -S "${SIGNALS_BIND_HOST}:${SIGNALS_BIND_PORT}" -t "$SIGNALS_WEB_DOCROOT" "$SIGNALS_WEB_DOCROOT/router.php"

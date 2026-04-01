@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+    {
+			"path": "/opt/docker"
+		},
+		{
+			"path": "P:/GitHub/trading-platform-php"
+		},
+		{
+			"path": "P:\\GitHub\\Sandwich-pack",
+			"name": "Sandwich-pack"
+		}
+		
+	]
+}

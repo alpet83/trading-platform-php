@@ -48,12 +48,15 @@ services:
       TELEGRAM_API_KEY: ${TELEGRAM_API_KEY:-}
       TELEGRAM_API_TOKEN_FILE: ${TELEGRAM_API_TOKEN_FILE:-/etc/api-token}
       BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bot}
+      PHP_ERROR_LOG_FILE: ${SIGNALS_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_signals_legacy.log}
     ports:
-      - "${SIGNALS_LEGACY_PORT:-8090}:80"
+      - "${SIGNALS_LEGACY_PORT:-8480}:80"
     volumes:
       - ./signals-server:/app/signals-server
       - ./src:/app/src
       - ./docker/entrypoints/run-signals-legacy.sh:/usr/local/bin/run-signals-legacy.sh:ro
+      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
+      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./secrets/signals_db_config.php:/usr/local/etc/php/db_config.php:ro
       - signals-legacy-db-socket:/run/mysqld
       - ./var/log:/app/var/log

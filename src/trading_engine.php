@@ -1,7 +1,7 @@
 <?php
 
-  // форматирование отчетов 
-  function FormatCSV(array $data, string $sep = ';', int $recursion = 0) {
+    // форматирование отчетов 
+    function FormatCSV(array $data, string $sep = ';', int $recursion = 0) {
     if (0 == count($data)) return '';
     $result = '';
     $dbg = count($data) > 9000;
@@ -54,7 +54,7 @@
       $result .= implode($sep, $vals)."\n";
     } 
     return $result;
-  }  
+    }  
 
 // TradingEngine - базовый класс торгового движка, реализующий API с конкретной биржей по протоколу REST.  
 class TradingEngine {
@@ -316,6 +316,39 @@ class TradingEngine {
             $this->GetOrdersList($name)->Finalize($eod);      
     }
 
+    protected function EnsurePairsMapView(mysqli_ex $mysqli, string $prefix): void {
+        $view_name = $prefix.'pairs_map';
+        $obj_type = $mysqli->select_value(
+            'TABLE_TYPE',
+            'INFORMATION_SCHEMA.TABLES',
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '$view_name'"
+        );
+
+        if ('VIEW' === $obj_type) {
+            return;
+        }
+
+        if (!empty($obj_type)) {
+            $drop_sql = ('BASE TABLE' === $obj_type)
+                ? "DROP TABLE `$view_name`"
+                : "DROP VIEW `$view_name`";
+            if (!$mysqli->try_query($drop_sql)) {
+                throw new Exception("Failed to drop non-view object '$view_name': {$mysqli->error}");
+            }
+            $this->LogMsg("~C93#WARN:~C00 Dropped %s `%s` to restore expected pairs_map view", $obj_type, $view_name);
+        }
+
+        $tickers_table = $prefix.'tickers';
+        $ticker_map_table = $prefix.'ticker_map';
+        $create_view = "CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `$view_name` AS "
+            . "SELECT `T`.`pair_id` AS `pair_id`, `T`.`symbol` AS `pair` FROM `$tickers_table` AS `T` "
+            . "UNION SELECT `TM`.`pair_id` AS `pair_id`, `TM`.`symbol` AS `symbol` FROM `$ticker_map_table` AS `TM`";
+
+        if (!$mysqli->try_query($create_view)) {
+            throw new Exception("Failed create view '$view_name': {$mysqli->error}");
+        }
+    }
+
     public function  Initialize() {
         global $hostname;
         $cname = get_class($this);
@@ -338,6 +371,8 @@ class TradingEngine {
         $this->host_id = $mysqli->select_value('id', 'config__hosts', "WHERE host = '{$hostname}'");
 
         $prefix = strtolower("{$this->exchange}__");
+        $this->EnsurePairsMapView($mysqli, $prefix);
+
         $table = $prefix.'batches';
         if (!$mysqli->table_exists($table))
             $mysqli->try_query("ALTER TABLE {$prefix}signals RENAME TO $table;");
@@ -395,7 +430,7 @@ class TradingEngine {
             throw new Exception("LoadTickers failed on engine init"); // first time, required for price update
         }    
         
-        check_mkdir(getcwd().'/data/'.$this->account_id);         
+        check_mkdir(getcwd().'/data/'.$this->account_id);
         $this->LogMsg("~C96#PERF:~C00 Loading orders from DB...");      
         // $this->trade_core->LogMsg("Processing $cname -> Initialize for exchange {$this->exchange}...");
         $this->archive_orders = new OrderList($this, 'archive_orders', true); // canceled without matching
@@ -926,7 +961,7 @@ class TradingEngine {
 
         return -1;
     }
-   
+    
     public function CurrentPos(int $pair_id, bool $value_only = true) {
         $core = $this->TradeCore();
         $result = $core->CurrentPos($pair_id) ?? 0;
@@ -1169,8 +1204,8 @@ class TradingEngine {
 
         $ff = BATCH_LIMIT | BATCH_PASSIVE;  // для таких пакетов, всегда нужен новый экземпляр!
         if ($flags & $ff) return false;
-  
-  
+    
+    
         $strict = "WHERE (account_id = {$this->account_id}) AND (pair_id = $pair_id) AND (parent = $parent_id) AND (flags & $bad_f = 0) AND (ts > '$ts_from') ORDER BY `id` DESC";
         $row = $mysqli->select_row('id,ts,target_pos', $table, $strict, MYSQLI_ASSOC);
         $last_tgt = false;
@@ -1188,14 +1223,14 @@ class TradingEngine {
            if (isset ($this->batch_map[$last_sid]))
                $last_sig = $this->batch_map[$last_sid];  // object ref
         }
-  
+    
         // TODO: дублирование математики оптимизации... надо избавляться
         $coef = 0.0001;
         if ($elps < 300)
             $coef = 0.05;
-  
+    
         $epsilon = max( abs($position), abs($last_tgt), abs($curr_pos) ) * $coef; // minimal changing value, TODO: detect by minimal trading step / USD cost      
-  
+    
         if (false !== $last_tgt && abs($position - $last_tgt) <= $epsilon && $last_sig && !$last_sig->IsTimedout() && $parent_id == $last_sig->parent) {
           $this->LogMsg("~C91#WARN:~C00 attempt to register new batch, but position average same previous %s = %f. Reusing", strval($last_sig),  $position);
           return $last_sid;
@@ -1205,7 +1240,7 @@ class TradingEngine {
         if ( $last_sig && $last_sig->active && same_sign($curr_pos, $position, $last_tgt) &&
                 abs($curr_pos - $last_tgt) <= $epsilon &&  
                 !$last_sig->IsTimedout() && $parent_id == $last_sig->parent ) {
-  
+    
           if ( value_between($position, $curr_pos, $last_tgt) || value_between($position, $last_tgt, $curr_pos) ) {
              $this->LogMsg("~C91#WARN:~C00 batch edit condition matched: current_pos = %f, prev_target = %f, new_target = %f, epsilon = %f ", $curr_pos, $last_tgt, $position, $epsilon);
              if ($last_sig->EditTarget($position, true))
@@ -1213,7 +1248,7 @@ class TradingEngine {
              else
                $core->LogError("Edit target failed, will be generated new batch.");
           }
-  
+    
         }
         return false;
     }
@@ -1275,7 +1310,7 @@ class TradingEngine {
         foreach ($lists as $list) 
             $list->LoadFromDB();
     }  
-  
+    
     public function PendingOrders (int $pair_id) {
         $orders = $this->pending_orders->FindByPair($pair_id);
         $mm = $this->MarketMaker($pair_id, false);
@@ -1623,4 +1658,4 @@ class TradingEngine {
             $batch->Update();
     }
 
-  }
+    }

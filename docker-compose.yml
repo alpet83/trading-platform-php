@@ -62,16 +62,16 @@ services:
       ADMIN_IP_ALLOWLIST: ${ADMIN_IP_ALLOWLIST:-127.0.0.1,::1}
       ALLOW_LOCAL_ADMIN_BYPASS: ${ALLOW_LOCAL_ADMIN_BYPASS:-false}
       TRADEBOT_PHP_HOST: ${TRADEBOT_PHP_HOST:-}
+      PHP_ERROR_LOG_FILE: ${WEB_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_web.log}
       BINLOG_WARN_BYTES: ${BINLOG_WARN_BYTES:-1073741824}
       RELAY_WARN_BYTES: ${RELAY_WARN_BYTES:-1073741824}
     ports:
       - "${WEB_PUBLISH_IP:-127.0.0.1}:${WEB_PORT:-8088}:80"
     volumes:
       - ./src:/app/src
-      - ./docker/lib_common_patch.php:/app/lib/common.php:ro
-      - ./docker/lib_esctext_patch.php:/app/lib/esctext.php:ro
-      - ./docker/lib_db_tools_patch.php:/app/lib/db_tools.php:ro
       - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
+      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
@@ -99,12 +99,12 @@ services:
       REDUNDANCY_MODE: ${REDUNDANCY_MODE:-single}
       BMX_TESTNET: ${BMX_TESTNET:-1}
       BMX_API_BASE_URL: ${BMX_API_BASE_URL:-}
+      PHP_ERROR_LOG_FILE: ${BOT_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_bot.log}
     volumes:
       - ./src:/app/src
-      - ./docker/lib_common_patch.php:/app/lib/common.php:ro
-      - ./docker/lib_esctext_patch.php:/app/lib/esctext.php:ro
-      - ./docker/lib_db_tools_patch.php:/app/lib/db_tools.php:ro
       - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
+      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
@@ -143,6 +143,8 @@ services:
       TZ: ${TZ:-UTC}
       SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://signals-legacy/}
       SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://signals-legacy/}
+      BMX_TESTNET: ${BMX_TESTNET:-1}
+      BMX_API_BASE_URL: ${BMX_API_BASE_URL:-}
       BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bot}
       BOT_CREDENTIAL_SOURCE: db
       PHP_INCLUDE_PATH: ${PHP_INCLUDE_PATH:-.:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib}
@@ -154,10 +156,13 @@ services:
       BOT_TRADER_PASSWORD: ${BOT_TRADER_PASSWORD:-placeholder}
       BOT_DB_API_KEY_PARAM: ${BOT_DB_API_KEY_PARAM:-api_key}
       BOT_DB_API_SECRET_PARAM: ${BOT_DB_API_SECRET_PARAM:-api_secret}
+      PHP_ERROR_LOG_FILE: ${BOTS_HIVE_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_bots_hive.log}
     volumes:
       - ./src:/app/src
       - ./docker/entrypoints/run-bot-manager.sh:/usr/local/bin/run-bot-manager.sh:ro
       - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
+      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
+      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
@@ -181,11 +186,15 @@ services:
       DATAFEED_MANAGER_HEARTBEAT_SECONDS: ${DATAFEED_MANAGER_HEARTBEAT_SECONDS:-30}
       DATAFEED_MANAGER_LOG_PATH: ${DATAFEED_MANAGER_LOG_PATH:-/app/var/log/datafeed/main.log}
       DATAFEED_MANAGER_LOADERS_DIR: ${DATAFEED_MANAGER_LOADERS_DIR:-/app/datafeed/src}
+      PHP_ERROR_LOG_FILE: ${DATAFEED_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_datafeed.log}
     volumes:
       - ./src:/app/src
       - ../datafeed/src:/app/datafeed/src
       - ../datafeed/sql:/app/datafeed/sql:ro
+      - ../alpet-libs-php/clickhouse.php:/app/lib/clickhouse.php:ro
       - ./docker/entrypoints/run-datafeed.sh:/usr/local/bin/run-datafeed.sh:ro
+      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
+      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data

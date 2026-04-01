@@ -1,5 +1,5 @@
 param(
-  [string]$ProjectRoot = "",
+  [string]$ProjectRoot = "P:/opt/docker/trading-platform-php",
   [string]$ComposeFile = "docker-compose.yml",
   [int]$DbWaitTimeoutSec = 180,
   [int]$DbWaitIntervalSec = 3,
@@ -15,13 +15,11 @@ $ErrorActionPreference = "Stop"
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
 
-function Find-SiblingRepo([string]$RepoRoot, [string[]]$Names) {
-  $parent = Split-Path $RepoRoot -Parent
-  foreach ($name in $Names) {
-    $candidate = Join-Path $parent $name
-    if (Test-Path $candidate) { return $candidate }
+function Verify-DatafeedManagerSource {
+  $managerPath = Join-Path $ProjectRoot "../datafeed/src/datafeed_manager.php"
+  if (-not (Test-Path $managerPath)) {
+    Fail "required manager source missing: $managerPath"
   }
-  return $null
 }
 
 function New-RandomPassword([int]$Length = 28) {
@@ -62,9 +60,9 @@ function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
   $lines = Get-Content -Path $Path
   $updated = $false
   for ($i = 0; $i -lt $lines.Count; $i++) {
-    if ($lines[$i] -match "^(\s*)" + [regex]::Escape($Key) + ":\s*") {
+    if ($lines[$i] -match "^([\s]*)" + [regex]::Escape($Key) + ":[\s]*") {
       $indent = $Matches[1]
-      $lines[$i] = "${indent}${Key}: ${Value}"
+      $lines[$i] = "${indent}${Key}: $Value"
       $updated = $true
     }
   }
@@ -140,6 +138,28 @@ function Prepare-DeployPasswords {
   Info "#INFO: randomized credentials applied to $EnvFile and $OverrideFile"
 }
 
+function Ensure-CqdsDbSecretIfRepoPresent([string]$TradingRoot) {
+  $cqdsRoot = if ($env:CQDS_ROOT) { $env:CQDS_ROOT } else { (Join-Path $TradingRoot "../cqds") }
+  $compose = Join-Path $cqdsRoot "docker-compose.yml"
+  if (-not (Test-Path $cqdsRoot) -or -not (Test-Path $compose)) {
+    Info "#INFO: CQDS not found at $cqdsRoot, skip cqds_db_password"
+    return
+  }
+  $secretsDir = Join-Path $cqdsRoot "secrets"
+  if (-not (Test-Path $secretsDir)) {
+    New-Item -ItemType Directory -Path $secretsDir -Force | Out-Null
+  }
+  $f = Join-Path $secretsDir "cqds_db_password"
+  if ((Test-Path $f) -and ((Get-Item $f).Length -gt 0)) {
+    Info "#INFO: $f already present, leaving unchanged"
+    return
+  }
+  $pw = New-RandomPassword
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($f, $pw, $utf8NoBom)
+  Info "#INFO: created $f (random password for CQDS PostgreSQL)"
+}
+
 function Invoke-NativeNoThrow([scriptblock]$Command) {
   $prevErr = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
@@ -154,11 +174,8 @@ function Invoke-NativeNoThrow([scriptblock]$Command) {
   return $LASTEXITCODE
 }
 
-if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-  $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
-}
-
 Set-Location $ProjectRoot
+Verify-DatafeedManagerSource
 
 $publishIp = "127.0.0.1"
 $envPath = Join-Path $ProjectRoot ".env"
@@ -175,27 +192,16 @@ if ($CleanStart) {
   docker-compose -f $ComposeFile down --remove-orphans
 }
 
-$depsScript = Join-Path $PSScriptRoot "deps_check_download.ps1"
-if (-not (Test-Path $depsScript)) {
-  Fail "Missing dependency helper: $depsScript"
+if (-not (Test-Path "P:/GitHub/alpet-libs-php")) {
+  Fail "Missing P:/GitHub/alpet-libs-php"
 }
-
-Info "#STEP 0.5/7: check and download dependencies (alpet-libs-php, datafeed)"
-& $depsScript -RepoRoot $ProjectRoot
-if ($LASTEXITCODE -ne 0) {
-  Fail "Dependency check/download failed"
-}
-
-$alpetLibsPath = Find-SiblingRepo $ProjectRoot @("alpet-libs-php", "alpet-libs-php-main", "alpet-libs-php-master")
-if (-not $alpetLibsPath) { Fail "alpet-libs-php not found after dependency step" }
-$alpetLibsPathDocker = $alpetLibsPath -replace '\\', '/'
 
 Info "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
 Prepare-DeployPasswords
+Ensure-CqdsDbSecretIfRepoPresent -TradingRoot $ProjectRoot
 
 Info "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
-$projRootDocker = $ProjectRoot -replace '\\', '/'
-docker run --rm -e ALPET_LIBS_REPO=/alpet-libs -v "${alpetLibsPathDocker}:/alpet-libs" -v "${projRootDocker}:/work" -w /work alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
+docker run --rm -e ALPET_LIBS_REPO=/alpet-libs -v P:/GitHub/alpet-libs-php:/alpet-libs -v ${PWD}:/work -w /work alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
 if ($LASTEXITCODE -ne 0) { Fail "Bootstrap stage failed" }
 
 Info "#STEP 3/7: build images for mariadb/web"
@@ -248,6 +254,9 @@ if ($LASTEXITCODE -ne 0) { Fail "basic-admin endpoint probe failed" }
 
 docker-compose -f $ComposeFile exec -T web php -r "if(@file_get_contents('http://127.0.0.1/api/index.php')===false){fwrite(STDERR,'api probe failed\n'); exit(1);} echo 'api-ok\n';"
 if ($LASTEXITCODE -ne 0) { Fail "api endpoint probe failed" }
+
+docker-compose -f $ComposeFile exec -T web php -r "`$s=@file_get_contents('http://127.0.0.1/bot/get_vwap.php?pair_id=3&limit=5&exchange=bitmex'); if(`$s -eq `$false){fwrite(STDERR,'warn: get_vwap probe unavailable\n'); exit(0);} echo 'get-vwap-probe=' . substr(trim(`$s),0,80) . '\n';"
+if ($LASTEXITCODE -ne 0) { Fail "get_vwap endpoint probe failed" }
 
 Info ""
 Info "#SUCCESS: simple deploy completed"

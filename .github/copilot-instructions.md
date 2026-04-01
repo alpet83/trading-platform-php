@@ -3,6 +3,16 @@
 > Loaded into every Copilot Agent session.
 > Keep concise; store only durable project rules and decision guidance here.
 
+## Repository Override: trading-platform-php (High Priority)
+- This repository uses a runtime-first workflow.
+- Primary edit target: `P:\opt\docker\trading-platform-php\`.
+- Repository mirror for publication: `P:\GitHub\trading-platform-php\`.
+- Do not perform direct feature edits in the GitHub mirror unless explicitly requested.
+- After runtime validation, sync required files to the GitHub mirror and prepare commits there.
+- For commit preparation, use `commit_prepare.py` (avoid ad-hoc manual staging/commit flow).
+- If generic sections below conflict with this override, this override wins.
+- `gitbash_exec` is optional and useful for bash-centric tasks (grep/sed/awk); use when it improves reliability or speed.
+
 ## Overview
 - `sigsys-ts` is the TypeScript signals server / bot-control UI from the TradeBot system.
 - Working tree: `P:\vps.alpet.me\sigsys-ts\`.
@@ -118,7 +128,7 @@ You can use @agent to create files in backend/src/guards/. Copilot will run test
 
 ## Style Baseline (Required)
 - Minimum indentation in code blocks is **4 spaces**.
-- Exception: top-level `<?php` opening tag must stay at column 1 (no leading spaces).
+- Exception: top-level `<?php` and `?>` tags must stay at column 1 (no leading spaces).
 - File encoding: **UTF-8**.
 - Line endings: **LF**.
 - Apply these rules to newly generated or modified project files by default.

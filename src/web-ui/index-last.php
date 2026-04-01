@@ -11,37 +11,37 @@
         error_exit("Rights restricted to %s", $user_rights);
     $is_admin  = str_in($user_rights, 'admin'); // means user can enable/disable bots 
     $is_trader = str_in($user_rights, 'trade'); // means user can affect to trading  
- ?>
+?>
 
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <TITLE>Trading BOTs Home Page</TITLE>   
-  <style type='text/css'>
-   td, th { padding-left: 4pt;
+    <HEAD>
+    <TITLE>Trading BOTs Home Page</TITLE>   
+    <style type='text/css'>
+    td, th { padding-left: 4pt;
            padding-right: 4pt; 
            text-shadow: 1px 1px 3px #202020;
     } 
 
-   table { 
+    table { 
         border-collapse: collapse;
-   }        
-   .dark-font td { color: #0a0a01; }
-   .light-font td { color: #fefede; }
+    }        
+    .dark-font td { color: #0a0a01; }
+    .light-font td { color: #fefede; }
 
-   .ra { text-align: right; }
-   .error { color: red; }
-   .microtext {
+    .ra { text-align: right; }
+    .error { color: red; }
+    .microtext {
         font-size: 8pt;
       font-family: 'Arial';
-   }
-  </style>  
-  <link rel="stylesheet" href="css/dark-theme.css">
-  <link rel="stylesheet" href="css/apply-theme.css">
-  <link rel="stylesheet" href="css/colors.css">     
+    }
+    </style>  
+    <link rel="stylesheet" href="dark-theme.css">
+    <link rel="stylesheet" href="apply-theme.css">
+    <link rel="stylesheet" href="colors.css">     
 
 
-  <script>
+    <script>
     function Edit(app, param, value) {
       document.location ='index.php?impl_name='+ app + '&param_edit=' + param + '&value='+prompt("Edit " + param, value);
     }    
@@ -54,8 +54,8 @@
     function DefferedReload() {
       setTimeout(Reload, 2000);  
     }
-  </script>
-  </HEAD>    
+    </script>
+    </HEAD>    
 <?php
     mysqli_report(MYSQLI_REPORT_OFF);
     $mysqli = init_remote_db('trading');
@@ -92,17 +92,17 @@
             print("<span class=error>ERROR: access denied for $remote</span>\n");
         } 
       echo "<BODY onLoad='DefferedReload()'>\n";
-   }    
-   else 
+    }    
+    else 
       echo "<BODY>\n";
 ?>
 
 
 <TABLE BORDER=1> 
- <THEAD>
-  <TR><TH>Bot<TH>Account</TH><TH>Started</TH><TH>Last alive</TH><TH>Matched orders</TH><TH>Funds usage</TH><TH>Restarts</TH><TH>Exceptions</TH><TH>Errors</TH><TH>Last error</TH><TH>PID</TH><TH>Position coef</TH><TH>Enabled</TH></TR>
- </THEAD>
- <TBODY>
+    <THEAD>
+    <TR><TH>Bot<TH>Account</TH><TH>Started</TH><TH>Last alive</TH><TH>Matched orders</TH><TH>Funds usage</TH><TH>Restarts</TH><TH>Exceptions</TH><TH>Errors</TH><TH>Last error</TH><TH>PID</TH><TH>Position coef</TH><TH>Enabled</TH></TR>
+    </THEAD>
+    <TBODY>
 
 <?php
     $day_start = gmdate('Y-m-d 00:00:00'); // today
@@ -145,7 +145,7 @@
             $btc_price = $ticker[0];
             $btc_time = $ticker[1];
         }
- 
+    
         $pairs_table = "{$bot_prefix}__pairs_map";
         $bot_pairs = $mysqli->select_map('pair_id,pair', $pairs_table, 'ORDER BY pair');
         $pairs_configs[$app] = [];
@@ -226,7 +226,7 @@
         echo "</TD></TR>\n";
     }        
 ?>
- </TBODY>
+    </TBODY>
 </TABLE>
 <?php
     $feed_host = rtrim((string)(getenv('TRADEBOT_PHP_HOST') ?: getenv('SIGNALS_API_URL') ?: getenv('SIGNALS_FEED_URL') ?: 'http://host.docker.internal'), '/');
@@ -241,7 +241,7 @@
 
 <h3>Risk mapping</h3>
 <TABLE BORDER=1> 
-  <THEAD><TR><TH>Pair/Symbol
+    <THEAD><TR><TH>Pair/Symbol
 <?php
        
     $pos_map = [];    

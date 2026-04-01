@@ -1,9 +1,9 @@
 <?php
 
 /**
- * bot_creator.php — shared bot initialization logic.
- * Used by the REST API and basic-admin bootstrap form.
- */
+    * bot_creator.php — shared bot initialization logic.
+    * Used by the REST API and basic-admin bootstrap form.
+    */
 
 if (!function_exists('bot_create')) {
     /**
@@ -491,13 +491,6 @@ if (!function_exists('bot_create')) {
                 rpnl FLOAT DEFAULT 0 NOT NULL,
                 upnl FLOAT DEFAULT 0 NOT NULL,
                 UNIQUE KEY pair_id (pair_id, account_id)
-            ) COLLATE = utf8mb3_bin",
-
-            'pairs_map' => "CREATE TABLE `{$bot_prefix}__pairs_map` (
-                pair_id INT NOT NULL PRIMARY KEY,
-                pair VARCHAR(16) NOT NULL,
-                enabled TINYINT(1) DEFAULT 1 NOT NULL,
-                UNIQUE KEY pair (pair)
             ) COLLATE = utf8mb3_bin",
 
             'ticker_map' => "CREATE TABLE `{$bot_prefix}__ticker_map` (

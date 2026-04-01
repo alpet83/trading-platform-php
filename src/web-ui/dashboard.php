@@ -16,7 +16,7 @@
         die("#FATAL: DB inaccessible!\n");
 
     $bots = $mysqli->select_map('applicant,table_name', 'config__table_map');     
- 
+    
     mysqli_report(MYSQLI_REPORT_OFF);
 
     $impl_name = $_SESSION['bot'] ??  rqs_param('bot', false);      
@@ -60,18 +60,18 @@
        $account_id = $mysqli->select_value('account_id', $cfg_table); // any as default
 
     $_SESSION['account_id'] = $account_id;
-   
+    
     $engine = $core->trade_engine;        
     $exchange = rqs_param('exchange', $config['exchange'] ?? 'NyMEX');
     $title = "$bot dashboard for $account_id";
 
     $is_trader = str_in($user_rights, 'trade'); // means user can trade
- ?>
+?>
 
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <TITLE><?php echo $title; ?></TITLE>   
+    <HEAD>
+    <TITLE><?php echo $title; ?></TITLE>   
     <style type='text/css'>
     td, th { padding-left: 4pt;
             padding-right: 4pt;
@@ -82,9 +82,9 @@
     }     
     .ra {   text-align: right; }        
     </style>  
-    <link rel="stylesheet" href="css/dark-theme.css">
-    <link rel="stylesheet" href="css/apply-theme.css">
-    <link rel="stylesheet" href="css/colors.css">     
+    <link rel="stylesheet" href="dark-theme.css">
+    <link rel="stylesheet" href="apply-theme.css">
+    <link rel="stylesheet" href="colors.css">     
     <script type="text/javascript">        
         function Reload() {
             document.location.reload();
@@ -103,8 +103,8 @@
         }
     </script>
 
-  </HEAD>  
-  <BODY>    
+    </HEAD>  
+    <BODY>    
 <?php
     $header_printed = true; 
     echo "<H2>$title</H2>\n";
@@ -168,4 +168,4 @@ DRAW_EQUITY:
     printf ("<div><img src='draw_chart.php?exchange=%s&account_id=%d' ></div>\n", $exchange, $account_id);    
     session_write_close();
 ?>
-  
+    

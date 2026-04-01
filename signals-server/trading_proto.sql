@@ -310,6 +310,10 @@ CREATE TABLE `pairs_map` (
 ) ENGINE=InnoDB AUTO_INCREMENT=116 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
+INSERT INTO `pairs_map` (`id`, `symbol`, `binance_pair`, `bitfinex_pair`, `bitmex_pair`, `deribit_pair`, `coinm_fut`, `contract_ratio`, `color`) VALUES
+(1, 'BTCUSD', 'BTCUSDC', 'tBTCUSD', 'XBTUSD', 'BTC-PERPETUAL', 0, 0.01, '#F7FF00'),
+(3, 'ETHUSD', 'ETHUSDC', 'tETHUSD', 'ETHUSD', 'ETH-PERPETUAL', 0, 1, '#B8860B');
+
 --
 -- Table structure for table `post_queue`
 --
@@ -357,32 +361,6 @@ CREATE TABLE `signals` (
   UNIQUE KEY `idx` (`id`) USING BTREE,
   UNIQUE KEY `trade_no` (`signal_no`,`pair_id`,`setup`) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=1538 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `signals_stats`
---
-
-DROP TABLE IF EXISTS `signals_stats`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `signals_stats` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `endpoint` varchar(64) NOT NULL,
-  `remote_ip` varchar(64) NOT NULL,
-  `remote_host` varchar(255) NOT NULL DEFAULT '',
-  `src_account` int(11) NOT NULL DEFAULT 0,
-  `setup_raw` varchar(255) NOT NULL DEFAULT '',
-  `view_name` varchar(32) NOT NULL DEFAULT 'json',
-  `out_format` varchar(32) NOT NULL DEFAULT 'json',
-  `user_agent` varchar(255) NOT NULL DEFAULT '',
-  `hits` int(10) unsigned NOT NULL DEFAULT 1,
-  `first_seen` timestamp NOT NULL DEFAULT current_timestamp(),
-  `last_seen` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_endpoint_ip` (`endpoint`,`remote_ip`),
-  KEY `idx_endpoint_last_seen` (`endpoint`,`last_seen`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

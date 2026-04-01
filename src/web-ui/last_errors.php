@@ -43,32 +43,32 @@
 ?>
 <!DOCTYPE HTML>
 <HTML>
- <HEAD>
-  <style type='text/css'>
+    <HEAD>
+    <style type='text/css'>
     td, th { padding-left: 4pt;
             padding-right: 4pt; } 
     /* console colors   */
-  </style>
-  <link rel="stylesheet" href="css/dark-theme.css">
-  <link rel="stylesheet" href="css/apply-theme.css">
-  <link rel="stylesheet" href="css/colors.css">  
+    </style>
+    <link rel="stylesheet" href="dark-theme.css">
+    <link rel="stylesheet" href="apply-theme.css">
+    <link rel="stylesheet" href="colors.css">  
 </HEAD>  
 <BODY> 
- <?php echo button_link("Go Home..", 'index.php')."\n"; ?>
- <table border=1  style='border-collapse: collapse;'>
- <thead>
-  <tr><th>Time<th>Host<th>Code<th>Message<th>Source</tr>
- </thead>
- <?php
+    <?php echo button_link("Go Home..", 'index.php')."\n"; ?>
+    <table border=1  style='border-collapse: collapse;'>
+    <thead>
+    <tr><th>Time<th>Host<th>Code<th>Message<th>Source</tr>
+    </thead>
+<?php
     foreach ($errors as $err) {
         $msg = colorize_msg($err['message']);
         printf("<tr><td>%s<td>%s<td>%d<td>%s<td>%s</tr>\n", $err['ts'], $err['host_id'], $err['code'], $msg, $err['source']);
     }
- ?>
+?>
 
 
 
- 
+    
 
 
 
