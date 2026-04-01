@@ -30,10 +30,10 @@ CREATE TABLE IF NOT EXISTS `loader_activity` (
 
 INSERT IGNORE INTO `loader_control` (`loader_key`, `exchange`, `script_name`, `enabled`, `period_seconds`, `timeout_seconds`) VALUES
 ('binance_candles', 'binance', 'bnc_candles_dl.php', 1, 3600, 3900),
-('binance_ticks', 'binance', 'bnc_ticks_dl.php', 1, 3600, 3900),
+('binance_ticks', 'binance', 'bnc_ticks_dl.php', 0, 3600, 3900),
 ('bitmex_candles', 'bitmex', 'bmx_candles_dl.php', 1, 3600, 3900),
-('bitmex_ticks', 'bitmex', 'bmx_ticks_dl.php', 1, 3600, 3900),
+('bitmex_ticks', 'bitmex', 'bmx_ticks_dl.php', 0, 3600, 3900),
 ('bitfinex_candles', 'bitfinex', 'bfx_candles_dl.php', 1, 3600, 3900),
-('bitfinex_ticks', 'bitfinex', 'bfx_ticks_dl.php', 1, 3600, 3900),
+('bitfinex_ticks', 'bitfinex', 'bfx_ticks_dl.php', 0, 3600, 3900),
 ('bybit_candles', 'bybit', 'bbt_candles_dl.php', 1, 3600, 3900),
 ('coinmarketcap_update', 'meta', 'cm_update.php', 0, 300, 240);

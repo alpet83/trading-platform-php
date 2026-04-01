@@ -66,7 +66,9 @@ services:
 
 volumes:
   signals-legacy-db-data:
+    name: trd_signals-legacy-db-data
   signals-legacy-db-socket:
+    name: trd_signals-legacy-db-socket
 
 networks:
   default:

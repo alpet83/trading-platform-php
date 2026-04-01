@@ -9,15 +9,15 @@
     $allow_ip = array();
     $white_list = file(__DIR__.'/.allowed_ip.lst');
     foreach ($white_list as $ip) {
-    $ip = trim($ip);
-    $allow_ip [$ip] = 1;
+      $ip = trim($ip);
+      $allow_ip [$ip] = 1;
     }
      
     
     if ($remote && !isset($allow_ip[$remote])) {  
-    http_response_code (403);
-    print_r($allow_ip);
-    die("#FORBIDDEN: access not allowed for $remote\n");
+      http_response_code (403);
+      print_r($allow_ip);
+      die("#FORBIDDEN: access not allowed for $remote\n");
     }   
     
     // $db_user = 'trader';
@@ -29,19 +29,19 @@
     mysqli_report(MYSQLI_REPORT_OFF);
     $mysqli = init_remote_db('trading');
     if (!$mysqli) {
-    error_log("#DB-SERVER: $db_alt_server");
-     if (is_array($db_profile))
-         $db_user = $db_profile[0];     
-     error_log('#DB_PROFILE: '.json_encode($db_profile));
-     die("FATAL: user '$db_user' can't connect to servers ".json_encode($db_servers).", $db_error\n");
+      error_log("#DB-SERVER: $db_alt_server");
+      if (is_array($db_profile))
+        $db_user = $db_profile[0];     
+      error_log('#DB_PROFILE: '.json_encode($db_profile));
+      die("FATAL: user '$db_user' can't connect to servers ".json_encode($db_servers).", $db_error\n");
     }
     
     $account_id = 0;
     $view = 'dump';
 
     if ($remote)  {
-     $account_id = rqs_param('src_account', 256);  // TODO: ugly hack here
-     $view = rqs_param('view', 'json');
+      $account_id = rqs_param('src_account', 256);  // TODO: ugly hack here
+      $view = rqs_param('view', 'json');
     }   
 
     $updated_ts = rqs_param('updated_after', '2021-01-01 0:00:00');      
@@ -54,7 +54,7 @@
     
     $strict_acc = "account_id > $account_id";
     if ($account_id > 50)
-     $strict_acc = "hype_last.account_id = $account_id";
+      $strict_acc = "hype_last.account_id = $account_id";
       
      
     $mysqli->debug("F:L:o:T:t,/tmp/mysqli.dbg"); 
@@ -66,46 +66,48 @@
     $pos_list = array();
 
     while ($res && $row = $res->fetch_array(MYSQLI_ASSOC)) {
-    $pair_id = $row['pair_id'];
-    unset($row['pair_id']); 
-    // if (!isset($pos_list [$pair_id]))
-    $pos_list [$pair_id]= $row; // WARN: replace by newer with same pair_id !!!!!!!!!!!!!!!!!!!
+        $pair_id = $row['pair_id'];
+        unset($row['pair_id']); 
+        // if (!isset($pos_list [$pair_id]))
+        $pos_list [$pair_id]= $row; // WARN: replace by newer with same pair_id !!!!!!!!!!!!!!!!!!!
     }     
     
     if ($remote) {
-    // file_put_contents("lastpos_$pair_field.dump", print_r($pos_list, true));
-    // file_put_contents("query_$pair_field.sql", $mysqli->last_query);    
-    } else 
-    echo "#QUERY: {$mysqli->last_query}\n";
+      // file_put_contents("lastpos_$pair_field.dump", print_r($pos_list, true));
+      // file_put_contents("query_$pair_field.sql", $mysqli->last_query);    
+    }
+    else {
+      echo "#QUERY: {$mysqli->last_query}\n";
+    }
     
 
     
     
     if ('json' == $view)
-     echo json_encode($pos_list); // TODO: bad format, one position per pair_id
+        echo json_encode($pos_list); // TODO: bad format, one position per pair_id
     elseif ('dump' == $view) {
-     echo "<pre>";
-     print_r($pos_list);
+        echo "<pre>";
+        print_r($pos_list);
     }
     elseif ('table' == $view) {
-     echo "<html>\n<body>\n";
-     echo "<table border=1 cellpadding=7 style='border-collapse:collapse;'>\n";
-     echo " <thead><tr><th>Symbol<th>Position<th>Change<th>Time\n";
-     echo " <tbody>\n";
-     $date = date('Y-m-d');
-     foreach ($pos_list as $pos) {
-       $st = '';
-       $ts = $pos['ts'];
-       if (false !== strpos($ts, $date)) 
-         $st = "style='font-weight:700;'";
-       
-       echo "  <tr $st>";
-       $pair = trim($pos[$pair_field]);
-       if (0 == strlen($pair))
-          $pair = $pos['symbol']; 
-       printf(" <td>%s<td>%.3f<td>%.3f<td>%s\n", $pair, $pos['value'], $pos['value_change'], $ts); 
-     }
-     echo "</table>\n";  
+        echo "<html>\n<body>\n";
+        echo "<table border=1 cellpadding=7 style='border-collapse:collapse;'>\n";
+        echo " <thead><tr><th>Symbol<th>Position<th>Change<th>Time\n";
+        echo " <tbody>\n";
+        $date = date('Y-m-d');
+        foreach ($pos_list as $pos) {
+            $st = '';
+            $ts = $pos['ts'];
+            if (false !== strpos($ts, $date)) 
+                $st = "style='font-weight:700;'";
+           
+            echo "  <tr $st>";
+            $pair = trim($pos[$pair_field]);
+            if (0 == strlen($pair))
+                $pair = $pos['symbol']; 
+            printf(" <td>%s<td>%.3f<td>%.3f<td>%s\n", $pair, $pos['value'], $pos['value_change'], $ts); 
+        }
+        echo "</table>\n";  
     }
         
     

@@ -1364,7 +1364,13 @@
         $this->open_coef = 1;     
         $this->flags = 0;   
         $engine = $this->engine;
-        assert($this->id == $this->pair_id);
+        if ($this->id != $this->pair_id) {
+            $this->core->LogError("~C91#WARN(OffsetSignal.Update):~C00 stale record id=%d != pair_id=%d, purging and skipping", $this->id, $this->pair_id);
+            $this->closed = true;
+            $tbl = $engine->TableName('ext_signals');
+            $this->core->mysqli->query("DELETE FROM `$tbl` WHERE id={$this->id} AND pair_id={$this->pair_id} AND account_id={$engine->account_id}");
+            return;
+        }
         if (is_null($this->ticker_info))
             $this->ticker_info = $engine->TickerInfo($this->pair_id);
 
@@ -1816,33 +1822,6 @@
             throw new Exception("Invalid signals setup value (not set in config table)");
 
         $setup = $setup_cfg;
-        if (!preg_match('/^\d+$/', $setup_cfg)) {
-            $setup_id = 0;
-            $decoded = json_decode($setup_cfg, true);
-
-            if (is_array($decoded)) {
-                if (isset($decoded['setup'])) {
-                    $setup_id = intval($decoded['setup']);
-                } else {
-                    foreach ($decoded as $row) {
-                        if (is_array($row) && isset($row['setup'])) {
-                            $setup_id = intval($row['setup']);
-                            if ($setup_id > 0) break;
-                        }
-                    }
-                }
-            }
-
-            // Fallback for lightly sanitized values like [{¨setup¨:1,¨qty¨:1}].
-            if ($setup_id <= 0 && preg_match('/setup[^0-9-]*([0-9]+)/i', $setup_cfg, $m)) {
-                $setup_id = intval($m[1]);
-            }
-
-            if ($setup_id > 0) {
-                $setup = strval($setup_id);
-            }
-        }
-
         if (!preg_match('/^\d+$/', $setup)) {
             throw new Exception("Invalid signals setup value: $setup_cfg");
         }

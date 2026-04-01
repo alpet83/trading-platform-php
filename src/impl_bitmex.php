@@ -120,7 +120,98 @@
 
         public function  Initialize() {
             parent::Initialize();
-            // TODO: check account code valid
+            $this->CheckApiKeyPrivileges();
+        }
+
+        public function CreateOrderList(string $name, bool $fixed = false): OrderList {
+            $list = parent::CreateOrderList($name, $fixed);
+            $this->UpgradeOrderNoColumnIfNeeded($list->TableName());
+            return $list;
+        }
+
+        private function UpgradeOrderNoColumnIfNeeded(string $table_name): void {
+            $order_tables = ['archive_orders', 'lost_orders', 'matched_orders', 'pending_orders'];
+            $base_name = strtolower((string)preg_replace('/^[a-z0-9]+__/', '', $table_name));
+            if (!in_array($base_name, $order_tables, true)) {
+                return;
+            }
+
+            $mysqli = $this->sqli();
+            $res = $mysqli->try_query("SHOW COLUMNS FROM `$table_name` LIKE 'order_no';");
+            if (!$res) {
+                $this->LogError("~C91#WARN(OrderNoUpgrade):~C00 can't inspect order_no in %s: %s", $table_name, $mysqli->error);
+                return;
+            }
+
+            $row = $res->fetch_array(MYSQLI_ASSOC);
+            if (!is_array($row) || !isset($row['Type'])) {
+                return;
+            }
+
+            $ctype = strtolower((string)$row['Type']);
+            if (false !== strpos($ctype, 'varchar(40)')) {
+                return;
+            }
+
+            if (false === strpos($ctype, 'bigint')) {
+                $this->LogMsg("~C93#INFO(OrderNoUpgrade):~C00 skip %s.order_no type %s", $table_name, $ctype);
+                return;
+            }
+
+            $this->LogMsg("~C91#WARN(OrderNoUpgrade):~C00 upgrading %s.order_no from %s to VARCHAR(40)", $table_name, $ctype);
+            if (!$mysqli->try_query("ALTER TABLE `$table_name` MODIFY COLUMN `order_no` VARCHAR(40) NOT NULL;")) {
+                $this->LogError("~C91#ERROR(OrderNoUpgrade):~C00 failed to alter %s.order_no: %s", $table_name, $mysqli->error);
+                return;
+            }
+
+            // Recreate index for consistency after type change.
+            $mysqli->try_query("ALTER TABLE `$table_name` DROP INDEX `order_no`;");
+            $mysqli->try_query("ALTER TABLE `$table_name` ADD INDEX `order_no` (`order_no`);");
+        }
+
+        private function CheckApiKeyPrivileges(): void {
+            $core = $this->TradeCore();
+            $json = $this->RequestPrivateAPI('api/v1/apiKey', ['count' => 1], 'GET');
+            if (false === $json || '' === $json) {
+                $core->LogError("~C91#WARN(CheckApiKey):~C00 /apiKey request failed or returned empty response");
+                return;
+            }
+            $data = json_decode($json, true);
+            if (!is_array($data)) {
+                $core->LogError("~C91#WARN(CheckApiKey):~C00 /apiKey response is not an array: %s", substr($json, 0, 200));
+                return;
+            }
+            $key_id = strtolower(trim($this->apiKey));
+            $entry  = null;
+            foreach ($data as $item) {
+                if (is_array($item) && strtolower(trim((string)($item['id'] ?? ''))) === $key_id) {
+                    $entry = $item;
+                    break;
+                }
+            }
+            if (null === $entry && count($data) > 0) {
+                $entry = $data[0]; // fallback: single-key response
+            }
+            if (null === $entry) {
+                $core->LogError("~C91#WARN(CheckApiKey):~C00 Could not find apiKey entry for key %s in response", $this->apiKey);
+                return;
+            }
+            $enabled     = (bool)($entry['enabled'] ?? false);
+            $permissions = (array)($entry['permissions'] ?? []);
+            $perms_str   = implode(', ', $permissions) ?: '(none)';
+            $core->LogMsg("~C96#INFO(CheckApiKey):~C00 key=%s enabled=%s permissions=[%s]",
+                $this->apiKey, $enabled ? 'true' : 'false', $perms_str);
+
+            $trade_enabled = (bool)$core->ConfigValue('trade_enabled', false);
+            if ($trade_enabled) {
+                $has_order = in_array('order', $permissions, true);
+                if (!$has_order) {
+                    $core->LogError("~C91#ERROR(CheckApiKey):~C00 trade_enabled=true but API key has no 'order' permission! Privileges: [%s]", $perms_str);
+                }
+                if (!$enabled) {
+                    $core->LogError("~C91#ERROR(CheckApiKey):~C00 trade_enabled=true but API key is disabled on BitMEX side!");
+                }
+            }
         }
 
         private function DetectAndLogKycBlock(string $api_path, string $json, string $headers = ''): void {
@@ -1026,8 +1117,15 @@
             $pmap = $this->pairs_map_rev;
             $now = time_ms();
 
-            if ($obj && is_array($obj)) {
+            if (is_array($obj)) {
                 file_put_contents('data/'.$file_prefix."_positions.json", $json);
+                if (0 === count($obj)) {
+                    if (date('i') === '00') {
+                        $hdr = isset($this->curl_response['headers']) ? json_encode($this->curl_response['headers']) : 'n/a';
+                        $this->LogMsg("~C93#WARN:~C00 private API positions returned empty list, headers: %s", $hdr);
+                    }
+                    return 0;
+                }
                 $result = [];
                 $skipped = [0, 0, 0];
                 foreach ($obj as $pos) {

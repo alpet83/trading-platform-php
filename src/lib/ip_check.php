@@ -1,5 +1,7 @@
 <?php
 
+require_once(__DIR__ . '/admin_ip.php');
+
 if (!function_exists('tp_hive_host_candidates')) {
   function tp_hive_host_candidates(): array {
     $hosts = [];
@@ -62,11 +64,7 @@ if (!function_exists('tp_resolve_host_ips')) {
 
 if (!function_exists('tp_load_allowed_ips')) {
     function tp_load_allowed_ips(): array {
-    $allow = [
-      'localhost' => true,
-      '127.0.0.1' => true,
-      '::1' => true,
-    ];
+    $allow = array_fill_keys(tp_runtime_local_ips(), true);
 
     $raw = trim((string)(getenv('ADMIN_IP_ALLOWLIST') ?: ''));
     if ($raw !== '') {

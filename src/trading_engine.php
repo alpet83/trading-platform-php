@@ -107,6 +107,10 @@ class TradingEngine {
         throw new Exception('TradingEngine.get_btc_price not implemented');
     }
 
+    public function CreateOrderList(string $name, bool $fixed = false): OrderList {
+        return new OrderList($this, $name, $fixed);
+    }
+
     public function sqli(string $kind = ''): ?mysqli_ex {
         $mysqli = $this->TradeCore()->CheckDBConnection($kind);
         if (is_null($mysqli) && '' == $kind)
@@ -433,11 +437,11 @@ class TradingEngine {
         check_mkdir(getcwd().'/data/'.$this->account_id);
         $this->LogMsg("~C96#PERF:~C00 Loading orders from DB...");      
         // $this->trade_core->LogMsg("Processing $cname -> Initialize for exchange {$this->exchange}...");
-        $this->archive_orders = new OrderList($this, 'archive_orders', true); // canceled without matching
-        $this->lost_orders    = new OrderList($this, 'lost_orders');
-        $this->matched_orders = new OrderList($this, 'matched_orders', true);
-        $this->pending_orders = new OrderList($this, 'pending_orders');
-        $this->other_orders   = new OrderList($this, 'other_orders');  // this trash need sometime checking, move to archive
+        $this->archive_orders = $this->CreateOrderList('archive_orders', true); // canceled without matching
+        $this->lost_orders    = $this->CreateOrderList('lost_orders');
+        $this->matched_orders = $this->CreateOrderList('matched_orders', true);
+        $this->pending_orders = $this->CreateOrderList('pending_orders');
+        $this->other_orders   = $this->CreateOrderList('other_orders');  // this trash need sometime checking, move to archive
 
         $strict_all = "WHERE account_id = {$this->account_id}";// load all pending orders for self 
         $this->archive_orders->LoadFromDB();      
@@ -796,12 +800,49 @@ class TradingEngine {
         $core = $this->TradeCore();
         $table = $this->TableName('ticker_history');
         if (0 === strpos($table, '#ERROR:')) {
-            static $warned_missing_table = false;
-            if (!$warned_missing_table) {
-                $core->LogMsg("~C31#WARN:~C00 SaveTickersToDB skipped, ticker_history table is unavailable: %s", $table);
-                $warned_missing_table = true;
+            static $create_attempted = false;
+            if (!$create_attempted) {
+                $create_attempted = true;
+                $df = $core->CheckDBConnection('datafeed');
+                if ($df) {
+                    // history DB stores unprefixed ticker_history for each exchange DB (e.g. bitmex.ticker_history)
+                    $create_sql = "CREATE TABLE IF NOT EXISTS `ticker_history` (\n"
+                        . "  `ts` timestamp(3) NOT NULL,\n"
+                        . "  `pair_id` int(11) NOT NULL,\n"
+                        . "  `ask` float NOT NULL,\n"
+                        . "  `bid` float NOT NULL,\n"
+                        . "  `last` float NOT NULL,\n"
+                        . "  `fair_price` float NOT NULL DEFAULT 0,\n"
+                        . "  `daily_vol` float NOT NULL,\n"
+                        . "  PRIMARY KEY (`ts`,`pair_id`)\n"
+                        . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+                    if ($df->try_query($create_sql)) {
+                        $core->LogMsg("~C92#INFO:~C00 created missing ticker_history table in %s", $this->history_db);
+                        $table = $this->TableName('ticker_history');
+                    } else {
+                        $core->LogError("~C91#ERROR:~C00 failed to create ticker_history in %s: %s", $this->history_db, $df->error);
+                    }
+                }
             }
-            return;
+
+            if (0 === strpos($table, '#ERROR:')) {
+                $df = $core->CheckDBConnection('datafeed');
+                if ($df) {
+                    $fallback_table = strtolower("{$this->history_db}.ticker_history");
+                    if ($df->table_exists($fallback_table) || $df->try_query("SELECT 1 FROM $fallback_table LIMIT 1")) {
+                        $table = $fallback_table;
+                    }
+                }
+            }
+
+            if (0 === strpos($table, '#ERROR:')) {
+                static $warned_missing_table = false;
+                if (!$warned_missing_table) {
+                    $core->LogMsg("~C31#WARN:~C00 SaveTickersToDB skipped, ticker_history table is unavailable: %s", $table);
+                    $warned_missing_table = true;
+                }
+                return;
+            }
         }
 
         $query = "INSERT IGNORE INTO $table (ts, `pair_id`, `ask`, `bid`, `last`, `fair_price`, `daily_vol`) VALUES\n";
@@ -1629,7 +1670,9 @@ class TradingEngine {
         if (!str_in($suffix, $this->exchange))        
             $table_qfn = strtolower($this->exchange.'__'.$suffix); 
 
-        if ( $mysqli->table_exists($table_qfn) && 'trading' == $mysqli->active_db() )  // fully qualified name typically in trading DB
+        // ticker_history must be resolved from dedicated history DB when configured.
+        $skip_legacy_prefixed_history = ('ticker_history' === $suffix && 'trading' !== $this->history_db);
+        if ( !$skip_legacy_prefixed_history && $mysqli->table_exists($table_qfn) && 'trading' == $mysqli->active_db() )  // fully qualified name typically in trading DB
             return $table_qfn;
         
         if ($this->history_db == $mysqli->active_db())  // historical DB in last implementation is dedicated, so not need exchange prefix

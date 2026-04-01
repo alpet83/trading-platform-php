@@ -41,20 +41,20 @@ function fetch_recent_subscribers(mysqli_ex $db): array {
 
     $stmt = $db->prepare($sql);
     if (!$stmt) {
-    return [];
+        return [];
     }
 
     $endpoint = 'get_signals.php';
     $stmt->bind_param('s', $endpoint);
     if (!$stmt->execute()) {
-    $stmt->close();
-    return [];
+        $stmt->close();
+        return [];
     }
 
     $result = $stmt->get_result();
     $rows = [];
     while ($row = $result->fetch_assoc()) {
-    $rows[] = $row;
+        $rows[] = $row;
     }
 
     $stmt->close();
@@ -74,11 +74,11 @@ if ($mysqli) {
     ensure_signals_stats_table($mysqli);
     $ping = $mysqli->query('SELECT 1');
     if (!$ping) {
-    $db_ok = false;
-    $db_note = 'db query failed';
+        $db_ok = false;
+        $db_note = 'db query failed';
     }
     if ($db_ok) {
-    $subs = fetch_recent_subscribers($mysqli);
+        $subs = fetch_recent_subscribers($mysqli);
     }
 }
 
@@ -141,16 +141,16 @@ if (!count($subs)) {
 } else {
     $y = $subs_y + 20;
     foreach ($subs as $idx => $row) {
-    $y += 32;
-    $ip = (string)$row['remote_ip'];
-    $host = (string)$row['remote_host'];
-    $last = (string)$row['last_seen'];
-    $hits = (int)$row['hits'];
-    $label = $host !== '' ? ($ip . ' / ' . $host) : $ip;
+        $y += 32;
+        $ip = (string)$row['remote_ip'];
+        $host = (string)$row['remote_host'];
+        $last = (string)$row['last_seen'];
+        $hits = (int)$row['hits'];
+        $label = $host !== '' ? ($ip . ' / ' . $host) : $ip;
 
-    $svg[] = "<circle cx=\"36\" cy=\"" . ($y - 6) . "\" r=\"9\" fill=\"#0ea5e9\"/>";
-    $svg[] = "<text x=\"56\" y=\"" . ($y - 2) . "\" class=\"sub-text\">" . esc_xml($label) . "</text>";
-    $svg[] = "<text x=\"720\" y=\"" . ($y - 2) . "\" class=\"sub-text\">last: " . esc_xml($last) . " UTC; hits: " . esc_xml((string)$hits) . "</text>";
+        $svg[] = "<circle cx=\"36\" cy=\"" . ($y - 6) . "\" r=\"9\" fill=\"#0ea5e9\"/>";
+        $svg[] = "<text x=\"56\" y=\"" . ($y - 2) . "\" class=\"sub-text\">" . esc_xml($label) . "</text>";
+        $svg[] = "<text x=\"720\" y=\"" . ($y - 2) . "\" class=\"sub-text\">last: " . esc_xml($last) . " UTC; hits: " . esc_xml((string)$hits) . "</text>";
     }
 }
 

@@ -34,6 +34,159 @@
     return rtrim($base, '/').'/bot/get_vwap.php';
     }
 
+    function ensure_ticker_prices_map_table($mysqli): void {
+    static $ready = false;
+    if ($ready) {
+        return;
+    }
+
+    $query = "CREATE TABLE IF NOT EXISTS `ticker_prices_map` (\n"
+        . " `pair_id` INT NOT NULL,\n"
+        . " `symbol` VARCHAR(32) NOT NULL,\n"
+        . " `base_symbol` VARCHAR(16) NOT NULL,\n"
+        . " `last_price` DOUBLE NOT NULL DEFAULT 0,\n"
+        . " `source` VARCHAR(32) NOT NULL DEFAULT 'coingecko',\n"
+        . " `ts_updated` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
+        . " PRIMARY KEY (`pair_id`),\n"
+        . " KEY `idx_base_symbol` (`base_symbol`),\n"
+        . " KEY `idx_ts_updated` (`ts_updated`)\n"
+        . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+    $mysqli->try_query($query);
+    $ready = true;
+    }
+
+    function normalize_pair_base_symbol(string $pair): string {
+    $pair = strtoupper(trim($pair));
+    foreach (['USDT', 'USD', 'PERP', 'USDC'] as $suffix) {
+        if (str_ends_with($pair, $suffix) && strlen($pair) > strlen($suffix)) {
+            return substr($pair, 0, -strlen($suffix));
+        }
+    }
+    return $pair;
+    }
+
+    function resolve_coingecko_endpoint(): string {
+    $url = trim((string)(getenv('SIGNALS_PRICE_FEED_URL') ?: getenv('COINGECKO_PRICE_URL') ?: ''));
+    if ($url !== '') {
+        return $url;
+    }
+    return 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false';
+    }
+
+    function fetch_coingecko_price_map(): array {
+    $endpoint = resolve_coingecko_endpoint();
+    $json = curl_http_request($endpoint);
+    $rows = json_decode($json, true);
+    if (!is_array($rows)) {
+        return [];
+    }
+
+    $map = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $sym = strtoupper(trim((string)($row['symbol'] ?? '')));
+        $price = floatval($row['current_price'] ?? 0);
+        if ($sym === '' || $price <= 0) continue;
+        $map[$sym] = $price;
+    }
+    return $map;
+    }
+
+    function maybe_refresh_ticker_prices_map($mysqli, $id_map, int $refresh_ttl = 180): void {
+    static $refresh_checked = false;
+    if ($refresh_checked) {
+        return;
+    }
+    $refresh_checked = true;
+
+    ensure_ticker_prices_map_table($mysqli);
+
+    $lock_file = '/tmp/ticker_prices_map_refresh.ts';
+    if (is_file($lock_file)) {
+        $last = intval(@file_get_contents($lock_file));
+        if ($last > 0 && (time() - $last) < $refresh_ttl) {
+            return;
+        }
+    }
+
+    $price_by_symbol = fetch_coingecko_price_map();
+    if (count($price_by_symbol) === 0) {
+        return;
+    }
+
+    $ts_now = date(SQL_TIMESTAMP);
+    foreach ($id_map as $pair_id => $pair) {
+        $pair_id = intval($pair_id);
+        if ($pair_id <= 0) continue;
+
+        $base_symbol = normalize_pair_base_symbol((string)$pair);
+        if (!isset($price_by_symbol[$base_symbol])) continue;
+
+        $price = floatval($price_by_symbol[$base_symbol]);
+        if ($price <= 0) continue;
+
+        $pair_sql = sql_quote($mysqli, (string)$pair);
+        $base_sql = sql_quote($mysqli, $base_symbol);
+        $query = "INSERT INTO `ticker_prices_map` (`pair_id`, `symbol`, `base_symbol`, `last_price`, `source`, `ts_updated`) VALUES "
+            . "($pair_id, $pair_sql, $base_sql, $price, 'coingecko', '$ts_now') "
+            . "ON DUPLICATE KEY UPDATE `symbol` = $pair_sql, `base_symbol` = $base_sql, `last_price` = $price, `source` = 'coingecko', `ts_updated` = '$ts_now'";
+        $mysqli->try_query($query);
+    }
+
+    @file_put_contents($lock_file, strval(time()), LOCK_EX);
+    }
+
+    function load_cached_ticker_prices($mysqli, $id_map, int $max_age = 600): array {
+    ensure_ticker_prices_map_table($mysqli);
+    maybe_refresh_ticker_prices_map($mysqli, $id_map);
+
+    $rows = $mysqli->select_rows('pair_id,last_price,ts_updated', 'ticker_prices_map', "WHERE ts_updated >= (UTC_TIMESTAMP() - INTERVAL $max_age SECOND)", MYSQLI_ASSOC);
+    $prices = [];
+    if (is_array($rows)) {
+        foreach ($rows as $row) {
+            $pair_id = intval($row['pair_id'] ?? 0);
+            $price = floatval($row['last_price'] ?? 0);
+            if ($pair_id > 0 && $price > 0) {
+                $prices[$pair_id] = $price;
+            }
+        }
+    }
+    return $prices;
+    }
+
+    function resolve_reference_price_for_pair(int $pair_id, string $pair, array $cached_prices, array $vwap_prices, array $cm_symbols, int $btc_pair_id = 0, int $eth_pair_id = 0): float {
+    if (isset($cached_prices[$pair_id]) && $cached_prices[$pair_id] > 0) {
+        return floatval($cached_prices[$pair_id]);
+    }
+
+    if (isset($vwap_prices[$pair_id]) && $vwap_prices[$pair_id] > 0) {
+        return floatval($vwap_prices[$pair_id]);
+    }
+
+    if (isset($cm_symbols[$pair_id]) && isset($cm_symbols[$pair_id]->last_price)) {
+        return floatval($cm_symbols[$pair_id]->last_price);
+    }
+
+    if ('ETHBTC' === $pair) {
+        $eth = floatval($cached_prices[$eth_pair_id] ?? 0);
+        $btc = floatval($cached_prices[$btc_pair_id] ?? 0);
+        if ($eth > 0 && $btc > 0) {
+            return $eth / $btc;
+        }
+
+        if (isset($cm_symbols[$btc_pair_id]) && isset($cm_symbols[$eth_pair_id])) {
+            $eth = floatval($cm_symbols[$eth_pair_id]->last_price ?? 0);
+            $btc = floatval($cm_symbols[$btc_pair_id]->last_price ?? 0);
+            if ($eth > 0 && $btc > 0) {
+                return $eth / $btc;
+            }
+        }
+    }
+
+    return 0;
+    }
+
     function sig_param_set($mysqli, $table_name, $setup, string $param, string $field, mixed $value, int $flag, &$touched) {
     $id = rqs_param($param, -1) * 1;
     if ($id <= 0) return false;
@@ -165,11 +318,17 @@
         }
 
         // РЈСЃС‚Р°РЅРѕРІРєР° SL Рё TP РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
-        if ($id_added && isset($cm_symbols[$pair_id])) {
-            $last_price = $cm_symbols[$pair_id]->last_price;
+        if ($id_added) {
+            $cached_prices = load_cached_ticker_prices($mysqli, array_flip($pairs_map));
+            $last_price = floatval($cached_prices[$pair_id] ?? 0);
+            if ($last_price <= 0 && isset($cm_symbols[$pair_id])) {
+                $last_price = floatval($cm_symbols[$pair_id]->last_price ?? 0);
+            }
+            if ($last_price > 0) {
             $tp_target = $last_price * 10;
             $mysqli->try_query("UPDATE $table_name\n SET stop_loss = $last_price, take_profit = $tp_target\n WHERE (id = $id_added) AND (setup = $setup);");
             echo "#OK: assigned SL price = $last_price\n";
+            }
         }
 
         return true;
@@ -280,11 +439,17 @@
             file_add_contents(SIGNALS_LOG, tss()."#MODIFY: [$query], affected rows $ar, source = $source\n");
         }
 
-        if ($id_added && isset($cm_symbols[$pair_id])) {
-            $last_price = $cm_symbols[$pair_id]->last_price;
+        if ($id_added) {
+            $cached_prices = load_cached_ticker_prices($mysqli, array_flip($pairs_map));
+            $last_price = floatval($cached_prices[$pair_id] ?? 0);
+            if ($last_price <= 0 && isset($cm_symbols[$pair_id])) {
+                $last_price = floatval($cm_symbols[$pair_id]->last_price ?? 0);
+            }
+            if ($last_price > 0) {
             $tp_target = $last_price * 10;
             $mysqli->try_query("UPDATE $table_name\n SET stop_loss = $last_price, take_profit = $tp_target\n WHERE (id = $id_added) AND (setup = $setup);");
             echo "#OK: assigned SL price = $last_price\n";
+            }
         }
 
         return true;
@@ -473,6 +638,8 @@
 
     log_msg("#PERF: dumping signals");
 
+    $cached_prices = load_cached_ticker_prices($mysqli, $id_map);
+
     foreach ($rows as $row) {
         list($id, $ts, $signal_no, $is_buy, $pair_id, $mult, $limit, $tp, $sl, $ttl, $flags, $comment) = array_values($row);
         $ts_map[$pair_id] = $ts;
@@ -483,18 +650,10 @@
         $is_buy = $is_buy > 0;
         $side = $is_buy ? 'BUY' : 'SELL';
         $key   = "$pair_id:$signal_no";
-        $price = 0;
-
-        if (isset($cm_symbols[$pair_id])) {
-            $price = $cm_symbols[$pair_id]->last_price;
-        } elseif ('ETHBTC' == $pair && isset($cm_symbols[$btc_pair_id]) && isset($cm_symbols[$eth_pair_id])) {
-            $price = sprintf('%.4f', $cm_symbols[$eth_pair_id]->last_price / $cm_symbols[$btc_pair_id]->last_price);
-        } else {
+        $price = resolve_reference_price_for_pair($pair_id, $pair, $cached_prices, $vwap_prices, $cm_symbols, $btc_pair_id, $eth_pair_id);
+        if ($price <= 0) {
             $sym_errs ++;
         }
-
-        if (isset($vwap_prices[$pair_id]))
-            $price = $vwap_prices[$pair_id];
 
         $coef = check_tpsl($mysqli, $table_name, $setup, $id, $is_buy, $price, $tp, $sl, $flags, $pair);
         $amount = round($mult * $coef);

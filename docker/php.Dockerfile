@@ -18,7 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libmariadb-dev \
     libonig-dev \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
  && rm -rf /var/lib/apt/lists/*
+
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
 
 RUN docker-php-ext-install -j"$(nproc)" \
     curl \
@@ -26,7 +32,8 @@ RUN docker-php-ext-install -j"$(nproc)" \
     mbstring \
     pcntl \
     sockets \
-    bcmath
+    bcmath \
+    gd
 
 # Xdebug for debugging and error handling
 RUN pecl install xdebug && docker-php-ext-enable xdebug

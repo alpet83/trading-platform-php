@@ -6,6 +6,7 @@
         Базовый класс TradingCore определяет торговое ядро, которое управляет рабочим циклом, включая запрос данных с серверов и команды движку по управлению заявками
     */
     require_once 'lib/common.php';
+    require_once 'trading_common.php';
     require_once 'lib/db_tools.php';
     require_once 'lib/esctext.php';
     require_once 'lib/basic_logger.php';

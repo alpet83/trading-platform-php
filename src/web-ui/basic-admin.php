@@ -30,12 +30,12 @@ function normalize_signals_setup_cfg(array $cfg, string $fallback): array {
     $setupId = intval($cfg['setup_id']);
     }
 
-    if ($setupId > 0) {
-    $cfg['signals_setup'] = json_encode([['setup' => $setupId, 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+    if ($setupId >= 0) {
+    $cfg['signals_setup'] = strval($setupId);
     } elseif (isset($cfg['signals_setup'])) {
     $raw = trim((string)$cfg['signals_setup']);
     if (preg_match('/^\d+$/', $raw)) {
-      $cfg['signals_setup'] = json_encode([['setup' => intval($raw), 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+      $cfg['signals_setup'] = strval(intval($raw));
     } elseif ($raw === '') {
       $cfg['signals_setup'] = $fallback;
     }
@@ -48,31 +48,18 @@ function normalize_signals_setup_cfg(array $cfg, string $fallback): array {
 function extract_setup_id_from_cfg(string $signalsSetup): int {
     $raw = trim($signalsSetup);
     if ($raw === '') {
-    return 1;
+    return 0;
     }
     if (preg_match('/^\d+$/', $raw)) {
     return intval($raw);
     }
-    $decoded = json_decode($raw, true);
-    if (is_array($decoded)) {
-    if (isset($decoded['setup'])) {
-      return max(1, intval($decoded['setup']));
-    }
-    foreach ($decoded as $row) {
-      if (is_array($row) && isset($row['setup'])) {
-        return max(1, intval($row['setup']));
-      }
-    }
-    }
-    if (preg_match('/setup[^0-9-]*([0-9]+)/i', $raw, $m)) {
-    return max(1, intval($m[1]));
-    }
-    return 1;
+    // Strict mode: setup in config is numeric-only.
+    return 0;
 }
 
 $remote = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $allowed = is_local_client($remote);
-$defaultSignalsSetup = '[{"setup":1,"qty":1}]';
+$defaultSignalsSetup = '0';
 $defaultSignalsFeedUrl = trim((string)(getenv('SIGNALS_FEED_URL') ?: getenv('BOT_SIGNALS_FEED_URL') ?: 'http://signals-legacy/'));
 if ($defaultSignalsFeedUrl === '') {
     $defaultSignalsFeedUrl = 'http://signals-legacy/';
@@ -533,7 +520,7 @@ $formCfg = [
             <input name="config[max_limit_distance]" value="<?php echo htmlspecialchars((string)$formCfg['max_limit_distance'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
           <label>Signals Setup ID <span class="muted">(simple mode, auto-syncs JSON)</span>
-            <input name="config[setup_id]" type="number" min="1" value="<?php echo intval($formCfg['setup_id']); ?>" <?php echo $allowed ? '' : 'disabled'; ?>>
+            <input name="config[setup_id]" type="number" min="0" value="<?php echo intval($formCfg['setup_id']); ?>" <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
           <label>Signals Feed URL <span class="muted">(defaults from env SIGNALS_FEED_URL)</span>
             <input name="config[signals_feed_url]" value="<?php echo htmlspecialchars((string)$formCfg['signals_feed_url'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="http://signals-legacy/" <?php echo $allowed ? '' : 'disabled'; ?>>

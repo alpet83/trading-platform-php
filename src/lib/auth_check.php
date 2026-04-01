@@ -38,6 +38,20 @@ if (!function_exists('tp_resolve_rights_host')) {
     }
 }
 
+if (!function_exists('tp_is_private_network_ip')) {
+    function tp_is_private_network_ip(string $remote): bool {
+        $privateRanges = ['127.', '10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
+            '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.',
+            '172.27.', '172.28.', '172.29.', '172.30.', '172.31.'];
+        foreach ($privateRanges as $prefix) {
+            if (strpos($remote, $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 if (!function_exists('tp_fetch_user_rights_by_telegram')) {
     function tp_fetch_user_rights_by_telegram(int $telegram_id): ?string {
         if ($telegram_id <= 0) {

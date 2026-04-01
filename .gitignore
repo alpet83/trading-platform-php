@@ -7,6 +7,16 @@ secrets/
 !secrets/db_config.php.example
 !secrets/signals_db_config.php.example
 
+# Runtime-generated reports and documentation
+src/reports/
+docs/cm_symbols_dependency_context_*.md
+TODO*.md
+todo*.md
+
+# Test files in root (belong in scripts/replication/ in runtime)
+test-ha-replication*.ps1
+test-ha-replication*.sh
+
 # Runtime-generated compatibility files from alpet-libs-php.
 src/common.php
 src/esctext.php

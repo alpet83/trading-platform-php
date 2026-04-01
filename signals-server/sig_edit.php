@@ -63,12 +63,8 @@
     $id_added = 0;
     $minute = date('i') * 1;
 
-    $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__; // TODO: use auth token with cookies
-    $setup = rqs_param('setup', 0);
-    if ($setup == 0) {
-        if (preg_match('/(\d+)/', $script, $m) && count($m) > 1)
-            $setup = $m[1];
-    }
+    $setup_raw = (string)rqs_param('setup', '0');
+    $setup = preg_match('/^\d+$/', $setup_raw) ? intval($setup_raw) : 0;
 
     // Validate setup is within the user's allowed range (JSON API path, non-admin only)
     if ($output_format === 'json' && !str_in($user_rights, 'admin')) {

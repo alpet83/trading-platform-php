@@ -6,12 +6,14 @@ require_once('api_helper.php');
 
 function normalize_signals_setup(array $cfg): array {
     $setupId = intval($cfg['setup_id'] ?? 0);
-    if ($setupId > 0) {
-        $cfg['signals_setup'] = json_encode([['setup' => $setupId, 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+    if ($setupId >= 0) {
+        $cfg['signals_setup'] = strval($setupId);
     } elseif (isset($cfg['signals_setup'])) {
         $raw = trim((string)$cfg['signals_setup']);
         if (preg_match('/^\d+$/', $raw)) {
-            $cfg['signals_setup'] = json_encode([['setup' => intval($raw), 'qty' => 1]], JSON_UNESCAPED_UNICODE);
+            $cfg['signals_setup'] = strval(intval($raw));
+        } elseif ($raw === '') {
+            $cfg['signals_setup'] = '0';
         }
     }
     unset($cfg['setup_id']);

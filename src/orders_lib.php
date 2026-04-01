@@ -1044,7 +1044,7 @@
             foreach ($rows as $row) {
                 if (isset($row['id'])) {
                     $rcnt ++;
-                    $id = $row['id'];
+                    $id = (int)$row['id'];
                     if ($id <= 0) continue;
                     if (isset($this->orders[$id])) {
                         $skipped ++;

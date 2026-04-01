@@ -2,6 +2,22 @@
     $cm_map = [];
     $cm_symbols = [];  
 
+    function resolve_cm_symbols_url(): string {
+      $candidates = [
+        getenv('SIGNALS_CM_SYMBOLS_URL') ?: '',
+        getenv('CM_SYMBOLS_URL') ?: '',
+      ];
+
+      foreach ($candidates as $candidate) {
+        $candidate = trim((string)$candidate);
+        if ($candidate !== '') {
+          return $candidate;
+        }
+      }
+
+      return '';
+    }
+
     function load_symbols(string $json, string $source = '', float $elps = 0 )  {
       global $cm_map, $curl_resp_header;
       $src = json_decode($json);
@@ -21,9 +37,14 @@
         printf("<!-- load_symbols: from $source added/updated $count symbols, total = %d  in %.2f seconds; headers:\n $curl_resp_header-->\n", count($cm_map), $elps);
     }  
 
-    $t_start = pr_time();
-    $json0 = curl_http_request('http://localhost/cm_symbols.php');
-    $elps0 = pr_time() - $t_start;
+    $json0 = '[]';
+    $elps0 = 0.0;
+    $cm_symbols_url = resolve_cm_symbols_url();
+    if ($cm_symbols_url !== '') {
+      $t_start = pr_time();
+      $json0 = curl_http_request($cm_symbols_url);
+      $elps0 = pr_time() - $t_start;
+    }
     $t_start = pr_time();
     $json1 = '[]'; // curl_http_request('http://vm-office.vpn/cm_symbols.php');
     $elps1 = pr_time() - $t_start;

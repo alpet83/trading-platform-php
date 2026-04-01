@@ -1,5 +1,6 @@
 <?php
     require_once("lib/common.php");
+    require_once("trading_common.php");
     require_once("lib/esctext.php");
     require_once("lib/db_tools.php");
     require_once("lib/db_config.php");

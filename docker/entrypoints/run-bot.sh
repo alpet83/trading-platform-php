@@ -34,8 +34,13 @@ require_file /app/src/lib/db_tools.php
 prepare_log_layout() {
   log_root="/app/var/log/logs.td"
   day_dir="$log_root/by-day/$(date -u +%F)"
+  day_alias="/$(date -u +%F)"
 
   mkdir -p "$day_dir"
+
+  # Some runtime relink paths may collapse to "/YYYY-MM-DD".
+  # Keep that alias pointed to the mounted day directory to avoid writing logs outside /app/var/log.
+  ln -sfn "$day_dir" "$day_alias"
 
   # Keep logger-managed symlinks (core.log, engine.log, etc.) in place,
   # but archive historical timestamped files out of the flat root.
