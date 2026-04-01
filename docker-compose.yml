@@ -77,38 +77,21 @@ services:
       - ./var/data:/app/var/data
       - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
 
-  bot:
-    profiles: ["standalone"]  # Standalone instance disabled by default; bots-hive is the preferred service
-    build:
-      context: .
-      dockerfile: docker/php.Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-bot
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    container_name: ${COMPOSE_PROJECT_NAME:-trading-platform-php}-phpmyadmin
     restart: unless-stopped
     depends_on:
       mariadb:
         condition: service_healthy
-    command: ["/usr/local/bin/run-bot.sh"]
     environment:
       TZ: ${TZ:-UTC}
-      BOT_IMPL_NAME: ${BOT_IMPL_NAME:-bitmex_bot}
-      SIGNALS_API_URL: ${BOT_SIGNALS_API_URL:-http://signals-legacy/}
-      SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://signals-legacy/}
-      PHP_INCLUDE_PATH: ${PHP_INCLUDE_PATH:-.:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib}
-      DB_LOCAL_HOST: ${DB_LOCAL_HOST:-mariadb}
-      DB_REMOTE_HOST: ${DB_REMOTE_HOST:-mariadb}
-      REDUNDANCY_MODE: ${REDUNDANCY_MODE:-single}
-      BMX_TESTNET: ${BMX_TESTNET:-1}
-      BMX_API_BASE_URL: ${BMX_API_BASE_URL:-}
-      PHP_ERROR_LOG_FILE: ${BOT_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_bot.log}
-    volumes:
-      - ./src:/app/src
-      - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
-      - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
-      - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
-      - ./var/log:/app/var/log
-      - ./var/tmp:/app/var/tmp
-      - ./var/data:/app/var/data
-      - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+      PMA_HOST: ${PMA_HOST:-mariadb}
+      PMA_PORT: ${PMA_PORT:-3306}
+      PMA_ARBITRARY: ${PMA_ARBITRARY:-1}
+      UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-64M}
+    ports:
+      - "${PMA_PUBLISH_IP:-127.0.0.1}:${PMA_HTTP_PORT:-8089}:80"
 
   gpg-agent:
     profiles: ["pass"]
