@@ -20,7 +20,7 @@
     error_reporting(E_ERROR | E_WARNING | E_PARSE);
     if (!is_object($mysqli))
         error_exit("~C91#FATAL:~C00 DB `trading` inaccessible!");
- 
+    
     function process_send(mixed $res): bool {
         global $mysqli, $history;
         // добавление меток сообщений в лог, чтобы их потом удалить из чата

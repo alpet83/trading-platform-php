@@ -120,16 +120,16 @@
         $vol = floor($vol * $mult) / $mult;    
         return round($vol /= $price, $qp);    
     }
-  
-  
-  /*
-  12.02.2021
-   класс TradingCore - интерфейс абстрактного механизма, для достижения целевых позиций по заданным в настройках валютным парам.
-   Порожденные от него классы, как предполагается, будут реализовывать логику для конкретных бирж, тогда как наследники движка - взаимодействие с API.
+    
+    
+    /*
+    12.02.2021
+    класс TradingCore - интерфейс абстрактного механизма, для достижения целевых позиций по заданным в настройках валютным парам.
+    Порожденные от него классы, как предполагается, будут реализовывать логику для конкретных бирж, тогда как наследники движка - взаимодействие с API.
 
-  */
+    */
 
-  class TradingCore {
+    class TradingCore {
     
     use DBClientApp, TradeLogging, TradingLoop, TradeReporting;
 
@@ -189,7 +189,7 @@
     private    $pid_file_handle = null;
     private    string $wdt_file = '';
     
- 
+    
     private    $notified = [];
 
 
@@ -708,7 +708,7 @@
         }   
 
     }
-  
+    
     private function last_batch_price(int $pair_id) {
       $engine = $this->Engine();      
       $exch = $engine->exchange;  
@@ -1211,8 +1211,8 @@
       $this->active = false;
       $this->aborted = true;      
     }
-  
-  };
+    
+    };
 
 
 ?>

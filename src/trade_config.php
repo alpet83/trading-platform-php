@@ -1,7 +1,7 @@
 <?php
 /* класс TradeConfig - загружает и сохраняет настройки торговли в БД.
      Определяется какие инструменты, каким образом могут торговаться.
-  */
+    */
 
 class TradeConfig implements ArrayAccess {
     public     $raw_config     = [];
@@ -138,4 +138,4 @@ class TradeConfig implements ArrayAccess {
       return false;
     }
 
-  }
+    }

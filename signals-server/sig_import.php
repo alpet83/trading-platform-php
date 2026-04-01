@@ -53,7 +53,7 @@
     $mysqli = init_remote_db('trading');
     $table_name = 'signals';
     $symbol = $params->symbol;        
-   
+    
     $others_col = $mysqli->select_col("CONCAT(COLUMN_NAME, '=\"$symbol\"')", 'INFORMATION_SCHEMA.COLUMNS',  "WHERE TABLE_NAME = 'pairs_map' AND COLUMN_NAME LIKE '%pair'") ;
 
     log_cmsg("~C33#COLUMNS:~C00 %s", json_encode($others_col));

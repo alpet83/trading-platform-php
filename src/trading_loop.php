@@ -6,11 +6,11 @@
     }
 
 
-   /** 
+    /** 
     * Трейт торгового цикла, подключаемый к торговому ядру (TradingCore).
     * Содержит критические методы, логики поддержания целевой позиции.
     */
-   trait TradingLoop {
+    trait TradingLoop {
 
         public     $trade_enabled = false;
         protected  $trade_skip  = 10;

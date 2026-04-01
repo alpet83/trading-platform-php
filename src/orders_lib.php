@@ -2,40 +2,40 @@
     include_once(__DIR__.'/lib/common.php');
     include_once(__DIR__.'/lib/db_tools.php');
 
-  define ('Y', true);
-  define ('N', false);  
+    define ('Y', true);
+    define ('N', false);  
 
-  define ( 'OST_NEW',       'new');
-  define ( 'OST_ACTIVE',    'active');  
-  define ( 'OST_CANCELED',  'canceled');
-  define ( 'OST_EXPIRED',   'expired');
-  define ( 'OST_FILLED',    'filled');
-  define ( 'OST_INVALID',   'invalid');
-  define ( 'OST_LOST',      'lost');  
-  define ( 'OST_PROTO',     'proto');
-  define ( 'OST_REJECTED',  'rejected');
-  define ( 'OST_TOUCHED',   'partially_filled');
-
-
-  define('ARCHIVED_STATUSES', [OST_LOST, OST_EXPIRED, 'expired_in_match', OST_CANCELED, OST_REJECTED, OST_INVALID]);
-  define('FILLED_STATUSES', [OST_FILLED, 'matched']);
-  define('PENDING_STATUSES', [OST_NEW, OST_ACTIVE, OST_PROTO, 'pending', OST_TOUCHED]);
+    define ( 'OST_NEW',       'new');
+    define ( 'OST_ACTIVE',    'active');  
+    define ( 'OST_CANCELED',  'canceled');
+    define ( 'OST_EXPIRED',   'expired');
+    define ( 'OST_FILLED',    'filled');
+    define ( 'OST_INVALID',   'invalid');
+    define ( 'OST_LOST',      'lost');  
+    define ( 'OST_PROTO',     'proto');
+    define ( 'OST_REJECTED',  'rejected');
+    define ( 'OST_TOUCHED',   'partially_filled');
 
 
-  define ('OFLAG_RISING',   0x001);  // позиция открывается этой заявкой, по крайней мере на момент выставления
-  define ('OFLAG_ACTIVE',   0x002);  // заявка активна
-  define ('OFLAG_LIMIT',    0x010);  // такие заявки ММ не должен двигать никогда, их цена фиксируется
-  define ('OFLAG_OUTBOUND', 0x020);
-  define ('OFLAG_DIRECT',   0x040);
-  define ('OFLAG_SHARED',   0x080);
-  define ('OFLAG_FIXED',    0x100); // уже не находится в списке открытых, значит ёк
-  define ('OFLAG_GRID',     0x200); // для сеточных ботов 
-  define ('OFLAG_RESTORED', 0x400); // вытащен из API, при восстановлении БД, вероятно старый
-  define ('OFLAG_CONFLICT', 0x800); // id заявки заменен на новый, из-за конфликта с другой
-  define ('COMMENT_MAX_LEN', 64);
-  
+    define('ARCHIVED_STATUSES', [OST_LOST, OST_EXPIRED, 'expired_in_match', OST_CANCELED, OST_REJECTED, OST_INVALID]);
+    define('FILLED_STATUSES', [OST_FILLED, 'matched']);
+    define('PENDING_STATUSES', [OST_NEW, OST_ACTIVE, OST_PROTO, 'pending', OST_TOUCHED]);
 
-  enum OrderStatusCode: int {
+
+    define ('OFLAG_RISING',   0x001);  // позиция открывается этой заявкой, по крайней мере на момент выставления
+    define ('OFLAG_ACTIVE',   0x002);  // заявка активна
+    define ('OFLAG_LIMIT',    0x010);  // такие заявки ММ не должен двигать никогда, их цена фиксируется
+    define ('OFLAG_OUTBOUND', 0x020);
+    define ('OFLAG_DIRECT',   0x040);
+    define ('OFLAG_SHARED',   0x080);
+    define ('OFLAG_FIXED',    0x100); // уже не находится в списке открытых, значит ёк
+    define ('OFLAG_GRID',     0x200); // для сеточных ботов 
+    define ('OFLAG_RESTORED', 0x400); // вытащен из API, при восстановлении БД, вероятно старый
+    define ('OFLAG_CONFLICT', 0x800); // id заявки заменен на новый, из-за конфликта с другой
+    define ('COMMENT_MAX_LEN', 64);
+    
+
+    enum OrderStatusCode: int {
     case PROTO = 0;
     case ACTIVE = 1;
     case FILLED = 2;
@@ -47,9 +47,9 @@
     case INVALID = 8;   
     
     case UNKNOW = -1;
-  }
+    }
 
-  function StatusCode(string $st) {
+    function StatusCode(string $st) {
     if (stripos($st, OST_EXPIRED) !== false)
         return OrderStatusCode::EXPIRED;
         
@@ -66,17 +66,17 @@
      case OST_INVALID: return OrderStatusCode::INVALID;      
       default: return OrderStatusCode::UNKNOW;
     }
-  }
+    }
 
-  function trim_comment(string $s) {
+    function trim_comment(string $s) {
     return substr($s, 0,   COMMENT_MAX_LEN);  
-  }
+    }
 
 
-  class OrderInfo {
+    class OrderInfo {
     protected $raw_set = null;
     protected $owner = null;  // OrderList
-  
+    
 
     public    $exec_attempts = 1;
     public    $registered = false; // database status
@@ -763,14 +763,14 @@
             
         return $result;  
     }
-  };
+    };
 
-  /* класс OrderList реализует массив заявок, с возможностью фильтрации, сохранения и загрузки в/из БД.
+    /* класс OrderList реализует массив заявок, с возможностью фильтрации, сохранения и загрузки в/из БД.
      Индексом подразумевается id из базы данных, а вовсе не порядковый номер!
 
-  */
+    */
 
-  class OrderList implements ArrayAccess, Countable, Iterator {
+    class OrderList implements ArrayAccess, Countable, Iterator {
     protected $orders = [];
     protected $trade_engine = null;
     protected $trade_core   = null;    // cached var!
@@ -888,7 +888,7 @@
             $core->LogMsg("~C97 #SHOW_CREATE_TABLE:~C00 %s, attempt to upgrade failed: %s", $line, $mysqli->error);
             throw new Exception("#FATAL: can't upgrade table $table_name ");             
         }        
-   }
+    }
 
 
 
@@ -1308,9 +1308,9 @@
          unset($this[$info->id]);
     }
 
-  };
+    };
 
-  class OrdersBlock extends OrderList {
+    class OrdersBlock extends OrderList {
 
     public $buy_side = false;
     public $interval = 0.1; // in percent   
@@ -1326,6 +1326,6 @@
       return 0;
     }
 
-  }
+    }
 
 ?>

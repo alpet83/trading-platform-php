@@ -94,4 +94,4 @@ class PositionFeed {
       return $this->trade_core->Engine();
     }
 
-  }
+    }

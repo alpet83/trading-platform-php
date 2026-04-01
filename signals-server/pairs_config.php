@@ -44,22 +44,22 @@
 ?>
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <TITLE><?php echo $title; ?></TITLE>   
-  <style type='text/css'>
-   table  { border-collapse: collapse; } 
-   td, th { padding-left: 4pt;
+    <HEAD>
+    <TITLE><?php echo $title; ?></TITLE>   
+    <style type='text/css'>
+    table  { border-collapse: collapse; } 
+    td, th { padding-left: 4pt;
            padding-right: 4pt;
               max-height: 24pt; 
           } 
-   table { 
+    table { 
         border-collapse: collapse;
-   }     
-  </style>  
-  <link rel="stylesheet" href="css/dark-theme.css">
-  <link rel="stylesheet" href="css/apply-theme.css">
-  <link rel="stylesheet" href="css/colors.css">     
-  <script type="text/javascript">
+    }     
+    </style>  
+    <link rel="stylesheet" href="css/dark-theme.css">
+    <link rel="stylesheet" href="css/apply-theme.css">
+    <link rel="stylesheet" href="css/colors.css">     
+    <script type="text/javascript">
     function EditValue(id, key, def) {
       document.location  = "<?php echo $_SERVER['SCRIPT_NAME']; ?>?edit=" + key + "&id=" + id + "&text=" + prompt("Enter " + key, def);
     }
@@ -68,9 +68,9 @@
         if (id > 0 && cr >= 0)
             document.location  = "<?php echo $_SERVER['SCRIPT_NAME']; ?>?edit=contract_ratio&id=" + id + "&text=" + cr;
     }
-  </script>  
-  </HEAD>  
-  <BODY>    
+    </script>  
+    </HEAD>  
+    <BODY>    
     <TABLE BORDER=1 >        
     <TR><TH>Pair ID<TH>Symbol<TH>Bitfinex<TH>BitMEX<TH>Binance<TH>Deribit<TH>Color<TH>Ratio</TR> 
 <?php

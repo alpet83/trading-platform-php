@@ -1,43 +1,43 @@
- <?php
-  include_once('lib/common.php');
-  include_once('lib/db_tools.php');
-  include_once('lib/db_config.php');
+<?php
+    include_once('lib/common.php');
+    include_once('lib/db_tools.php');
+    include_once('lib/db_config.php');
 
-  define('SATOSHI_MULT', 0.00000001);
+    define('SATOSHI_MULT', 0.00000001);
 
-  $exch = rqs_param('exchange', 'bitfinex');  
-  
-  // TODO: load pairs map total
-  $pairs_map[1] = 'btcusd';
-  $pairs_map[3] = 'ethusd';
+    $exch = rqs_param('exchange', 'bitfinex');  
+    
+    // TODO: load pairs map total
+    $pairs_map[1] = 'btcusd';
+    $pairs_map[3] = 'ethusd';
 
-  define('PAIRS_MAP_CACHE', 'pairs_map.last.json');
+    define('PAIRS_MAP_CACHE', 'pairs_map.last.json');
 
-  if (!file_exists(PAIRS_MAP_CACHE) || time() - filemtime(PAIRS_MAP_CACHE) > 3600 * 24 * 30) {
+    if (!file_exists(PAIRS_MAP_CACHE) || time() - filemtime(PAIRS_MAP_CACHE) > 3600 * 24 * 30) {
      $pmap = file_get_contents('https://vps.alpet.me/pairs_map.php');
      file_put_contents(PAIRS_MAP_CACHE, $pmap);
-  }   
-  $pmap = file_get_contents(PAIRS_MAP_CACHE);
-  $pmap = json_decode($pmap, true);
-  echo "<!--\n";
-  // print_r($pmap);
-  echo "-->";
-  foreach ($pmap as $pid => $prec) 
+    }   
+    $pmap = file_get_contents(PAIRS_MAP_CACHE);
+    $pmap = json_decode($pmap, true);
+    echo "<!--\n";
+    // print_r($pmap);
+    echo "-->";
+    foreach ($pmap as $pid => $prec) 
     if (!isset($pairs_map[$pid]))
         $pairs_map[$pid] = strtolower($prec[0]);
 
-  $pair_id = rqs_param('pair_id', 3);
-  $pair = false;
-  if (isset($pairs_map[$pair_id]))
+    $pair_id = rqs_param('pair_id', 3);
+    $pair = false;
+    if (isset($pairs_map[$pair_id]))
      $pair = $pairs_map[$pair_id];
 
 
-  $ticker = array();   
+    $ticker = array();   
 ?>
 <html>
- <head>
-   <title>Trading stats for <?php echo " $exch - $pair";?></title>
-   <style type=text/css>
+    <head>
+    <title>Trading stats for <?php echo " $exch - $pair";?></title>
+    <style type=text/css>
      th, td {
         padding-top: 4px;
      padding-bottom: 4px;
@@ -47,18 +47,18 @@
      .dig {
         text-align: right;
      }
-   </style>
- </head>
- <body>
+    </style>
+    </head>
+    <body>
 <pre>
 <?php
-  /*  Формирование отчетов эффективной торговли за произвольный период, для одной пары. 
+    /*  Формирование отчетов эффективной торговли за произвольный период, для одной пары. 
       1. Выдача статистики по агрегированным сделкам (вход-выход), с расчетом profit factor, sharp ratio
       2. Выдача графика эквити по агрегированным  сделкам с учетом фильтров
-  */
-  require_once 'aggr_trade.php';
-  
-  class TickerInfo {
+    */
+    require_once 'aggr_trade.php';
+    
+    class TickerInfo {
     public bool $is_quanto;
     public bool $is_reverse;
     public float $last_price;    
@@ -76,23 +76,23 @@
       $this->is_quanto = $info[2] & 2;
       $this->is_inverse = $info[2] & 1;
     }
-  }
+    }
 
-  function array_max(array $data) {
+    function array_max(array $data) {
     $result = $data[0];
     foreach ($data as $v)  
       $result = max($v, $result);
     return $result;
-  }
-  function array_min(array $data) {
+    }
+    function array_min(array $data) {
     $result = $data[0];
     foreach ($data as $v)  
       $result = min($v, $result);
     return $result;
-  }
+    }
 
 
-  function calc_range(array &$candles, $period = 10) {
+    function calc_range(array &$candles, $period = 10) {
     $highs = array();
     $lows = array();
     $key = "range_$period";
@@ -105,9 +105,9 @@
       $candles[$ts] = $row;
     }
       
-  }
+    }
 
-  function find_candle(array $candles, string $tsn): ?array {
+    function find_candle(array $candles, string $tsn): ?array {
     $result = null;
     if ($candles)
     foreach ($candles as $ts => $cd) {
@@ -115,9 +115,9 @@
       $result = $cd;      
     }
     return $result;
-  }
+    }
 
-  function find_funds(string $ts): ?array {
+    function find_funds(string $ts): ?array {
     global $funds_hst; 
     $result = null;
     foreach ($funds_hst as $row) {
@@ -125,14 +125,14 @@
       $result = $row;      
     }
     return $result;
-  }
+    }
 
-  function btc_price(string $ts) {
+    function btc_price(string $ts) {
     // TODO: scan 1M candles
     return 50000;
-  }
+    }
 
-  function contracts_to_amount(string $ts, float $value, float $price): float {
+    function contracts_to_amount(string $ts, float $value, float $price): float {
     global $tinfo;
     $btc_price = btc_price($ts);
     if ($tinfo->is_quanto && $tinfo->multiplier > 0 && $btc_price > 0) {
@@ -146,36 +146,36 @@
       return $value / $price;  // may only XBTUSD and descedants
     }
     return $value;
-  }
-  
-  $mysqli = init_remote_db('trading');
+    }
+    
+    $mysqli = init_remote_db('trading');
 
-  $from_ts = rqs_param('from_ts', '2024-01-01 00:00:00');
-  $last_ts = rqs_param('last_ts', date(SQL_TIMESTAMP));
-  
-  $min_pl =  rqs_param('min_pl', 0);
-  $account_id = rqs_param('account_id', -1);
-  $exch = strtolower($exch);  
+    $from_ts = rqs_param('from_ts', '2024-01-01 00:00:00');
+    $last_ts = rqs_param('last_ts', date(SQL_TIMESTAMP));
+    
+    $min_pl =  rqs_param('min_pl', 0);
+    $account_id = rqs_param('account_id', -1);
+    $exch = strtolower($exch);  
 
-  
+    
 
 
-  $tinfo = new TickerInfo($pair_id);
-  print_r($tinfo);
+    $tinfo = new TickerInfo($pair_id);
+    print_r($tinfo);
 
-  $strict = "WHERE (pair_id = $pair_id) AND (exec_qty != 0) AND (ts >= '$from_ts') AND (ts <= '$last_ts') AND (account_id = $account_id)";
-  if ($account_id > 0)
+    $strict = "WHERE (pair_id = $pair_id) AND (exec_qty != 0) AND (ts >= '$from_ts') AND (ts <= '$last_ts') AND (account_id = $account_id)";
+    if ($account_id > 0)
     $strict .= " AND (account_id = $account_id)";
 
-  $batches = $mysqli->select_rows('id, ts, start_pos, target_pos, exec_price, exec_qty', $exch.'__batches', $strict, MYSQLI_ASSOC);
-  if (!$batches)
+    $batches = $mysqli->select_rows('id, ts, start_pos, target_pos, exec_price, exec_qty', $exch.'__batches', $strict, MYSQLI_ASSOC);
+    if (!$batches)
     die("#FATAL: retrieve batches failed");
 
-  $funds_hst = $mysqli->select_rows('*', $exch.'__funds_history', '', MYSQLI_ASSOC);
+    $funds_hst = $mysqli->select_rows('*', $exch.'__funds_history', '', MYSQLI_ASSOC);
 
-  $day_cmap = array(); 
+    $day_cmap = array(); 
 
-  if ($pair) {
+    if ($pair) {
     mysqli_report(MYSQLI_REPORT_OFF); 
     $pair = $pairs_map[$pair_id];
     $table_cd = 'datafeed.'.$exch.'__candles__'.$pair.'__1D';
@@ -188,26 +188,26 @@
        }  
        calc_range($day_cmap, 10);
     }
-  }  
-  
-  echo "<!--\n";
-  // print_r($batches);
-  echo "-->\n";
+    }  
+    
+    echo "<!--\n";
+    // print_r($batches);
+    echo "-->\n";
 
-  $aggregator = new SignalAggregator(); 
-  $aggregator->Process($batches);
+    $aggregator = new SignalAggregator(); 
+    $aggregator->Process($batches);
 
-  
-  // print_r($aggregator->agr_trades);
-  echo "<table border=1 style='border-collapse:collapse;'>\n";
-  echo "<tr><th>Enter time<th>exit time<th>side<th>enter price<th>exit price<th>qty<th>profit<th>10D range %\n";
-  $saldo = 0;
-  $saldo_master = 0;
+    
+    // print_r($aggregator->agr_trades);
+    echo "<table border=1 style='border-collapse:collapse;'>\n";
+    echo "<tr><th>Enter time<th>exit time<th>side<th>enter price<th>exit price<th>qty<th>profit<th>10D range %\n";
+    $saldo = 0;
+    $saldo_master = 0;
 
-  $profit_cnt = 0;
-  $loss_cnt = 0;
+    $profit_cnt = 0;
+    $loss_cnt = 0;
 
-  foreach ($aggregator->agr_trades as $agt) {
+    foreach ($aggregator->agr_trades as $agt) {
     $bgc = '#FFFFAA';
     $pl = $agt->profit; 
     if (abs($pl) < $min_pl) continue;
@@ -244,10 +244,10 @@
     $saldo += $pl;
     $saldo_master += $pl_master;
     printf ("\n<!-- %s %s -->\n", print_r($agt, true), print_r($cd, true));
-  }
-  printf("<tr><td colspan=6>Total<td><b>$%.1f</b><td>\n", $saldo);
-  echo "</table>\n";
-  if ($loss_cnt > 0)
+    }
+    printf("<tr><td colspan=6>Total<td><b>$%.1f</b><td>\n", $saldo);
+    echo "</table>\n";
+    if ($loss_cnt > 0)
      printf("<p>Profit factor: %.1f \n", $profit_cnt / $loss_cnt);
-  printf("<code>%s</code>", print_r($aggregator->last_trade, true));
+    printf("<code>%s</code>", print_r($aggregator->last_trade, true));
 ?>

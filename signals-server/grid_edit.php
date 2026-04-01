@@ -1,107 +1,107 @@
 <?php
-  include_once('lib/common.php');
-  include_once('lib/db_tools.php');
-  include_once('/usr/local/etc/php/db_config.php');
- //  include_once('lib/db_config.php');
-  // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to BUY.X1.22  Series name: LONG
-  // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to SELL.22  Series name: SHORT
+    include_once('lib/common.php');
+    include_once('lib/db_tools.php');
+    include_once('/usr/local/etc/php/db_config.php');
+    //  include_once('lib/db_config.php');
+    // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to BUY.X1.22  Series name: LONG
+    // [11/19/2023 10:02:41 AM] [BTCUSDT]: Approximate to SELL.22  Series name: SHORT
 
-  // [11/22/2023 11:13:00 GMT+3] [DOTUSDT]:  BUY.X10#2
-  // [11/19/2023 10:02.41 AM GMT+3] [BTCUSDT]: SELL#23
-  // [now] [ARBUSD]: BUY.X100#2
-  // [now] [BTCUSDT]: DEL#23
-  define('GRID_LOG', __DIR__.'/logs/grid.log');
+    // [11/22/2023 11:13:00 GMT+3] [DOTUSDT]:  BUY.X10#2
+    // [11/19/2023 10:02.41 AM GMT+3] [BTCUSDT]: SELL#23
+    // [now] [ARBUSD]: BUY.X100#2
+    // [now] [BTCUSDT]: DEL#23
+    define('GRID_LOG', __DIR__.'/logs/grid.log');
 
-  define('SIG_FLAG_TP', 0x001);
-  define('SIG_FLAG_SL', 0x002);
-  define('SIG_FLAG_LP', 0x004);
-  define('SIG_FLAG_GRID', 0x100);
-  $req_flags = SIG_FLAG_GRID;
+    define('SIG_FLAG_TP', 0x001);
+    define('SIG_FLAG_SL', 0x002);
+    define('SIG_FLAG_LP', 0x004);
+    define('SIG_FLAG_GRID', 0x100);
+    $req_flags = SIG_FLAG_GRID;
 
-  $output_format = detect_output_format();
-  $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__;
-  $setup = 0;
-  if (preg_match('/(\d+)/', $script, $m) && count($m) > 1)
+    $output_format = detect_output_format();
+    $script = $_SERVER['SCRIPT_NAME'] ?? __FILE__;
+    $setup = 0;
+    if (preg_match('/(\d+)/', $script, $m) && count($m) > 1)
       $setup = intval($m[1]);
 
-  if (php_sapi_name() != 'cli') {
+    if (php_sapi_name() != 'cli') {
       if ($output_format === 'json') {
           require_once('api_helper.php');
           $user_rights = get_user_rights();
       } else {
           require_once('lib/auth_check.php');
       }
-  }
+    }
 
-  if (!str_in($user_rights, 'view')) {
+    if (!str_in($user_rights, 'view')) {
       if ($output_format === 'json')
           send_error("User has no rights to view/edit grid", 403);
       else
           error_exit("ERROR: user has no rights to view/edit signals\n");
       exit;
-  }
+    }
 
-  if ($output_format === 'json' && !str_in($user_rights, 'admin')) {
+    if ($output_format === 'json' && !str_in($user_rights, 'admin')) {
       $allowed_min = $user_base_setup ?? 0;
       $allowed_max = $allowed_min + 9;
       if ($setup < $allowed_min || $setup > $allowed_max) {
           send_error("Setup $setup out of allowed range [$allowed_min..$allowed_max]", 403);
           exit;
       }
-  }
+    }
 
 ?>
 <?php if ($output_format !== 'json'): ?>
 <!DOCTYPE html>
 <?php endif; ?>
 <?php
-  $minute = date('i') * 1;
+    $minute = date('i') * 1;
 
-  $input = rqs_param('signal', false);
-  $sfx = $input ? 'edit' : 'view';
-  $sfx .=  "-$setup"; 
-  $color_scheme = 'cli';
-  $log_file = fopen(__DIR__."/logs/grid_$sfx.log", $input ? 'a' : 'w');
-  if (!$log_file || php_sapi_name() == 'cli')     
+    $input = rqs_param('signal', false);
+    $sfx = $input ? 'edit' : 'view';
+    $sfx .=  "-$setup"; 
+    $color_scheme = 'cli';
+    $log_file = fopen(__DIR__."/logs/grid_$sfx.log", $input ? 'a' : 'w');
+    if (!$log_file || php_sapi_name() == 'cli')     
       $log_file = fopen("/tmp/grid_$sfx.log", 'w');
 
-  mysqli_report(MYSQLI_REPORT_OFF);
-  $tstart = pr_time();
-  log_msg("#START: connecting to DB...");
-  $mysqli = init_remote_db('trading');
-  $table_name = 'signals';
-  
-  if (!$mysqli)
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $tstart = pr_time();
+    log_msg("#START: connecting to DB...");
+    $mysqli = init_remote_db('trading');
+    $table_name = 'signals';
+    
+    if (!$mysqli)
      die("FATAL: user '$db_user' can't connect to servers ".json_encode($db_servers)."\n");
-  
-  $pairs_map = $mysqli->select_map('symbol,id', 'pairs_map');
-  $id_map    = $mysqli->select_map('id,symbol', 'pairs_map');
-  $colors = [1 => '#7FFF00', 2 => 'Gold', 3 => '', 66 => '#DABADA'];
+    
+    $pairs_map = $mysqli->select_map('symbol,id', 'pairs_map');
+    $id_map    = $mysqli->select_map('id,symbol', 'pairs_map');
+    $colors = [1 => '#7FFF00', 2 => 'Gold', 3 => '', 66 => '#DABADA'];
 
 
        
-  $touched = false;
-  
-  $init_t = pr_time() - $tstart;
+    $touched = false;
+    
+    $init_t = pr_time() - $tstart;
 
-  log_msg(sprintf("#PERF: %.2f sec, pairs_map:\n %s", $init_t, json_encode($pairs_map)));
-  
-  $btc_pair_id = $pairs_map['BTCUSD'];
-  $eth_pair_id = $pairs_map['ETHUSD'];
+    log_msg(sprintf("#PERF: %.2f sec, pairs_map:\n %s", $init_t, json_encode($pairs_map)));
+    
+    $btc_pair_id = $pairs_map['BTCUSD'];
+    $eth_pair_id = $pairs_map['ETHUSD'];
 
-  
-  $filter = rqs_param('filter', false);  
-  $action = rqs_param('action', '');
+    
+    $filter = rqs_param('filter', false);  
+    $action = rqs_param('action', '');
 
-  $source = $_SERVER['REMOTE_ADDR'];
-  $signal = false;     
+    $source = $_SERVER['REMOTE_ADDR'];
+    $signal = false;     
 
-  mysqli_report(MYSQLI_REPORT_OFF);
-  include_once('load_sym.inc.php');  // request symbols from remote servers and map its data
-  log_msg("#PERF: loaded cm_symbols = ".count($cm_symbols));
+    mysqli_report(MYSQLI_REPORT_OFF);
+    include_once('load_sym.inc.php');  // request symbols from remote servers and map its data
+    log_msg("#PERF: loaded cm_symbols = ".count($cm_symbols));
 
-  $filter_id = 0;
-  if ($filter) {
+    $filter_id = 0;
+    if ($filter) {
      if (isset($pairs_map[$filter]))
        $filter_id = intval($pairs_map[$filter]);
      else  
@@ -115,23 +115,23 @@
      }
      else 
        echo "<!-- $color = $lc, $filter =  $filter_id -->\n";     
-  }   
+    }   
 
-  $colors    = $mysqli->select_map('id,color', 'pairs_map');
+    $colors    = $mysqli->select_map('id,color', 'pairs_map');
 
-  $delete = rqs_param('delete', false);
-  if ($delete) {        
+    $delete = rqs_param('delete', false);
+    if ($delete) {        
      $delete = intval($delete);
      $mysqli->try_query("DELETE FROM $table_name WHERE (id = $delete) AND (setup = $setup);");
-  }
+    }
     
-  $qview = 'quick' == rqs_param('view', 'html');
+    $qview = 'quick' == rqs_param('view', 'html');
 
-  if (!$qview) echo "<!-- \n";
-  $price = rqs_param('price', 0) * 1.0;
-  $amount = rqs_param('amount', 1) * 1;
+    if (!$qview) echo "<!-- \n";
+    $price = rqs_param('price', 0) * 1.0;
+    $amount = rqs_param('amount', 1) * 1;
 
-  function sig_param_set(string $param, string $field, float $value, int $flag) {
+    function sig_param_set(string $param, string $field, float $value, int $flag) {
     global $mysqli, $table_name, $strict, $touched;
     $id = rqs_param($param, -1);
     if ($id <= 0) return;
@@ -141,28 +141,28 @@
       echo "#OK: $field = $value for #$touched\n";
     else 
       echo "#FAIL: [ $query ] result {$mysqli->error};";       
-  }
+    }
 
-  $singal = false;
-  $id_added = 0;  
-  $strict = "(setup = $setup)";  
-  sig_param_set('sig_id', 'mult', $amount, 0);       
-  sig_param_set('edit_qty', 'qty',     rqs_param('qty', 2),  0);
-  sig_param_set('edit_tp', 'take_profit', $price, 0);       
-  sig_param_set('edit_sl', 'stop_loss', $price, 0);    
-  // sig_param_set('edit_lp', 'limit_price', $price, SIG_FLAG_LP);  
+    $singal = false;
+    $id_added = 0;  
+    $strict = "(setup = $setup)";  
+    sig_param_set('sig_id', 'mult', $amount, 0);       
+    sig_param_set('edit_qty', 'qty',     rqs_param('qty', 2),  0);
+    sig_param_set('edit_tp', 'take_profit', $price, 0);       
+    sig_param_set('edit_sl', 'stop_loss', $price, 0);    
+    // sig_param_set('edit_lp', 'limit_price', $price, SIG_FLAG_LP);  
 
-  function sig_toggle_flag(string $param, int $flag) {
+    function sig_toggle_flag(string $param, int $flag) {
     global $mysqli, $table_name, $strict;
     $id = rqs_param($param, -1) * 1; 
     if ($id > 0) 
        $mysqli->try_query("UPDATE $table_name SET flags = flags ^ $flag WHERE (id = $id) AND $strict; ");  
-  }
+    }
 
-  log_cmsg("#REQUEST: dump: %s\n", print_r($_REQUEST, true)); 
+    log_cmsg("#REQUEST: dump: %s\n", print_r($_REQUEST, true)); 
 
-  while ($input)
-  try {
+    while ($input)
+    try {
      
      $m = [];
      $enter = false;     
@@ -224,7 +224,7 @@
           echo "#ERROR: failed $query\n";
         break;
      }
-   
+    
 
      log_msg("#PERF: load prev signal for setup %d", $setup);
      $prev = $mysqli->select_row('ts, mult', 'signals', "WHERE (pair_id = $pair_id) AND (setup = $setup) AND (trade_no = $trade_no) AND (buy = $buy)");
@@ -261,54 +261,54 @@
      else 
         throw new Exception("Failed to add signal: ".$mysqli->error);
      break;    
-  } catch (Exception $e) {
+    } catch (Exception $e) {
      echo "-->\n";
      die("#ERROR: ".$e->getMessage()." at <pre> ".$e->getTraceAsString());  
-  }
-  
-  if ($qview) {
+    }
+    
+    if ($qview) {
     if (!$input) {
        echo "#WARN: data param not specified\n";
        print_r($_REQUEST);
     }   
     ob_start();
-  }  
-  echo "-->\n";
+    }  
+    echo "-->\n";
 ?>
 <html>
- <head>
-  <title>Grid Editor <?php echo $setup; ?></title> 
-  <style type='text/css'>
-   td { padding-left: 4pt;
+    <head>
+    <title>Grid Editor <?php echo $setup; ?></title> 
+    <style type='text/css'>
+    td { padding-left: 4pt;
         padding-right: 4pt; } 
-  </style>
-  <script type='text/javascript'>
-    <?php 
+    </style>
+    <script type='text/javascript'>
+<?php
        $js_script = file_get_contents('sig_edit.js');
        $js_script = str_replace('script', $script, $js_script);
        echo $js_script;
-    ?>
+?>
 
     function Startup() {      
-      <?php
+<?php
         if ($touched) {
          if (isset($id_map[$touched]))
            $touched = $id_map[$touched];
          echo "document.location = '$script?filter=$touched';\n";
         }    
-      ?> 
+?>
     }
-  </script>
- <body onLoad="Startup()">
- <?php  
-   print "\t<form name='signals' method='POST' action='$script'>\n";
- ?>
-  <input type='text' name='signal' id='signal' value='' placeholder="[NOW] [NOPUSD]: BUY.X1#1" style='width:590pt;'/> <input type='submit' value='Post'/>  
- </form>  
-  <h4>Edit setup <?php echo $setup ?></h4>
-  <table border=1 style='border-collapse:collapse;'>
-   <tr><th>Time<th>#Sig<th>Side<th>Pair<th>Mult<th>Qty</th><th>Low<th>High<th>Last price<th>Action</tr> 
-   <?php 
+    </script>
+    <body onLoad="Startup()">
+<?php
+    print "\t<form name='signals' method='POST' action='$script'>\n";
+?>
+    <input type='text' name='signal' id='signal' value='' placeholder="[NOW] [NOPUSD]: BUY.X1#1" style='width:590pt;'/> <input type='submit' value='Post'/>  
+    </form>  
+    <h4>Edit setup <?php echo $setup ?></h4>
+    <table border=1 style='border-collapse:collapse;'>
+    <tr><th>Time<th>#Sig<th>Side<th>Pair<th>Mult<th>Qty</th><th>Low<th>High<th>Last price<th>Action</tr> 
+<?php
      $accum_map = [];
      $ts_map = [];
      $buys = [];  
@@ -524,7 +524,7 @@
      if ($qview) ob_end_clean();
      if ($delete && !isset($accum_map[$delete]))
          $accum_map[$delete] = 0;                
- 
+    
      if ($filter) 
         echo "<input type='submit'  onClick='GoHome()' value='Home' />";
 
@@ -532,5 +532,5 @@
      $work_t = pr_time() - $tstart;
      log_msg(sprintf("#END: work_t = %.1f sec, CWD: %s, LOG_FILE %s", $work_t, getcwd(), GRID_LOG));
      
-?>     
- 
+?>
+    

@@ -1,66 +1,66 @@
 <?php
-  ob_implicit_flush();
-  /* 
+    ob_implicit_flush();
+    /* 
     Формирование отчета по сделкам (исполненным заявкам) в табличный вид HTML. 
     По отдельным парам должно считаться на каждую заявку: изменение RPNL и изменение UPNL;
     В типичном случае подразумевается суточный отчет, начинающийся в 8 утра/вечера UTC.
-  */
-  include_once('lib/common.php');
-  include_once('lib/db_tools.php');
-  include_once('lib/db_config.php');
+    */
+    include_once('lib/common.php');
+    include_once('lib/db_tools.php');
+    include_once('lib/db_config.php');
 
-  require_once 'aggr_trade.php';
+    require_once 'aggr_trade.php';
 
-  define('SATOSHI_MULT', 0.00000001);
-  define ('USD_MULT', 0.000001);
+    define('SATOSHI_MULT', 0.00000001);
+    define ('USD_MULT', 0.000001);
 
-  date_default_timezone_set('UTC');
+    date_default_timezone_set('UTC');
 
-  $pair_id = rqs_param('pair_id', 1);
-  $start  = rqs_param('start', date('Y-m-d  08:00:00', time() - 86400));
-  $t_end = strtotime($start) + 86400;
-  $end = date('Y-m-d  H:00:00', $t_end);
-  $end    = rqs_param('end', $end);
-  $exch   = rqs_param('exchange', 'BitMEX');
-  $acc_id = rqs_param('account_id', 0);
-  $show_table = rqs_param('show_table', 1);
-  $show_report = rqs_param('show_stats', 1);
-  $show_usd  = rqs_param('show_usd', true);
+    $pair_id = rqs_param('pair_id', 1);
+    $start  = rqs_param('start', date('Y-m-d  08:00:00', time() - 86400));
+    $t_end = strtotime($start) + 86400;
+    $end = date('Y-m-d  H:00:00', $t_end);
+    $end    = rqs_param('end', $end);
+    $exch   = rqs_param('exchange', 'BitMEX');
+    $acc_id = rqs_param('account_id', 0);
+    $show_table = rqs_param('show_table', 1);
+    $show_report = rqs_param('show_stats', 1);
+    $show_usd  = rqs_param('show_usd', true);
     $btc_price = 80000;
     $btc_pmap = [];
-  mysqli_report(MYSQLI_REPORT_ERROR);  
+    mysqli_report(MYSQLI_REPORT_ERROR);  
 
 ?>
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <TITLE>Trades report</TITLE>   
-  <style type='text/css'>
-   td, th { padding-left: 4pt;
+    <HEAD>
+    <TITLE>Trades report</TITLE>   
+    <style type='text/css'>
+    td, th { padding-left: 4pt;
         padding-right: 4pt; } 
-   table { 
+    table { 
         border-collapse: collapse;
-   }     
-   .red {
+    }     
+    .red {
         color: red;        
-   }  
-   .green {
+    }  
+    .green {
         color: green;        
-   }
-   .white {
+    }
+    .white {
         color: white;        
-   }   
-  </style>  
-  </HEAD>  
-  <BODY><PRE>
-<?php  
-  function format_PL(string $fmt, float $val) {
+    }   
+    </style>  
+    </HEAD>  
+    <BODY><PRE>
+<?php
+    function format_PL(string $fmt, float $val) {
     $class = $val > 0 ? 'green' : 'red';
     return sprintf("<b class=$class>$fmt</b>", $val);
-  }  
+    }  
 
 
-  class AccumPositionBase {
+    class AccumPositionBase {
     public  $ticker_info = null;
 
     public  $buys_qty = 0;
@@ -135,9 +135,9 @@
         $this->med_price = $med_price;    
     }
 
-  }
+    }
 
-  class AccumPosition extends AccumPositionBase {
+    class AccumPosition extends AccumPositionBase {
     public $zero_reset = true;
 
     public $by_date = [];  // map[date] = [RPnL, UPnL]  
@@ -223,19 +223,19 @@
         $this->buy_trades = 0;
         $this->sell_trades = 0;
     }
-  }
+    }
 
-  $exch = strtolower($exch);
-  
-  $mysqli = init_remote_db('trading');
-  if (!$mysqli) 
+    $exch = strtolower($exch);
+    
+    $mysqli = init_remote_db('trading');
+    if (!$mysqli) 
     die("#FATAL: DB `trading` inaccessible!\n");
 
-  $rows = $mysqli->select_rows('ts,close', 'bitfinex.candles__btcusd__1H', "WHERE ts >= '$start' AND ts < '$end' ORDER BY ts ");
-  foreach ($rows as $row) {
+    $rows = $mysqli->select_rows('ts,close', 'bitfinex.candles__btcusd__1H', "WHERE ts >= '$start' AND ts < '$end' ORDER BY ts ");
+    foreach ($rows as $row) {
     $tkey = floor(strtotime($row[0]) / 3600); // hours
     $btc_pmap[$tkey] = $row[1];
-  }      
+    }      
 
 
     $pairs_table = strtolower("{$exch}__pairs_map");
@@ -251,22 +251,22 @@
             $btc_price = floatval($btc_row[0]);
     }
 
-  $t_table = "$exch.ticker_map";  // previously was datafeed.{$exch}__ticker_map
-  $ticker_map = [];
-  if ($mysqli->table_exists($t_table))
+    $t_table = "$exch.ticker_map";  // previously was datafeed.{$exch}__ticker_map
+    $ticker_map = [];
+    if ($mysqli->table_exists($t_table))
        $ticker_map = $mysqli->select_map("pair_id, ticker", $t_table);
 
 
 ?>
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <style type='text/css'>
-   td { padding-left: 4pt;
+    <HEAD>
+    <style type='text/css'>
+    td { padding-left: 4pt;
         padding-right: 4pt; } 
-  </style>  
-  </HEAD>  
-  <BODY><PRE>
+    </style>  
+    </HEAD>  
+    <BODY><PRE>
 
 <?php
     $price_data = []; // ['YYYY-mm-dd HH:MM] => price, minute timeframe
@@ -292,7 +292,7 @@
             
         return $price_data[array_pop($flt)];
     }
-  
+    
 
     function AmountToQty(\stdClass $ti, float $price, float $value) {
         global $mysqli, $pair_id, $btc_price, $exch;    
@@ -535,7 +535,7 @@
 
         return $result;
     }  
- 
+    
 
 
     function ReportForPair(int $pair_id) {
@@ -617,7 +617,7 @@
 
     if (!$mysqli->table_exists($table_name))
         die("<div class=red>ERROR: table $table_name not exists\n</div>");
-  
+    
     $pairs = $mysqli->select_col('pair_id', $table_name, "WHERE (account_id = $acc_id) AND (ts <= '$end') GROUP BY pair_id");    
 
     if ($pair_id > 0) {
@@ -726,4 +726,4 @@
     echo "</table>\n";
     printf("Used pairs: %s", json_encode(array_values($pairs_map)));
     print_r($dkeys);
-?>  
+?>

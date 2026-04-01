@@ -112,8 +112,8 @@
     
     $reply_markup = false;
     /* Keyboard::make()
-		->setResizeKeyboard(true)
-		->setOneTimeKeyboard(true)
+        ->setResizeKeyboard(true)
+        ->setOneTimeKeyboard(true)
         ->row([Keyboard::button('/ping'), Keyboard::button('/bot_status'), Keyboard::button('/restart')]); 
     //*/
     function send_buttons(int $chat) {
@@ -347,10 +347,10 @@
             $mysqli->try_query($query);
         } // if (updl)
 
-   }
+    }
 
 
-  function load_messages() { // загрузка сообщений, которые собрал хук или обработка обновлений
+    function load_messages() { // загрузка сообщений, которые собрал хук или обработка обновлений
     global $mysqli;
     $rows = $mysqli->select_rows('update_id, chat, message', 'last_messages', 'ORDER BY update_id LIMIT 10');
     if (is_null($rows) || 0 == count($rows)) return;
@@ -386,10 +386,10 @@
         log_cmsg("~C91#EXCEPTION(load_messages):~C00 %s", $E->getMessage());
         log_cmsg("~C92#STACK:~C00 %s", $E->getTraceAsString());
     }
-  } 
+    } 
 
 
-  function process_send(string $text, mixed $res): bool {
+    function process_send(string $text, mixed $res): bool {
     global $tag, $event_id,  $mysqli, $telegram, $history;
     // добавление меток сообщений в лог, чтобы их потом удалить из чата
     if (!is_object($res)) { 
@@ -450,22 +450,22 @@
     }
     else 
         log_cmsg("~C91 #WARN:~C00 not OK: %s", var_export($res, true));
- 
+    
     return true; 
-  }
+    }
 
 
 
 
-  function on_msg_deleted(int $chat_id, int $msg_id, string $tag) {
+    function on_msg_deleted(int $chat_id, int $msg_id, string $tag) {
     global $mysqli;
     $mysqli->try_query("DELETE FROM chat_log WHERE (id = $msg_id) and (chat = $chat_id)");  
     if ('ORDER' == $tag || 'ALERT' == $tag)
         $mysqli->try_query("UPDATE `events` SET `attach` = NULL WHERE id = $msg_id");
-  }
+    }
 
 
-  function cleanup() {
+    function cleanup() {
     global $telegram, $mysqli;    
     $rows = $mysqli->select_rows('id, chat, tag, ts_del', 'chat_log', "WHERE NOW() >= ts_del", MYSQLI_ASSOC);
     if (!is_array($rows) || 0 == count($rows)) {
@@ -538,12 +538,12 @@
       } 
 
     } // foreach batch 
-  }
+    }
 
-  $indent = '';
+    $indent = '';
 
-  function send_msg(int $chat, $flags, $text): bool
-  {
+    function send_msg(int $chat, $flags, $text): bool
+    {
       global $telegram, $exceptions;
       if (0 == $chat) {
         log_cmsg("~C91#ERROR:~C00 chat_id is zero, cannot send message");
@@ -567,10 +567,10 @@
         $result = process_except($chat, $flags, $e);
       }
       return $result;
-  }  
+    }  
 
-  
-  function send_attach(int $chat, $flags, $caption, $attach, $fname = 'attach'): bool {
+    
+    function send_attach(int $chat, $flags, $caption, $attach, $fname = 'attach'): bool {
     global $telegram, $exceptions, $flood, $pause, $indent, $tag, $event_id;
     if (0 == $chat) {
       log_cmsg("~C91#ERROR(send_attach):~C00 chat_id is zero, cannot send message");
@@ -631,41 +631,41 @@
     // TODO: post timer to delete file
     //  unlink($fname) 
     return $result;
-  }
+    }
 
-  $upd_params = [
+    $upd_params = [
           'offset'  => '0',
           'limit'   => '16',
           'timeout' => '30',
         ];
 
-  if (!$argv) $argv = [ 0, 0, 0 ];
+    if (!$argv) $argv = [ 0, 0, 0 ];
 
-  $run = 1000; // ожидаемое время цикла около 5 секунд, общее время порядка до 2 часов
-  
+    $run = 1000; // ожидаемое время цикла около 5 секунд, общее время порядка до 2 часов
+    
 
-  function sig_handler($signo)
-  {
+    function sig_handler($signo)
+    {
       global $run;
       log_cmsg("~C31#EXIT:~C00 received signal %d", $signo);
       $run = 2;
-  }
+    }
 
-  pcntl_signal(SIGQUIT, "sig_handler");
-  pcntl_signal(SIGTERM, "sig_handler");
-  // pcntl_signal(SIGHUP,  "sig_handler");
+    pcntl_signal(SIGQUIT, "sig_handler");
+    pcntl_signal(SIGTERM, "sig_handler");
+    // pcntl_signal(SIGHUP,  "sig_handler");
 
-  $ts_start = date(SQL_TIMESTAMP);
-  $show_status = 0;
-  $con_errors = 0;
-  $id = -1;
-  $prev = 0;
-  $chats = [];
-  $tag = 'NOPE';
-  $postpone = [];
-  $timings = [];
+    $ts_start = date(SQL_TIMESTAMP);
+    $show_status = 0;
+    $con_errors = 0;
+    $id = -1;
+    $prev = 0;
+    $chats = [];
+    $tag = 'NOPE';
+    $postpone = [];
+    $timings = [];
 
-  function verify_delivery(stdClass $post, string $field) {
+    function verify_delivery(stdClass $post, string $field) {
     global $postpone; 
     $pm = $post->$field; 
     $now = time();
@@ -679,9 +679,9 @@
           process_send($msg, $post);
       }    
     }
-  }
+    }
 
-  function post_to_channel(array $evt): bool {
+    function post_to_channel(array $evt): bool {
     global $mysqli, $wrong_chats, $pause, $timings, $postpone, $fails, $indent, $post_map;
     list($event_id, $ts, $from, $tag, $event, $flags, $value, $attach, $chat) = $evt;            
 
@@ -773,7 +773,7 @@
     }    
     return true;
 
-  }
+    }
 
     echo format_color("~C97%s~C00\n", '-----------=================== Script restarted ===================-------------');
 

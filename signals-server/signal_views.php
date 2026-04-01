@@ -121,7 +121,7 @@
 
     function render_full_html_page($table_data, $colors, $id_added, $mysqli, $buys, $shorts, $sym_errs, $cm_symbols, $filter, $touched, $id_map, $setup, $script, $btc_pair_id, $eth_pair_id, $grid_flag, $debug_content = '') {
     ob_start();
-    ?>
+?>
     <!DOCTYPE html>
     <html>
     <head>
@@ -131,34 +131,34 @@
                 padding-right: 4pt; }
         </style>
         <script type='text/javascript'>
-            <?php
+<?php
             $js_script = file_get_contents(__DIR__.'/sig_edit.js');
             $js_script = str_replace('script', $script, $js_script);
             echo $js_script;
-            ?>
+?>
 
             function Startup() {
-                <?php
+<?php
                 if ($touched) {
                     if (isset($id_map[$touched]))
                         $touched = $id_map[$touched];
                     echo "document.location = '$script?filter=$touched';\n";
                 }
-                ?>
+?>
             }
         </script>
     </head>
     <body onLoad="Startup()">
-    <?php
+<?php
     // Р’С‹РІРѕРґРёРј РѕС‚Р»Р°РґРѕС‡РЅСѓСЋ РёРЅС„РѕСЂРјР°С†РёСЋ
     if ($debug_content) {
         echo "<!-- Debug output:\n$debug_content\n-->\n";
     }
 
     echo render_signal_form($script);
-    ?>
+?>
     <h4>Edit setup <?php echo $setup ?></h4>
-    <?php
+<?php
     if (count($table_data) == 0) {
         printf("<h4>No signals yet for setup %d</h4>\n", $setup);
     } else {
@@ -177,10 +177,10 @@
 
     echo render_debug_info($buys, $shorts, $sym_errs, $cm_symbols);
     echo render_navigation($filter);
-    ?>
+?>
     </body>
     </html>
-    <?php
+<?php
     return ob_get_clean();
     }
 

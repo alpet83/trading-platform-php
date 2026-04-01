@@ -1,12 +1,12 @@
 <?php
- require_once 'lib/common.php';
- require_once 'lib/esctext.php';
+    require_once 'lib/common.php';
+    require_once 'lib/esctext.php';
 
- define('BITCOIN_PAIR_ID', 1);
- // futures flags
- define('TICKER_FLAG_INVERSE', 1);
- define('TICKER_FLAG_QUANTO', 2);
- define('TICKER_FLAG_LINEAR', 4);
+    define('BITCOIN_PAIR_ID', 1);
+    // futures flags
+    define('TICKER_FLAG_INVERSE', 1);
+    define('TICKER_FLAG_QUANTO', 2);
+    define('TICKER_FLAG_LINEAR', 4);
 
 class TickerInfo {
     public  $tiker = '';
@@ -273,6 +273,6 @@ class TickerInfo {
        $this->updated = $ts; 
        $this->checked = time_ms();
     }
-  } // class TickerInfo
+    } // class TickerInfo
 
-  
+    

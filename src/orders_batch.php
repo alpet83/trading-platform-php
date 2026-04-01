@@ -1,18 +1,18 @@
 <?php
 /*  OrdersBatch - описание данных пакета заявок и краткосрочного таргета по позиции. Имеет обращение до завершения всех сделок,
      используется для управления скоростью исполнения.
-  */
-  define('BATCH_MM', 0x004);   // controlled by MM
-  define('BATCH_LIMIT', 0x008);
-  define('BATCH_PASSIVE', 0x010);  
-  define('BATCH_FILLED',  0x040);
-  define('BATCH_EXPIRED', 0x080);
-  define('BATCH_CLOSED', 0x100);  
+    */
+    define('BATCH_MM', 0x004);   // controlled by MM
+    define('BATCH_LIMIT', 0x008);
+    define('BATCH_PASSIVE', 0x010);  
+    define('BATCH_FILLED',  0x040);
+    define('BATCH_EXPIRED', 0x080);
+    define('BATCH_CLOSED', 0x100);  
 
-  define ('EXT_BATCH_ID', -2);
-  define ('MM_BATCH_ID', -3);
-  define ('BATCH_OUTDATE', 30 * 24 * 3600);
-  
+    define ('EXT_BATCH_ID', -2);
+    define ('MM_BATCH_ID', -3);
+    define ('BATCH_OUTDATE', 30 * 24 * 3600);
+    
 
 class OrdersBatch
 {

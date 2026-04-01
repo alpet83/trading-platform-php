@@ -1,42 +1,42 @@
 #!/usr/bin/php
 <?php
- include_once('lib/common.php');
- include_once('lib/db_tools.php');
- include_once('lib/db_config.php');
- 
+    include_once('lib/common.php');
+    include_once('lib/db_tools.php');
+    include_once('lib/db_config.php');
+    
 
- $args = array('backup', '', '', '', '');    
+    $args = array('backup', '', '', '', '');    
 
- if (is_array($argv)) {
+    if (is_array($argv)) {
     foreach ($argv as $i => $arg) 
       $args[$i] = $arg;
- }   
+    }   
 
- $op = $args[1];
- $host = $args[3];
- 
+    $op = $args[1];
+    $host = $args[3];
+    
 
- $driver = new mysqli_driver();
- $driver->report_mode = MYSQLI_REPORT_ALL ^ MYSQLI_REPORT_STRICT;
+    $driver = new mysqli_driver();
+    $driver->report_mode = MYSQLI_REPORT_ALL ^ MYSQLI_REPORT_STRICT;
 
 
- if ('' == $host) {
+    if ('' == $host) {
     init_db('trading');
     $host = 'localhost';
- }   
- else {
+    }   
+    else {
     $db_servers = array($host);
     init_remote_db($db_user, $db_pass);
- }
+    }
       
- if (!$mysqli)
-   die("#FATAL: DB server[$host] unaccessible!");
+    if (!$mysqli)
+    die("#FATAL: DB server[$host] unaccessible!");
 
- 
- $tables = array(); 
- $ps_ops = array('backup', 'discard_ts', 'import_ts', 'migrate_df', 'split_part');
+    
+    $tables = array(); 
+    $ps_ops = array('backup', 'discard_ts', 'import_ts', 'migrate_df', 'split_part');
 
- if (false !== array_search($op, $ps_ops)) {
+    if (false !== array_search($op, $ps_ops)) {
     $res = $mysqli->try_query("SHOW TABLES;");        
     $filter = $args[2];          
 
@@ -46,13 +46,13 @@
        if (false !== strpos($filter, '-listings') && false !== strpos($table, 'listings')) continue;
        $tables []= $table;
     }   
- } elseif ('restore' == $op) {
+    } elseif ('restore' == $op) {
     $tables = file('/backup/trading/tables.lst');
     $tkps = $args[2];
     $ts = date("Hi"); 
     if ($tkps != $ts)  
       die("#ERROR: must be specified time passwd $ts\n");
-  } elseif ('restore-fast' == $op) {
+    } elseif ('restore-fast' == $op) {
     $src = file('/backup/trading/tables.lst');
     $tkps = $args[2];
     $ts = date("Hi"); 
@@ -61,37 +61,37 @@
     foreach ($src as $table)   
       if (!strpos($table, 'candle') && !strpos($table, 'listings'))
          $tables []= $table;
-  }
+    }
 
 
- 
- function array_scan(string $needle, array $src): bool|string {
+    
+    function array_scan(string $needle, array $src): bool|string {
     foreach ($src as $s) 
       if (false !== strpos($s, $needle)) return $s;
 
     return false;  
- }  
+    }  
 
 
- $needs = array();  
+    $needs = array();  
 
- $pwd = 'v0SBkC8SfJmzkM0r';
+    $pwd = 'v0SBkC8SfJmzkM0r';
 
- $daily_tables = array('cm_listings');
+    $daily_tables = array('cm_listings');
 
- $idb_files = $mysqli->select_col('FILE_NAME', 'INFORMATION_SCHEMA.FILES', 'ORDER BY FILE_ID');
- print_r($idb_files);
+    $idb_files = $mysqli->select_col('FILE_NAME', 'INFORMATION_SCHEMA.FILES', 'ORDER BY FILE_ID');
+    print_r($idb_files);
 
- foreach ($tables as $table) {
-   $table = trim($table);   
-   $is_depth  = (false !== strpos($table, 'depth'));
-   $is_candles  = (false !== strpos($table, 'candles'));
-   if ($is_depth && 'backup' == $op) continue;   
-   log_msg("-------------- trying $op $table ------------------------------------------");
-   
-   $cmd = false;
-   $out = array();
-   if (false !== strpos($op, 'restore')) {          
+    foreach ($tables as $table) {
+    $table = trim($table);   
+    $is_depth  = (false !== strpos($table, 'depth'));
+    $is_candles  = (false !== strpos($table, 'candles'));
+    if ($is_depth && 'backup' == $op) continue;   
+    log_msg("-------------- trying $op $table ------------------------------------------");
+    
+    $cmd = false;
+    $out = array();
+    if (false !== strpos($op, 'restore')) {          
       // exec($cmd, $out);
       $out = array();     
       // exec("./rdb.sh");      
@@ -99,15 +99,15 @@
       // init_db('trading');          
       chdir("/backup/trading");
       $cmd = "mysql -h $host -u trader -p$pwd trading < $table";
-   }  elseif ('import' == $op)  {
+    }  elseif ('import' == $op)  {
       $mysqli->try_query(" ALTER TABLE $table IMPORT TABLESPACE;");
-   }
-   elseif ('backup' == $op) {
+    }
+    elseif ('backup' == $op) {
      // $mysqli->try_query("FLUSH TABLE $table;");  
      $cmd = "mysqldump -h $host -f -u trader -p$pwd trading $table > /backup/trading/$table.sql";
-   } elseif ('discard_ts' == $op && $is_depth) {
+    } elseif ('discard_ts' == $op && $is_depth) {
      $mysqli->try_query("ALTER TABLE `$table` DISCARD TABLESPACE;"); 
-   } elseif ('import_ts' == $op && $is_depth) {
+    } elseif ('import_ts' == $op && $is_depth) {
      set_time_limit(300);
      $data_file = "./trading/$table";     
      $res = array_scan($data_file, $idb_files);
@@ -117,7 +117,7 @@
      }    
      else   
          log_msg("#OK: table have tablespace $res..."); 
-   } elseif ('migrate_df' === $op && ($is_candles || $is_depth))  {
+    } elseif ('migrate_df' === $op && ($is_candles || $is_depth))  {
      $query  = "CREATE TABLE IF NOT EXISTS `datafeed`.`$table` LIKE `trading`.`$table`;";
      $mysqli->try_query($query);
      $fields = 'ts';
@@ -130,7 +130,7 @@
         log_cmsg("#PERF: affected ~C94 {$mysqli->affected_rows} ~C00 rows");
      else
         log_cmsg("~C91#ERROR: ~C00 failed sync query");
-   } elseif ('split_part' == $op && $is_depth) {
+    } elseif ('split_part' == $op && $is_depth) {
      $res = $mysqli->try_query("SHOW CREATE TABLE `$table`;");
      if ($res && $row = $res->fetch_array(MYSQLI_NUM)) {
         $query = $row[1];
@@ -155,17 +155,17 @@
      else   
         $mysqli->try_query("DROP TABLE `$temp_table`;");             
      // break; // DEBUG, processing by one
-   } 
+    } 
 
-   if ($cmd) {
+    if ($cmd) {
      exec($cmd, $out);
      log_msg("#EXEC: ".implode("\n", $out));
-   }  
-   
- }
+    }  
+    
+    }
 
- if ('backup' == $op) { 
-   exec("ls /backup/trading/*.sql > /backup/trading/tables.lst");
- } 
- log_msg("#FINISHED: script complete");
+    if ('backup' == $op) { 
+    exec("ls /backup/trading/*.sql > /backup/trading/tables.lst");
+    } 
+    log_msg("#FINISHED: script complete");
 ?>

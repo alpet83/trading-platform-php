@@ -91,13 +91,13 @@
         echo "<html>\n\t<body>\n";
     }  
 
-    ?>
+?>
 
     <table cellpadding=7 border=1 style='border-collapse:collapse;'>
       <thead>
       <tr><th>Bot<th>Account<th>Fund usage<th>Uptime<th>Position coef<th>Trade Enabled<th>Command
       <tbody>
-    <?php
+<?php
     while ($row = $res->fetch_array(MYSQLI_NUM)) {
       $bot    = $row[0];
       $acc_id = $row[1];
@@ -123,5 +123,5 @@
 
     }
 ?>
- </table>
+    </table>
 </form>

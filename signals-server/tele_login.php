@@ -30,9 +30,9 @@
 ?>
 <!DOCTYPE html>
 <HTML>
-  <HEAD>
-  <TITLE><?php echo $title; ?></TITLE>   
-  <script type="text/javascript">      
+    <HEAD>
+    <TITLE><?php echo $title; ?></TITLE>   
+    <script type="text/javascript">      
     function closeTab() {
         window.close();
     }
@@ -52,10 +52,10 @@
     function onLoad() {
        setTimeout(reload, 60000);  
     }
-  </script>
-  </HEAD>
+    </script>
+    </HEAD>
 <BODY onLoad='onLoad()'>
-<?php  
+<?php
     if (session_status() == PHP_SESSION_NONE) 
         session_start();
 
@@ -116,7 +116,7 @@
         <a href="/pairs_config.php">Pairs configurator</a><br>
     </div>
 
-<?php        
+<?php
     function sync_session() {
         global $debug;
         $data = session_encode();
@@ -203,5 +203,5 @@ LOGIN:
 LOGIN_FORM:      
 ?>
 <form action="tele_login.php" method="POST">
-  Telegram login<input type="text" name="login" value="@user"><input type="submit" value="Login">  
+    Telegram login<input type="text" name="login" value="@user"><input type="submit" value="Login">  
 </form>  

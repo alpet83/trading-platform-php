@@ -318,5 +318,5 @@
         public function reset() {
             $this->changes = [];
         }
-  }
+    }
 ?>

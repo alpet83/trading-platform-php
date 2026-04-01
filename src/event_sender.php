@@ -1,15 +1,15 @@
 #!/usr/bin/php
 <?php
-  require_once 'lib/common.php';
-  require_once 'lib/esctext.php';
-  require_once 'lib/trading_info.php';
+    require_once 'lib/common.php';
+    require_once 'lib/esctext.php';
+    require_once 'lib/trading_info.php';
 
-  $g_queue = new EventQueue();
+    $g_queue = new EventQueue();
 
-  
-  $g_queue->verbosity = 3;
+    
+    $g_queue->verbosity = 3;
 
-  function non_block_read($fd, &$data) {
+    function non_block_read($fd, &$data) {
     $read = array($fd);
     $write = array();
     $except = array();
@@ -18,14 +18,14 @@
     if($result === 0) return false;
     $data = stream_get_line($fd, 2000, "\n");
     return is_string($data) && strlen($data) > 10;
-  }
+    }
 
-  $log_file = null;
-  $test = false;
-  $owner = 'default';
-  $owner_log_dir = 'logs'; // fallback when no argv
+    $log_file = null;
+    $test = false;
+    $owner = 'default';
+    $owner_log_dir = 'logs'; // fallback when no argv
 
-  if (isset($argv[1])) {
+    if (isset($argv[1])) {
     $owner = $argv[1];
     $test = $argv[2] ?? false;
     // Prepare per-owner log subdirectory
@@ -51,9 +51,9 @@
        log_cmsg("~C97#OK:~C00 Test completed");
     }    
              
-  }
+    }
 
- function process_command(string $cmd) {
+    function process_command(string $cmd) {
     global $owner; 
     if ($cmd == 'EXIT') {
         log_cmsg("~C97#OK:~C00 event_sender <b>$owner</b> exit\n");
@@ -63,13 +63,13 @@
         echo "PONG\n";
         return;
     }
- }
-  
- $prev_m = 0;
- $last_in = time(); 
- $g_queue->push_event('WARN', "#DBG: event 🆂🅴🅽🅳🅴🆁 for <b>$owner</b> started");
- $g_queue->channel = $owner;
- while (!$test && !is_null($g_queue)) {
+    }
+    
+    $prev_m = 0;
+    $last_in = time(); 
+    $g_queue->push_event('WARN', "#DBG: event 🆂🅴🅽🅳🅴🆁 for <b>$owner</b> started");
+    $g_queue->channel = $owner;
+    while (!$test && !is_null($g_queue)) {
     if (!$log_file)
          $log_file = fopen("{$owner_log_dir}/event_sender.log", 'w'); // multiple instances possible 
     $json = false;     
@@ -117,4 +117,4 @@
     }
     
     sleep(1);
- } // while
+    } // while

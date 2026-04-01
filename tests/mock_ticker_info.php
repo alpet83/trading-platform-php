@@ -1,4 +1,4 @@
-<?php    
+<?php
     require_once __DIR__.'/../src/ticker_info.php';
 
     class MockTickerInfo extends TickerInfo {

@@ -20,7 +20,7 @@
     
     error_reporting(E_ERROR | E_WARNING | E_PARSE);
     mysqli_report(MYSQLI_REPORT_ERROR);  
-  
+    
 
     try {
         date_default_timezone_set($tz);
@@ -89,7 +89,7 @@
         log_cmsg("~C91#FATAL_ERROR:~C00 $string in $file:$line");
         throw new ErrorException("[main.error_handler] ". $string,  $code, E_ERROR, $file, $line);
     }, E_ERROR | E_PARSE | E_CORE_ERROR);
-  
+    
     if (!$bot) {
         $bots = $mysqli->select_map('applicant,table_name', 'config__table_map');     
         foreach ($bots as $app => $table) {

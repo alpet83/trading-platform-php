@@ -33,9 +33,9 @@
 
 ?>
 <html>
- <head>
+    <head>
     <title><?php echo $title; ?></title>
- </head>
+    </head>
 <body>
 <?php
 skip_head: 
@@ -183,6 +183,6 @@ skip_head:
         echo "   </form>\n";
     }
 ?>
- </table>
+    </table>
 </form>
 

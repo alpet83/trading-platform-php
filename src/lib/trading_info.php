@@ -1,26 +1,26 @@
 <?php
- require_once('lib/common.php');
- require_once('lib/esctext.php');
- require_once("lib/hosts_cfg.php");  // $msg_servers [] must bedefined in 
- 
+    require_once('lib/common.php');
+    require_once('lib/esctext.php');
+    require_once("lib/hosts_cfg.php");  // $msg_servers [] must bedefined in 
+    
 
- $copt = new CurlOptions();
- $copt->connect_timeout = 5;
- $copt->total_timeout = 15; 
- 
+    $copt = new CurlOptions();
+    $copt->connect_timeout = 5;
+    $copt->total_timeout = 15; 
+    
 
- $copt->extra = array(CURLOPT_TCP_KEEPALIVE => 1, CURLOPT_TIMEOUT => 3);  
+    $copt->extra = array(CURLOPT_TCP_KEEPALIVE => 1, CURLOPT_TIMEOUT => 3);  
 
- if (defined('CURLOPT_MAXLIFETIME_CONN')) 
+    if (defined('CURLOPT_MAXLIFETIME_CONN')) 
     $copt->extra[CURLOPT_MAXLIFETIME_CONN] = 60;
 
- 
+    
 
- function is_send_success($res) {
-   return $res && false === strpos($res, '#ERROR') && false === strpos($res, '#FATAL');
- }
+    function is_send_success($res) {
+    return $res && false === strpos($res, '#ERROR') && false === strpos($res, '#FATAL');
+    }
 
- class EventRecord {
+    class EventRecord {
 
     public        int  $id = 0;
     public        string $tag;
@@ -117,7 +117,7 @@
         $res = curl_http_request($url, $post_data, $copt);
         return $res;
     }   
-  
+    
 
     public function send(string $server) {
       if (false !== $this->file)
@@ -131,13 +131,13 @@
           $this->exec_cb('on_error');  
       return $this->result;   
     }
- }
+    }
 
-  
+    
 
 
 
-  class EventQueue {
+    class EventQueue {
     protected $data = [];
     protected $use_server =  0;
 
@@ -314,4 +314,4 @@
     } 
 
 
-  }
+    }

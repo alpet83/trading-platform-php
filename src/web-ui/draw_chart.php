@@ -59,7 +59,7 @@
         $acc_id = $argv[3];
       if (isset($argv[4]))
         $fcolor = $argv[4];
-  
+    
     }
     elseif (isset($_SERVER['REMOTE_ADDR'])) {
         $acc_id = rqs_param('account_id', $acc_id);
@@ -104,7 +104,7 @@
         $start_from = max($start_from, strtotime($from_ts));
         $from_ts = date('Y-m-d H:i', $start_from);
     }   
-  
+    
 
     $configs = [];
     $configs['equity'] = ['tag' => 0, 'min' => 1000000, 'max' => -1000000, 'title' => "$exch @$acc_id equity from $from_ts "];

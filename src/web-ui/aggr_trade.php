@@ -1,45 +1,45 @@
 <?php
 /*
-  ================== Концепт агрегатора ========================
-  На вход подаются сигналы, имеющие точное значение абсолютной целевой позиции и цену достижения. Предполагается исключение некоторых сигналов по заданному фильтру.
-  Пока абсолютное значение позиции растет, идет формирование агрегированного входа, с усреднением цены сигналов по обьему. Снижение позиции фиксирует вход, и начинает формировать выход трейда. Нулевое значение позиции всегда фиксирует закрытие трейда, остаток объема переносится в следующий.
-  ?? Промежуточные (частичные) выходы отщипывают объем у основного входа, и формируют отдельные агрегированные трейды. ??
+    ================== Концепт агрегатора ========================
+    На вход подаются сигналы, имеющие точное значение абсолютной целевой позиции и цену достижения. Предполагается исключение некоторых сигналов по заданному фильтру.
+    Пока абсолютное значение позиции растет, идет формирование агрегированного входа, с усреднением цены сигналов по обьему. Снижение позиции фиксирует вход, и начинает формировать выход трейда. Нулевое значение позиции всегда фиксирует закрытие трейда, остаток объема переносится в следующий.
+    ?? Промежуточные (частичные) выходы отщипывают объем у основного входа, и формируют отдельные агрегированные трейды. ??
 
- TODO:
-   * работа с сигналами и отдельными трейдами на входе (для мануальных депо).
-   * генерация отчетов за кварталы и последний год-два. 
-   * BitMEX: start_pos & target_pos - пересчитывать из контрактов в позицию
+    TODO:
+    * работа с сигналами и отдельными трейдами на входе (для мануальных депо).
+    * генерация отчетов за кварталы и последний год-два. 
+    * BitMEX: start_pos & target_pos - пересчитывать из контрактов в позицию
 
 
 */
 
 
 class AggregatedTrade {
- public   $enter_price;
- public   $enter_ts = '';
- public   $enter_qty;
- public   $exit_price;
- public   $exit_ts = '';     
- public   $exit_qty;        
- 
- public   $direction = 0; // 1 = long, -1 = short = 0;     
+    public   $enter_price;
+    public   $enter_ts = '';
+    public   $enter_qty;
+    public   $exit_price;
+    public   $exit_ts = '';     
+    public   $exit_qty;        
+    
+    public   $direction = 0; // 1 = long, -1 = short = 0;     
 
- public   $opened_cost = 0;
- public   $closed_cost = 0;
+    public   $opened_cost = 0;
+    public   $closed_cost = 0;
 
- public   $curr_pos = 0;
+    public   $curr_pos = 0;
 
- public    $profit = 0;
- 
- public   $first_batch = 0;
- public   $last_batch = 0;
- protected $batches = 0;
- 
+    public    $profit = 0;
+    
+    public   $first_batch = 0;
+    public   $last_batch = 0;
+    protected $batches = 0;
+    
 
- protected $story = '';
+    protected $story = '';
 
 
- function   AggrEnter(int $sid, int $time, float $pos, float $price) {
+    function   AggrEnter(int $sid, int $time, float $pos, float $price) {
      $qty = abs($pos) - abs($this->curr_pos);
      if (0 == $qty) return;
      if (!$this->enter_ts)  {
@@ -54,9 +54,9 @@ class AggregatedTrade {
      $this->enter_price = $this->opened_cost / $this->enter_qty;
      $this->curr_pos = $pos;
      $this->batches ++;
- }
+    }
 
- function   AggrExit(int $sid, int $time, float $pos, float $price) {
+    function   AggrExit(int $sid, int $time, float $pos, float $price) {
      $qty = abs($this->curr_pos) - abs($pos);
      if (0 == $qty) return;     
      $this->last_batch = $sid;   
@@ -75,7 +75,7 @@ class AggregatedTrade {
         $this->profit = ($this->closed_cost - $enter_cost_part) * $this->direction; 
      }   
      
- }
+    }
 
 };  
 

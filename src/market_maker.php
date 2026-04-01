@@ -1,11 +1,11 @@
 <?php
-  require_once "lib/common.php";
-  require_once "orders_lib.php";
-  require_once "trading_core.php";
+    require_once "lib/common.php";
+    require_once "orders_lib.php";
+    require_once "trading_core.php";
 
-  
+    
 
-  function get_nearest(array &$list, float $price, float $intv): ?OrderInfo {
+    function get_nearest(array &$list, float $price, float $intv): ?OrderInfo {
     $result = null;
     $min_diff = $intv;
     foreach ($list as $oinfo)
@@ -19,14 +19,14 @@
     if ($result)
         unset($list[$result->id]); // extraction
     return $result;
-  }
+    }
 
-  function count_keys(array $list): int {
+    function count_keys(array $list): int {
     $keys = array_keys($list);
     return count($keys);
-  }
+    }
 
-  function claim_deeper(array &$list, int $level, bool $buy): ?OrderInfo {
+    function claim_deeper(array &$list, int $level, bool $buy): ?OrderInfo {
     $kl = min(array_keys($list));
     $ku = max(array_keys($list));    
     $from = $buy ? $kl : $ku;  // покупки отбирать снизу, продажи сверху
@@ -43,9 +43,9 @@
       return $oinfo;
     }
     return null;
-  }
+    }
 
-  function dump_orders_info(array $orders, array $levels) {
+    function dump_orders_info(array $orders, array $levels) {
     $res = [];
     foreach ($orders as $i => $oinfo) {        
         $lp = isset($levels[$i]) ? $levels[$i] : '-';
@@ -67,9 +67,9 @@
         $res []= $s;            
     }
     return implode(', ', $res);
-  }
+    }
 
-  class MarketMaker {
+    class MarketMaker {
 
     protected $asks = null; // OrdersBlock 
     protected $bids = null; // OrdersBlock    
@@ -964,7 +964,7 @@
             $params['comment'] = "MM ext_sig#{$ext_sig->id} coef = {$ext_sig->open_coef}";
             $params['flags'] = OFLAG_DIRECT;
         }
- 
+    
         $info = $engine->NewOrder($tinfo, $params); 
         if (!is_object($info)) {          
           $core = $engine->TradeCore();
@@ -1090,7 +1090,7 @@
            $block->SaveToDB($strict);
     }
 
- 
+    
     public function PendingAmount(): float {
        $res  = 0.0;
        $ti = $this->tinfo;
@@ -1863,7 +1863,7 @@
                            $nbot, count($bots), strval($sig), $max_qty, $step, $amount, $fqty, $cdp, $mid_price, $ti->mid_spread, $ginfo, $minfo);                            
             $sig->last_state = $state;                           
          }                 
- 
+    
         $this->CheckGridBot($sig,  $levels);               
         $this->indent = '';
       }
@@ -1964,4 +1964,4 @@
        } 
     } 
 
-  }
+    }
