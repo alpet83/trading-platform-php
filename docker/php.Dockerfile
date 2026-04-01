@@ -28,6 +28,9 @@ RUN docker-php-ext-install -j"$(nproc)" \
     sockets \
     bcmath
 
+# Xdebug for debugging and error handling
+RUN pecl install xdebug && docker-php-ext-enable xdebug
+
 # Optional (future async runtime):
 # RUN pecl install swoole && docker-php-ext-enable swoole
 
@@ -52,6 +55,7 @@ RUN cd ${APP_DIR}/src && composer install --no-dev --no-interaction --prefer-dis
 
 COPY src ${APP_DIR}/src
 COPY docker/entrypoints/*.sh /usr/local/bin/
+COPY docker/php/conf.d/*.ini /usr/local/etc/php/conf.d/
 RUN chmod +x /usr/local/bin/*.sh
 
 WORKDIR ${APP_DIR}/src

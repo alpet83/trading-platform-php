@@ -72,6 +72,7 @@ services:
       - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
       - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
       - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
+      - ./docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
@@ -115,7 +116,9 @@ services:
       retries: 12
 
   bots-hive:
-    image: trd-bot-manager:latest
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-trd}-bots-hive
     restart: unless-stopped
     depends_on:
@@ -146,6 +149,7 @@ services:
       - ./docker/entrypoints/run-bot.sh:/usr/local/bin/run-bot.sh:ro
       - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
       - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
+      - ./docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
@@ -178,6 +182,7 @@ services:
       - ./docker/entrypoints/run-datafeed.sh:/usr/local/bin/run-datafeed.sh:ro
       - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
       - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
+      - ./docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data

@@ -57,6 +57,7 @@ services:
       - ./docker/entrypoints/run-signals-legacy.sh:/usr/local/bin/run-signals-legacy.sh:ro
       - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
       - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
+      - ./docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
       - ./secrets/signals_db_config.php:/usr/local/etc/php/db_config.php:ro
       - signals-legacy-db-socket:/run/mysqld
       - ./var/log:/app/var/log
