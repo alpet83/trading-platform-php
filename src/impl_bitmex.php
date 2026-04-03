@@ -56,6 +56,9 @@
 
     final class BitMEXEngine extends RestAPIEngine {
 
+        const API_BASE_MAIN    = 'https://www.bitmex.com/';
+        const API_BASE_TESTNET = 'https://testnet.bitmex.com/';
+
         private   $last_good_rqs = [];
         private   $open_orders = [];
         private   $loaded_data = [];
@@ -79,48 +82,40 @@
         public function __construct(object $core) {            
             parent::__construct($core);                       
             $this->exchange = 'BitMEX';
-            $env = getenv();
-            if (isset($env['BMX_API_KEY'])) {
-                $this->apiKey = trim($env['BMX_API_KEY']);
+            $auth = $this->InitializeAPIKey([
+                'env_prefix' => 'BMX',
+            ]);
+            $this->apiKey = strval($auth['key'] ?? '');
+            $this->secretKey = $auth['secret'] ?? [];
+            if (strval($auth['source'] ?? '') === 'env')
                 $this->LogMsg("#ENV: Used API Key {$this->apiKey}");
-                $this->secretKey = explode("\n", trim($env['BMX_API_SECRET']));
-                // echo $env['BMX_API_SECRET']." vs \n";
-                // echo file_get_contents('.bitmex.key');         
-            } else {
-                $key = file_get_contents('.bitmex.api_key');     
-                $this->apiKey = trim($key);
-                $this->secretKey = file('.bitmex.key');
-                if (!$this->secretKey)
-                    throw new Exception("#FATAL: can't load private key!\n");
-            }
 
-            $api_base = trim((string)(getenv('BMX_API_BASE_URL') ?: ''));
             $use_testnet = strtolower(trim((string)(getenv('BMX_TESTNET') ?: '0')));
-            if (!strlen($api_base) && in_array($use_testnet, ['1', 'true', 'yes', 'on'], true)) {
-                $api_base = 'https://testnet.bitmex.com/';
-            }
-            if (!strlen($api_base)) {
-                $api_base = 'https://www.bitmex.com/';
-            }
-            if ('/' !== substr($api_base, -1)) {
+            $profile_name = trim((string)(getenv('BMX_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: ''));
+            if (!strlen($profile_name))
+                $profile_name = in_array($use_testnet, ['1', 'true', 'yes', 'on'], true) ? 'testnet' : 'main';
+
+            $profile_file = trim((string)(getenv('BMX_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bitmex.yml'));
+            $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
+                'api_base' => self::API_BASE_MAIN,
+            ]);
+
+            $api_base = trim((string)(getenv('BMX_API_BASE_URL') ?: ($profile['api_base'] ?? '')));
+            if (!strlen($api_base))
+                $api_base = self::API_BASE_MAIN;
+            if ('/' !== substr($api_base, -1))
                 $api_base .= '/';
-            }
 
             $this->public_api = $api_base;
             $this->private_api = $api_base;
-            $this->LogMsg("#ENV: BitMEX API base %s", $api_base);
-            fwrite(STDERR, "#ENV: BitMEX API base $api_base\n");
+            $profile_mark = !empty($profile['_profile_loaded']) ? strval($profile['_profile_name']) : 'legacy-env';
+            $this->LogMsg('#ENV: BitMEX API base %s, profile %s', $api_base, $profile_mark);
+            fwrite(STDERR, "#ENV: BitMEX API base $api_base, profile $profile_mark\n");
 
-            if (in_array($use_testnet, ['1', 'true', 'yes', 'on'], true)) {
-                $assembled_secret = trim(implode('', $this->secretKey));
-                $this->LogMsg("#TESTNET: assembled BitMEX secret %s", $assembled_secret);
-                fwrite(STDERR, "#TESTNET: assembled BitMEX secret $assembled_secret\n");
-            }
         }
 
         public function  Initialize() {
             parent::Initialize();
-            $this->CheckApiKeyPrivileges();
         }
 
         public function CreateOrderList(string $name, bool $fixed = false): OrderList {
@@ -169,49 +164,60 @@
             $mysqli->try_query("ALTER TABLE `$table_name` ADD INDEX `order_no` (`order_no`);");
         }
 
-        private function CheckApiKeyPrivileges(): void {
+        public function CheckAPIKeyRights(): bool {
             $core = $this->TradeCore();
             $json = $this->RequestPrivateAPI('api/v1/apiKey', ['count' => 1], 'GET');
-            if (false === $json || '' === $json) {
-                $core->LogError("~C91#WARN(CheckApiKey):~C00 /apiKey request failed or returned empty response");
-                return;
-            }
+            if (false === $json || '' === trim(strval($json)))
+                $this->ThrowInvalidBitMEXApiKey('#FATAL: BitMEX /apiKey request failed or returned empty response');
+
             $data = json_decode($json, true);
-            if (!is_array($data)) {
-                $core->LogError("~C91#WARN(CheckApiKey):~C00 /apiKey response is not an array: %s", substr($json, 0, 200));
-                return;
+            if (!is_array($data))
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX /apiKey response is invalid: %s', substr(strval($json), 0, 200)));
+
+            if (isset($data['error'])) {
+                $msg = strval($data['error']['message'] ?? 'BitMEX API key rejected');
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key rejected: %s', $msg));
             }
+
+            $rows = isset($data[0]) ? $data : [$data];
             $key_id = strtolower(trim($this->apiKey));
             $entry  = null;
-            foreach ($data as $item) {
+            foreach ($rows as $item) {
                 if (is_array($item) && strtolower(trim((string)($item['id'] ?? ''))) === $key_id) {
                     $entry = $item;
                     break;
                 }
             }
-            if (null === $entry && count($data) > 0) {
-                $entry = $data[0]; // fallback: single-key response
-            }
-            if (null === $entry) {
-                $core->LogError("~C91#WARN(CheckApiKey):~C00 Could not find apiKey entry for key %s in response", $this->apiKey);
-                return;
-            }
+            if (null === $entry && count($rows) > 0)
+                $entry = $rows[0];
+            if (null === $entry)
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key %s was not found in /apiKey response', $this->MaskApiKey()));
+
             $enabled     = (bool)($entry['enabled'] ?? false);
             $permissions = (array)($entry['permissions'] ?? []);
             $perms_str   = implode(', ', $permissions) ?: '(none)';
             $core->LogMsg("~C96#INFO(CheckApiKey):~C00 key=%s enabled=%s permissions=[%s]",
-                $this->apiKey, $enabled ? 'true' : 'false', $perms_str);
+                $this->MaskApiKey(), $enabled ? 'true' : 'false', $perms_str);
 
-            $trade_enabled = (bool)$core->ConfigValue('trade_enabled', false);
-            if ($trade_enabled) {
-                $has_order = in_array('order', $permissions, true);
-                if (!$has_order) {
-                    $core->LogError("~C91#ERROR(CheckApiKey):~C00 trade_enabled=true but API key has no 'order' permission! Privileges: [%s]", $perms_str);
-                }
-                if (!$enabled) {
-                    $core->LogError("~C91#ERROR(CheckApiKey):~C00 trade_enabled=true but API key is disabled on BitMEX side!");
-                }
+            if (!$enabled)
+                $this->ThrowInvalidBitMEXApiKey('#FATAL: BitMEX API key is disabled on exchange side');
+
+            if (!in_array('order', $permissions, true)) {
+                $core->LogMsg("~C93#AUTH_LIMIT:~C00 BitMEX API key %s has no 'order' permission, permissions=[%s]", $this->MaskApiKey(), $perms_str);
+                return false;
             }
+
+            return true;
+        }
+
+        private function IsBitMEXTestnetMode(): bool {
+            return $this->IsTruthyEnvFlag('BMX_TESTNET') || $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
+        }
+
+        private function ThrowInvalidBitMEXApiKey(string $message): void {
+            if ($this->IsBitMEXTestnetMode())
+                $this->DumpSecretForAuthDebug($this->SecretToString($this->secretKey), 'assembled BitMEX secret');
+            throw new Exception($message);
         }
 
         private function DetectAndLogKycBlock(string $api_path, string $json, string $headers = ''): void {

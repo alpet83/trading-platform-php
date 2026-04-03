@@ -1,0 +1,7 @@
+version: 1
+exchange: bitfinex
+default_profile: main
+profiles:
+    main:
+        public_api: https://api-pub.bitfinex.com/
+        private_api: https://api.bitfinex.com/

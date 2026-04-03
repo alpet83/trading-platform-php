@@ -103,7 +103,7 @@ run_startup_backup() {
   local ts
   ts="$(date +%Y%m%d-%H%M%S)"
   local backup_file
-  backup_file="${BACKUP_DIR}/${DB_NAME}-${ts}.sql.gz"
+  backup_file="${BACKUP_DIR}/${DB_NAME}-${ts}-startup_backup.sql.gz"
   local tmp_backup_file
   tmp_backup_file="${backup_file}.tmp"
 

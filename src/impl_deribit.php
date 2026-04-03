@@ -10,13 +10,17 @@
 
     final class DeribitEngine extends RestAPIEngine {
 
-        private   $open_orders = array();
+    const API_BASE_MAIN    = 'https://www.deribit.com';
+    const API_BASE_TESTNET = 'https://test.deribit.com';
+
+    private   $open_orders = array();
         private   $loaded_data = array();
         private   $clientId =  '';
         private   $api_params = array();
         private   $oauth_token = false;
         private   $oauth_refresh_token = false;
         private   $oauth_expires = 0;
+        private   $oauth_scope = '';
         private   $instruments = array();
 
         private   $history_by_instr = []; // map by pair
@@ -30,21 +34,34 @@
         public function __construct(object $core) {
             parent::__construct($core);
             $this->exchange = 'Deribit';
-            $env = getenv();
-            if (isset($env['DBT_API_KEY'])) {
-            $this->clientId = trim($env['DBT_API_KEY']);
-            $this->LogMsg("#ENV: Used clientId {$this->clientId}");         ;
-            $this->secretKey = explode("\n", trim($env['DBT_API_SECRET']));
-            
-            } else {
-            $clid = file_get_contents('.deribit.clid');
-            $this->clientId = trim($clid);
-            $this->secretKey = file('.deribit.key');        
-            if (!$this->secretKey)
-                throw new Exception("#FATAL: can't load private key!\n");
-            } 
-            $this->public_api = 'https://www.deribit.com';
-            $this->private_api = 'https://www.deribit.com';
+            $auth = $this->InitializeAPIKey([
+                'env_prefix' => 'DBT',
+                'file_key_path' => '.deribit.clid',
+            ]);
+            $this->clientId = strval($auth['key'] ?? '');
+            $this->secretKey = $auth['secret'] ?? [];
+            if (strval($auth['source'] ?? '') === 'env')
+                $this->LogMsg("#ENV: Used clientId {$this->clientId}");
+
+            $use_testnet = strtolower(trim((string)(getenv('DBT_TESTNET') ?: '0')));
+            $profile_name = trim((string)(getenv('DBT_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: ''));
+            if (!strlen($profile_name))
+                $profile_name = in_array($use_testnet, ['1', 'true', 'yes', 'on'], true) ? 'testnet' : 'main';
+
+            $profile_file = trim((string)(getenv('DBT_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/deribit.yml'));
+            $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
+                'api_base' => self::API_BASE_MAIN,
+            ]);
+
+            $api_base = rtrim(trim((string)(getenv('DBT_API_BASE_URL') ?: ($profile['api_base'] ?? ''))), '/');
+            if (!strlen($api_base))
+                $api_base = self::API_BASE_MAIN;
+
+            $this->public_api  = $api_base;
+            $this->private_api = $api_base;
+            $profile_mark = !empty($profile['_profile_loaded']) ? strval($profile['_profile_name']) : 'legacy-env';
+            $this->LogMsg('#ENV: Deribit API base %s, profile %s', $api_base, $profile_mark);
+
             $this->last_nonce = time_ms() * 11;
             $this->oauth_refresh_token = file_get_contents('.oauth_refresh_token');
         }
@@ -53,6 +70,28 @@
             if ($this->oauth_token)
                 $this->RequestPrivateAPI('/api/v2/private/logout', '');
             parent::Cleanup();
+        }
+
+        public function CheckAPIKeyRights(): bool {
+            if ($this->oauth_refresh_token && time() + 60 >= $this->oauth_expires)
+                $this->AuthRefresh();
+
+            if (!$this->oauth_token)
+                $this->AuthSession();
+
+            $scope = strtolower(trim(strval($this->oauth_scope)));
+            if (!strlen($scope))
+                return true;
+
+            if (false !== strpos($scope, 'trade:read_write') || false !== strpos($scope, 'trade:readwrite'))
+                return true;
+
+            if (false !== strpos($scope, 'trade:read') || false !== strpos($scope, 'trade:none')) {
+                $this->LogMsg('~C93#AUTH_LIMIT:~C00 Deribit token scope is read-only: %s', $this->oauth_scope);
+                return false;
+            }
+
+            return true;
         }
 
         private function ProcessError($context, $json, $res): bool  {
@@ -824,6 +863,7 @@
                 $this->last_error_code = 0;
                 $this->oauth_token = $obj->result->access_token;
                 $this->oauth_refresh_token = $obj->result->refresh_token;
+                $this->oauth_scope = strval($obj->result->scope ?? '');
                 file_put_contents('.oauth_refresh_token', $this->oauth_refresh_token);
                 chmod('.oauth_refresh_token', 0640);
                 $exp_sec = $obj->result->expires_in;
@@ -899,8 +939,14 @@
                 $this->ProcessError("Auth fails %s", $json, $obj);
                 $core->LogError("#FATAL: auth rejected by %s, params: %s ", $this->last_error, $params);
                 $core->auth_errors []= $json;
+                if ($this->IsDeribitTestnetMode())
+                    $this->DumpSecretForAuthDebug($this->SecretToString($this->secretKey), 'assembled Deribit secret');
                 throw new Exception ("Authorization $clid with credentials failed, response: $json");
             }
+        }
+
+        private function IsDeribitTestnetMode(): bool {
+            return $this->IsTruthyEnvFlag('DBT_TESTNET') || $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
         }
 
         private function RequestPrivateAPI($path, $params, $method = 'POST', $sign = true) {

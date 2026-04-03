@@ -155,54 +155,26 @@ if ($source -eq "pass") {
 
   $apiKey = AskSecret "API key"
   $secret = AskSecret "API secret"
+  $secretEncrypted = Ask "Encrypt API secret in DB using bot_manager key? (0/1)" "1"
 
-  $split = SplitSecretAuto $secret
-  Write-Host ("#INFO: secret auto-split at pos {0}: s0_len={1}, sep='{2}', s1_len={3}" -f $split.Pos, $split.S0.Length, $split.Sep, $split.S1.Length)
+  if ($secretEncrypted -eq "1") {
+    $env:SECRET_KEY_ENCRYPTED = "1"
+  } else {
+    $env:SECRET_KEY_ENCRYPTED = "0"
+  }
 
-  $tableEsc = EscapeSql $cfgTable
-  $keyEsc = EscapeSql $apiKey
-  $s0Esc = EscapeSql $split.S0
-  $s1Esc = EscapeSql $split.S1
-  $sepEsc = EscapeSql $split.Sep
-  $paramKey = "api_key"
-  $paramSecret = "api_secret"
-  $paramS0 = "api_secret_s0"
-  $paramS1 = "api_secret_s1"
-  $paramSep = "api_secret_sep"
+  $env:CREDENTIAL_SOURCE = "db"
+  $env:BOT_NAME = "$botName"
+  $env:ACCOUNT_ID = "$accountId"
+  $env:API_KEY = "$apiKey"
+  $env:API_SECRET = "$secret"
+  & sh scripts/inject-api-keys.sh
 
-  $paramKeyEsc = EscapeSql $paramKey
-  $paramSecretEsc = EscapeSql $paramSecret
-  $paramS0Esc = EscapeSql $paramS0
-  $paramS1Esc = EscapeSql $paramS1
-  $paramSepEsc = EscapeSql $paramSep
+  if ($LASTEXITCODE -ne 0) {
+    throw "db key injection failed with code $LASTEXITCODE"
+  }
 
-  $query = @"
-SET @cfg_table='${tableEsc}';
-SET @q1=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramKeyEsc}', ''',''', '${keyEsc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
-PREPARE s1 FROM @q1; EXECUTE s1; DEALLOCATE PREPARE s1;
-SET @q2=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramSecretEsc}', ''','''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
-PREPARE s2 FROM @q2; EXECUTE s2; DEALLOCATE PREPARE s2;
-SET @q3=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramS0Esc}', ''',''', '${s0Esc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
-PREPARE s3 FROM @q3; EXECUTE s3; DEALLOCATE PREPARE s3;
-SET @q4=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramS1Esc}', ''',''', '${s1Esc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
-PREPARE s4 FROM @q4; EXECUTE s4; DEALLOCATE PREPARE s4;
-SET @q5=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${accountId}, ',''', '${paramSepEsc}', ''',''', '${sepEsc}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');
-PREPARE s5 FROM @q5; EXECUTE s5; DEALLOCATE PREPARE s5;
-"@
-
-  Invoke-MariaDbQuery -ComposeFile $ComposeFile -Query $query | Out-Null
-
-  $verify = @"
-SET @cfg_table='${tableEsc}';
-SET @vq=CONCAT('SELECT param, value FROM ', @cfg_table, ' WHERE account_id=', ${accountId}, ' AND param IN (''${paramKeyEsc}'',''${paramSecretEsc}'',''${paramS0Esc}'',''${paramS1Esc}'',''${paramSepEsc}'') ORDER BY param');
-PREPARE sv FROM @vq; EXECUTE sv; DEALLOCATE PREPARE sv;
-"@
-
-  $rows = Invoke-MariaDbQuery -ComposeFile $ComposeFile -Query $verify
-  Write-Host "#INFO: verification rows:"
-  $rows | ForEach-Object { Write-Host $_ }
-
-  Write-Host "#SUCCESS: db credentials injected for $botName, account $accountId (split secret + separator persisted)"
+  Write-Host "#SUCCESS: db credentials injected for $botName, account $accountId"
 }
 
 Write-Host "#SUCCESS: interactive key injection completed"

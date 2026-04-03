@@ -12,11 +12,13 @@
 
 ## Workflow репозитория datafeed
 
-Для прозрачной истории изменений источником правок считается локальный клон `P:/GitHub/datafeed`. Порядок работы:
+Источник данных: `P:/opt/docker/datafeed` (синхронизирован с `cqds/projects/`).
 
-1. правки в `P:/GitHub/datafeed`;
-2. commit/push в публичный `origin` из этого каталога;
-3. уже затем pull/rebuild в runtime-среде `P:/opt/docker/datafeed`.
+Для прозрачной истории изменений источником правок считается локальный репозиторий `P:/opt/docker/datafeed`. Порядок работы:
+
+1. правки в `P:/opt/docker/datafeed`;
+2. commit/push в публичный `origin`;
+3. уже затем pull/rebuild в runtime-среде.
 
 ## Что добавлено
 

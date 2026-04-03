@@ -428,12 +428,23 @@ class TradingEngine {
         $this->history_db = $active_db = $mysqli_df->active_db();
         log_cmsg("~C04~C97#INFO:~C00 for historical data assigned $kind exchange DB %s", $active_db);
 
-        if (!$this->LoadTickers()) {
-            $this->SetLastError("CRITICAL: LoadTickers failed on engine init");
-            $core->Shutdown("FATAL ERROR");
-            throw new Exception("LoadTickers failed on engine init"); // first time, required for price update
-        }    
-        
+            $tickers_loaded = false;
+            for ($tk_attempt = 1; $tk_attempt <= 3; $tk_attempt++) {
+                if ($tk_attempt > 1) {
+                    $core->LogMsg('~C93#RETRY:~C00 LoadTickers attempt %d of 3, waiting 10s...', $tk_attempt);
+                    sleep(10);
+                }
+                if ($this->LoadTickers()) {
+                    $tickers_loaded = true;
+                    break;
+                }
+                $core->LogError('~C91#ERROR:~C00 LoadTickers attempt %d of 3 failed', $tk_attempt);
+            }
+            if (!$tickers_loaded) {
+                $this->SetLastError("CRITICAL: LoadTickers failed after 3 attempts on engine init");
+                $core->Shutdown("FATAL ERROR");
+                throw new Exception("LoadTickers failed on engine init"); // required for price update
+            }
         check_mkdir(getcwd().'/data/'.$this->account_id);
         $this->LogMsg("~C96#PERF:~C00 Loading orders from DB...");      
         // $this->trade_core->LogMsg("Processing $cname -> Initialize for exchange {$this->exchange}...");
@@ -623,13 +634,7 @@ class TradingEngine {
                 }  
 
                 $core->LogOrder("~C96#STARTUP:~C00 GenOrderID: checking for last unused order");
-                $res = $mysqli->query("INSERT IGNORE INTO `$table` (order_id, account_id, busy) VALUES ($base, {$this->account_id}, 0)");                    
-
-                if ($res && $mysqli->affected_rows > 0)
-                    $last_id = $mysqli->insert_id;  // застобил круглый id первым 
-                else  
-                    $last_id = $mysqli->select_value('order_id', $table,"WHERE $strict AND (DATE(ts) = '$date') AND (order_id > 0) ORDER BY order_id DESC");
-            }                   
+            }
 
             $attempt = 0;
             $failed_id = 0;
@@ -702,6 +707,12 @@ class TradingEngine {
         $core = $this->TradeCore();
         if ($core instanceof TradingCore)
             $core->LogEngine(...func_get_args());
+    }
+
+    public function LogError() {
+        $core = $this->TradeCore();
+        if ($core instanceof TradingCore)
+            $core->LogError(...func_get_args());
     }
 
     public function  LoadCMCPrices() {
@@ -788,10 +799,14 @@ class TradingEngine {
             }    
         }
 
-        if (count($trades) > 0) 
-            $mysqli->insert_rows($t_table, $t_fields, $trades);
-        if (count($funding) > 0) 
-            $mysqli->insert_rows($f_table, $f_fields, $funding);      
+        if (count($trades) > 0) {
+            if (0 !== strpos($t_table, '#ERROR:'))
+                $mysqli->insert_rows($t_table, $t_fields, $trades);
+        }
+        if (count($funding) > 0) {
+            if (0 !== strpos($f_table, '#ERROR:'))
+                $mysqli->insert_rows($f_table, $f_fields, $funding);
+        }
 
         return $imported;
     }

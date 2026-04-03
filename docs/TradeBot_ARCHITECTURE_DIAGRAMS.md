@@ -14,34 +14,34 @@ graph LR
         TGSRC["Telegram Signal<br/>Source"]
     end
     subgraph api["Public API Layer"]
-        APIGW["API Gateway<br/>HOST_API"]
+        APIGW["API Gateway<br/>signals-server"]
     end
     subgraph core["Core Trading Engine"]
         TRAD["Trading Engine<br/>bot_manager.php"]
         SIG["Signal Processor<br/>ext_signals.php"]
     end
     subgraph db["Data Layer"]
-        PGSQL["PostgreSQL<br/>Orders / Positions"]
+        MARIADB["MariaDB<br/>Orders / Positions"]
     end
     subgraph admin["Admin Interface"]
-        PANEL["Admin Dashboard<br/>admin_trade.php"]
+        PANEL["Admin Dashboard<br/>web-ui/basic-admin.php"]
     end
     
     BIN -->|REST| TRAD
     TGSRC -->|Webhook| SIG
     SIG -->|execute| TRAD
-    TRAD -->|query/store| PGSQL
-    APIGW -->|proxy| TRAD
-    PANEL -->|query/update| PGSQL
-    APIGW -->|serve| PANEL
+    TRAD -->|query/store| MARIADB
+    APIGW -->|request| SIG
+    PANEL -->|query/update| MARIADB
+    PANEL -->|API calls| APIGW
 ```
 
 **Legend:**
-- `EXCHANGE_X` = Live trading exchange (Binance/Bitfinex/etc).
-- `HOST_API` = Public API endpoint for internal tools and integrations.
+- `EXCHANGE_X` = Live trading exchange (Binance/Bitfinex/BitMEX/Deribit/Bybit).
+- `signals-server` = Public API endpoint for internal tools and integrations.
 - `bot_manager.php` = Central orchestrator for trade execution and position monitoring.
 - `ext_signals.php` = External signal intake and normalization.
-- `admin_trade.php` = Admin trading dashboard and controls.
+- `web-ui/basic-admin.php` = Admin trading dashboard and controls.
 
 ---
 
@@ -54,7 +54,7 @@ sequenceDiagram
     participant ENG as Trading Engine<br/>(bot_manager.php)
     participant ACC as Account Validator<br/>(common.php)
     participant EXCH as Exchange REST<br/>(impl_EXCHANGE_X.php)
-    participant DB as Database<br/>(PostgreSQL)
+    participant DB as Database<br/>(MariaDB)
     
     TS->>SIG: send signal (pair, size, side)
     SIG->>SIG: normalize pair
@@ -64,11 +64,12 @@ sequenceDiagram
     DB-->>ACC: rights confirmed
     ACC-->>ENG: proceed
     ENG->>EXCH: POST /trade request
-    EXCH-->>EXCH: execute on exchange
+    EXCH-->>EXCH: execute order
     EXCH-->>ENG: {"order_id": "...", "status": "filled"}
     ENG->>DB: record order + position
     DB-->>ENG: success
-    ENG-->>TS: confirm (via admin panel)
+    ENG-->>SIG: execution result
+    SIG-->>TS: delivery status
     
 ```
 
@@ -83,42 +84,66 @@ sequenceDiagram
 
 ---
 
-## Diagram 3: Deployment Architecture (Sanitized)
+## Diagram 3: Deployment Architecture (Docker)
 
 ```mermaid
 graph TB
-    subgraph deploy["Production Deployment"]
-        LB["Load Balancer<br/>nginx"]
-        WEB["Frontend<br/>HOST_WEB<br/>Vue/Nuxt"]
-        API["API Service<br/>HOST_API<br/>PHP-FPM"]
-        JOB["Job Workers<br/>bot_manager.php<br/>cron tasks"]
-        CACHE["Redis<br/>Session/Cache"]
-    end
-    subgraph storage["Persistent Storage"]
-        MAINDB["Main DB<br/>PostgreSQL<br/>orders, positions, users"]
-        TRADEDB["Trading DB<br/>PostgreSQL<br/>account_scoped"]
+    subgraph docker["Docker Compose Stack"]
+        MARIADB["mariadb<br/>MariaDB 11"]
+        WEB["web<br/>PHP-FPM"]
+        BOTSHIVE["bots-hive<br/>bot_manager.php"]
+        DATAFEED["datafeed<br/>datafeed_manager.php"]
+        PHPMYADMIN["phpmyadmin<br/>phpMyAdmin"]
+        GPGAGENT["gpg-agent<br/>Password Store"]
     end
     subgraph external["External"]
-        EXCH1["EXCHANGE_X"]
-        TGRAM["Telegram"]
+        EXCH1["EXCHANGE_X<br/>REST API"]
+        TGRAM["Telegram Bot"]
+        SIGSRC["Signal Source"]
     end
     
-    LB -->|HTTP/S| WEB
-    LB -->|HTTP/S| API
-    API -->|TCP| MAINDB
-    API -->|TCP| TRADEDB
-    API -->|TCP| CACHE
-    JOB -->|TCP| MAINDB
-    JOB -->|TCP| TRADEDB
-    JOB -->|REST| EXCH1
-    TGRAM -->|Webhook| API
-    WEB -->|API calls| API
+    WEB -->|3306| MARIADB
+    BOTSHIVE -->|3306| MARIADB
+    DATAFEED -->|3306| MARIADB
+    BOTSHIVE -->|REST| EXCH1
+    WEB -->|HTTP| SIGSRC
+    DATAFEED -->|HTTP| SIGSRC
+    TGRAM -->|Webhook| SIGSRC
 ```
 
 **Notes:**
-- Frontend and API share load balancer.
-- Main database hosts core trading state (orders, positions, users).
-- Separate trading database for account-scoped operations.
-- Redis for session and cache layer.
-- Job workers (bot_manager.php via cron) execute scheduled tasks and rebalancing.
-- Both databases replicated for DR (not shown).
+- Compose runtime uses one MariaDB service (replication depends on external setup).
+- bots-hive runs bot_manager.php for trade execution.
+- datafeed runs datafeed_manager.php for market data ingestion.
+- web serves PHP admin interface.
+- gpg-agent can be used for encrypted secret storage where configured.
+- phpmyadmin for database administration.
+
+---
+
+## Diagram 4: API Secret Delivery Pipeline
+
+```mermaid
+sequenceDiagram
+    participant SRC as Secret Source<br/>(DB or pass)
+    participant BM as BotManager<br/>(bot_manager.php)
+    participant ENV as Process ENV<br/>(BMX_API_SECRET, __CREDS_FROM_ENV)
+    participant CORE as RestAPIEngine<br/>(InitializeAPIKey)
+    participant EX as Exchange Engine<br/>(impl_bitmex / impl_bybit / ...)
+    participant SIG as Sign Method<br/>(SignRequest)
+
+    SRC->>BM: plaintext API secret
+    BM->>BM: encode to base64 for process handoff
+    BM->>ENV: export *_API_SECRET + __CREDS_FROM_ENV=1
+    ENV->>CORE: read secret payload
+    CORE->>EX: pass secret without forced global decode
+    EX->>SIG: exchange-specific decode/prep
+    SIG->>SIG: HMAC signature build
+
+    Note over CORE,EX: Decode must happen once per request in exchange-specific signing path
+```
+
+**Operational invariants:**
+- No universal forced decode in `InitializeAPIKey` for all exchanges.
+- Decode is owned by exchange-specific signing flow (`SignRequest` or equivalent).
+- Any change in secret transport format requires smoke checks for at least BitMEX and Bybit.

@@ -1,0 +1,10 @@
+version: 1
+exchange: binance
+default_profile: main
+profiles:
+    main:
+        public_api: https://api.binance.com/
+        private_api: https://api2.binance.com/
+    testnet:
+        public_api: https://testnet.binance.vision/
+        private_api: https://testnet.binance.vision/

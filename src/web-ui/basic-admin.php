@@ -155,6 +155,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             'report_color',
             'debug_pair',
             'api_secret_sep',
+            'secret_key_encrypted',
           ];
           foreach ($cfg as $k => $v) {
             if (!in_array($k, $allowedCfgKeys, true)) {
@@ -289,14 +290,14 @@ if ($mysqli) {
         'position_coef' => (string)($cfg['position_coef'] ?? ''),
         'max_order_cost' => (string)($cfg['max_order_cost'] ?? ''),
         'api_secret_sep' => (string)($cfg['api_secret_sep'] ?? '-'),
+        'secret_key_encrypted' => (string)($cfg['secret_key_encrypted'] ?? '0'),
         'missing' => $missing,
       ];
     }
     }
 
-    if ($selectedBot === '' && $firstBot !== '') {
-    $selectedBot = $firstBot;
-    }
+    // Keep create mode as default when no bot is explicitly selected.
+    // Auto-selecting the first bot forces update mode and locks key fields.
 
     @$mysqli->close();
 } else {
@@ -346,6 +347,7 @@ $formCfg = [
     'report_color' => $selectedBotData['config']['report_color'] ?? '32,42,56',
     'debug_pair' => $selectedBotData['config']['debug_pair'] ?? 'XBTUSD',
     'api_secret_sep' => $selectedBotData['config']['api_secret_sep'] ?? '-',
+    'secret_key_encrypted' => $selectedBotData['config']['secret_key_encrypted'] ?? '0',
 ];
 ?>
 <!DOCTYPE html>
@@ -533,6 +535,12 @@ $formCfg = [
           </label>
           <label>Secret Key Separator <span class="muted">(optional, default: -)</span>
             <input name="config[api_secret_sep]" value="<?php echo htmlspecialchars((string)$formCfg['api_secret_sep'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="-" <?php echo $allowed ? '' : 'disabled'; ?>>
+          </label>
+          <label>DB Secret Encrypted <span class="muted">(0 = plain/split, 1 = encrypted api_secret)</span>
+            <select name="config[secret_key_encrypted]" <?php echo $allowed ? '' : 'disabled'; ?>>
+              <option value="0" <?php echo ((string)$formCfg['secret_key_encrypted'] === '0') ? 'selected' : ''; ?>>0</option>
+              <option value="1" <?php echo ((string)$formCfg['secret_key_encrypted'] === '1') ? 'selected' : ''; ?>>1</option>
+            </select>
           </label>
           <button type="submit" <?php echo $allowed ? '' : 'disabled'; ?>><?php echo $selectedBotData ? 'Update Bot' : 'Create Bot'; ?></button>
         </form>

@@ -27,10 +27,96 @@
     if (isset($host_map[$host]))
         $host_ip = $host_map[$host];
 
-    $bm_log_dir = getcwd().'/log/bot_manager';
+    $bm_lock_file = '/tmp/bot_manager.pid';
+    $bm_lock_fp = false;
+
+    function bm_release_lock(): void {
+        global $bm_lock_fp, $bm_lock_file;
+        if (is_resource($bm_lock_fp)) {
+            @ftruncate($bm_lock_fp, 0);
+            @flock($bm_lock_fp, LOCK_UN);
+            @fclose($bm_lock_fp);
+            $bm_lock_fp = false;
+        }
+        @unlink($bm_lock_file);
+    }
+
+    function bm_acquire_lock(): void {
+        global $bm_lock_fp, $bm_lock_file;
+
+        $bm_lock_fp = @fopen($bm_lock_file, 'c+');
+        if (!is_resource($bm_lock_fp)) {
+            log_cmsg("~C91 #FATAL:~C00 cannot open manager lock file %s", $bm_lock_file);
+            die(17);
+        }
+
+        if (!@flock($bm_lock_fp, LOCK_EX | LOCK_NB)) {
+            $owner = trim((string)@stream_get_contents($bm_lock_fp));
+            log_cmsg("~C91 #FATAL:~C00 another bot_manager is already running (pid=%s)", $owner ?: '?');
+            @fclose($bm_lock_fp);
+            $bm_lock_fp = false;
+            die(18);
+        }
+
+        @ftruncate($bm_lock_fp, 0);
+        @rewind($bm_lock_fp);
+        @fwrite($bm_lock_fp, strval(getmypid()));
+        @fflush($bm_lock_fp);
+        register_shutdown_function('bm_release_lock');
+    }
+
+    function bm_soft_cleanup_bot_pid_files(): void {
+        $patterns = [
+            '/app/var/run/bot-runtime/*/*.pid',
+            '/app/var/run/bot-runtime/*.pid',
+        ];
+
+        $pid_files = [];
+        foreach ($patterns as $pattern) {
+            $files = glob($pattern);
+            if (is_array($files)) {
+                foreach ($files as $file)
+                    $pid_files[$file] = true;
+            }
+        }
+
+        if (!count($pid_files))
+            return;
+
+        foreach (array_keys($pid_files) as $pid_file) {
+            if (!is_file($pid_file))
+                continue;
+
+            $fp = @fopen($pid_file, 'c+');
+            if (!is_resource($fp)) {
+                log_cmsg("~C93 #WARN:~C00 cannot open pid file %s for soft cleanup", $pid_file);
+                continue;
+            }
+
+            $locked = @flock($fp, LOCK_EX | LOCK_NB);
+            if (!$locked) {
+                @fclose($fp);
+                continue;
+            }
+
+            $pid_val = trim((string)@stream_get_contents($fp));
+            @flock($fp, LOCK_UN);
+            @fclose($fp);
+
+            if (@unlink($pid_file))
+                log_cmsg("~C97 #DBG:~C00 removed stale unlocked pid file %s (pid=%s)", $pid_file, $pid_val ?: '?');
+        }
+    }
+
+    bm_acquire_lock();
+
+    $bm_log_dir = '/app/var/log';
     if (!is_dir($bm_log_dir))
         mkdir($bm_log_dir, 0775, true);
-    $log_file = fopen(getcwd().'/log/bot_manager/bot_manager.log', 'w');
+    $log_file = fopen($bm_log_dir.'/bot_manager.log', 'a');
+    $err_log = $bm_log_dir.'/bot_manager.errors.log';
+
+    bm_soft_cleanup_bot_pid_files();
 
     function send_event($tag, $event, $value = 0) {
         global $host;
@@ -69,6 +155,7 @@
         
         protected $stdout;    
         protected $stderr;    
+        protected string $stdout_log_file = '';
         protected string $api_secret = '';
         protected $start_t = 0;
             
@@ -91,6 +178,11 @@
                 return $result;
             else  
                 return $default;
+        }
+
+        public function Touch(): void {
+            $wdt_file = "/tmp/{$this->impl_name}.wdt";
+            @file_put_contents($wdt_file, strval(time()));
         }
 
         public function IsActive() {
@@ -129,6 +221,88 @@
             return "{$this->exchange}@{$this->account_id}";
         }
 
+        protected function ResolveManagerSecretKey(): string {
+            static $cached = null;
+            if (is_string($cached))
+                return $cached;
+
+            $key = trim((string)(getenv('BOT_MANAGER_SECRET_KEY') ?: ''));
+            if (!strlen($key)) {
+                $key_file = trim((string)(getenv('BOT_MANAGER_SECRET_KEY_FILE') ?: '/run/secrets/bot_manager_key'));
+                if (strlen($key_file) && is_file($key_file))
+                    $key = trim((string)@file_get_contents($key_file));
+            }
+
+            if (!strlen($key)) {
+                $alt_files = ['/run/secrets/bot_manager_secret_key', '/run/secrets/bot_manager_master_key'];
+                foreach ($alt_files as $file)
+                    if (is_file($file)) {
+                        $key = trim((string)@file_get_contents($file));
+                        if (strlen($key))
+                            break;
+                    }
+            }
+
+            $cached = $key;
+            return $cached;
+        }
+
+        protected function EncryptDbSecret(string $plain): string {
+            $plain = trim($plain);
+            if (!strlen($plain))
+                return '';
+
+            if (!function_exists('openssl_encrypt')) {
+                log_cmsg("~C91 #ERROR:~C00 %s cannot encrypt DB secret: OpenSSL extension is unavailable", $this->Name());
+                return '';
+            }
+
+            $master = $this->ResolveManagerSecretKey();
+            if (!strlen($master)) {
+                log_cmsg("~C91 #ERROR:~C00 %s cannot encrypt DB secret: BOT_MANAGER_SECRET_KEY is empty", $this->Name());
+                return '';
+            }
+
+            $iv = random_bytes(12);
+            $tag = '';
+            $cipher = openssl_encrypt($plain, 'aes-256-gcm', hash('sha256', $master, true), OPENSSL_RAW_DATA, $iv, $tag);
+            if ($cipher === false || strlen($tag) !== 16)
+                return '';
+
+            return 'v1:' . base64_encode($iv . $tag . $cipher);
+        }
+
+        protected function DecryptDbSecret(string $packed): string {
+            $packed = trim($packed);
+            if (!strlen($packed))
+                return '';
+
+            if (!function_exists('openssl_decrypt'))
+                return '';
+
+            if (strpos($packed, 'v1:') !== 0)
+                return '';
+
+            $master = $this->ResolveManagerSecretKey();
+            if (!strlen($master)) {
+                log_cmsg("~C91 #ERROR:~C00 %s cannot decrypt DB secret: BOT_MANAGER_SECRET_KEY is empty", $this->Name());
+                return '';
+            }
+
+            $raw = base64_decode(substr($packed, 3), true);
+            if ($raw === false || strlen($raw) < 29)
+                return '';
+
+            $iv = substr($raw, 0, 12);
+            $tag = substr($raw, 12, 16);
+            $cipher = substr($raw, 28);
+            $plain = openssl_decrypt($cipher, 'aes-256-gcm', hash('sha256', $master, true), OPENSSL_RAW_DATA, $iv, $tag);
+            if ($plain === false)
+                return '';
+
+            return trim((string)$plain);
+        }
+
         protected function loadApiFromPass(string $exch, string $separator): void {
             $sfx = '';
             if (!$this->account_params->trade_enabled)
@@ -157,6 +331,7 @@
         protected function loadApiFromDb(string $separator): void {
             $key_param = getenv('BOT_DB_API_KEY_PARAM') ?: 'api_key';
             $secret_param = getenv('BOT_DB_API_SECRET_PARAM') ?: 'api_secret';
+            $secret_encrypted = intval($this->ConfigValue('secret_key_encrypted', '0')) === 1;
 
             if (!$this->account_params->trade_enabled) {
                 $ro_key_param = $key_param.'_ro';
@@ -179,10 +354,23 @@
                     $secret = $s0.$separator.$s1;
             }
 
+            if ($secret_encrypted && strlen($secret)) {
+                $dec = $this->DecryptDbSecret($secret);
+                if (strlen($dec))
+                    $secret = $dec;
+                else {
+                    log_cmsg("~C91 #ERROR:~C00 failed decrypt DB secret for %s (param '%s'), check BOT_MANAGER_SECRET_KEY", $this->Name(), $secret_param);
+                    $secret = '';
+                }
+            }
+
             if (!strlen($this->api_key) || !strlen($secret)) {
                 log_cmsg("~C91 #WARN:~C00 DB credentials are incomplete for %s (key param '%s', secret param '%s')", $this->Name(), $key_param, $secret_param);
             }
 
+            // Store plaintext secret for ENV passing (never written to disk)
+            $this->api_secret_plaintext = $secret;
+            // For backward compat with old code paths, also keep base64-encoded version
             $this->api_secret = chunk_split(base64_encode($secret), 8, "\n");
         }
 
@@ -202,10 +390,23 @@
             }
                 
             
-            $api_key_name = $this->ConfigValue('api_key_name');
-            $api_key_sec  = $this->ConfigValue('api_secret_name', '');
+            $api_key_name = trim((string)$this->ConfigValue('api_key_name', ''));
+            $api_key_sec  = trim((string)$this->ConfigValue('api_secret_name', ''));
             $separator    = $this->ConfigValue('api_secret_sep', '-');      
-                
+            
+            // Use defaults if not configured in DB
+            if (!strlen($api_key_name)) {
+                if ('bitmex' === $exch)
+                    $api_key_name = 'BMX_API_KEY';
+                else
+                    $api_key_name = strtoupper($exch) . '_API_KEY';
+            }
+            if (!strlen($api_key_sec)) {
+                if ('bitmex' === $exch)
+                    $api_key_sec = 'BMX_API_SECRET';
+                else
+                    $api_key_sec = strtoupper($exch) . '_API_SECRET';
+            }
 
             if (strlen($this->api_key) < 4) {        
                 log_cmsg("~C94 #DBG:~C00 API key not cached, trying retrieve and set env[$api_key_name], secret separator [$separator]");        
@@ -217,24 +418,38 @@
                     $this->loadApiFromPass($exch, $separator);
             }       
             $ds = [["pipe", "r"], ["pipe", "w"], ["pipe", "w"]];
-        $env_vars = getenv();
+            $env_vars = getenv();
             $env_vars['impl_name'] = $this->impl_name;
+            $env_vars['BOT_IMPL_NAME'] = $this->impl_name;
+            $env_vars['BOT_ACCOUNT_ID'] = strval($this->account_id);
             $env_vars['config_table'] = $this->table;
 
             if (strlen($this->api_key) > 0) {        
-                if (strlen($api_key_name))  {
-                log_cmsg("~C94 #DBG:~C00 reusing cached API %s creds...", $api_key_name); 
                 $env_vars[$api_key_name] = $this->api_key;
-                $env_vars[$api_key_sec]  = $this->api_secret;
-                } else 
-                log_cmsg("~C91#WARN:~C00 not specified API credentials meta in DB!");              
+                // Backward/compat alias for older scripts/configs.
+                if ('bitmex' === $exch)
+                    $env_vars['BITMEX_API_KEY'] = $this->api_key;
+                // Pass plaintext secret as base64 via ENV (never touches disk)
+                if (strlen($this->api_secret_plaintext ?? '') > 0) {
+                    $encoded_secret = base64_encode($this->api_secret_plaintext);
+                    $env_vars[$api_key_sec] = $encoded_secret;
+                    if ('bitmex' === $exch)
+                        $env_vars['BITMEX_API_SECRET'] = $encoded_secret;
+                    $env_vars['__CREDS_FROM_ENV'] = '1';
+                } else {
+                    // Fallback to old base64-chunked version for backward compatibility
+                    $env_vars[$api_key_sec] = $this->api_secret;
+                    if ('bitmex' === $exch)
+                        $env_vars['BITMEX_API_SECRET'] = $this->api_secret;
+                }
             }  
 
             $path = __DIR__;
             $cmd = "/bin/sh /usr/local/bin/run-bot.sh";
             $name = $this->Name();
             log_cmsg("~C97#DBG:~C00 trying start %s bot", $exch);
-            // print_r($env_vars);
+            $this->stdout_log_file = '/app/var/tmp/stdout.' . $this->impl_name . '.log';
+            @file_put_contents($this->stdout_log_file, '');
             set_time_limit(30);
             if ($this->instance = proc_open($cmd, $ds, $pipes, $path, $env_vars)) {                     
                 send_event("WARN", "Starting bot $name workdir $path, restarts = {$this->restarts} ");          
@@ -253,12 +468,16 @@
                     if ($elps > 5) break;
                 }
                 if ($s && strlen($s) > 1)
-                    log_msg("#OUT: $s");
+                    @file_put_contents($this->stdout_log_file, $s, FILE_APPEND);
 
                 sleep(1);
                 $st = proc_get_status($this->instance);   
-                echo stream_get_contents($this->stderr);
-                echo stream_get_contents($this->stdout);
+                $stderr_out = stream_get_contents($this->stderr);
+                if (is_string($stderr_out) && strlen($stderr_out) > 0)
+                    @file_put_contents($this->stdout_log_file, $stderr_out, FILE_APPEND);
+                $stdout_out = stream_get_contents($this->stdout);
+                if (is_string($stdout_out) && strlen($stdout_out) > 0)
+                    @file_put_contents($this->stdout_log_file, $stdout_out, FILE_APPEND);
 
                 if ($st['running']) 
                     return true;
@@ -278,13 +497,12 @@
         }
 
         public function Output() {
-            $name = $this->Name();
             $s = stream_get_contents($this->stderr);
             if (strlen($s) > 1) 
-                log_msg("#STDERR($name): %s\n", $s);
+                @file_put_contents($this->stdout_log_file, $s, FILE_APPEND);
             $s = stream_get_contents($this->stdout);
             if (strlen($s) > 1) 
-                log_msg("#STDOUT($name): %s\n", $s);
+                @file_put_contents($this->stdout_log_file, $s, FILE_APPEND);
         }
 
         public function Stop() {      
@@ -294,8 +512,13 @@
                 sleep(30);
             }          
 
-            $pid_file = $this->impl_name.'.pid';
-            $alive = file_exists($pid_file);
+                // PID file is written by TradingCore at ../impl.pid relative to the per-account
+                // runtime workspace, i.e. /app/var/run/bot-runtime/<impl>/<impl>.pid.
+                $pid_file = "/app/var/run/bot-runtime/{$this->impl_name}/{$this->impl_name}.pid";
+                if (!file_exists($pid_file)) {
+                    $pid_file = $this->impl_name . '.pid'; // legacy relative fallback
+                }
+                $alive = file_exists($pid_file);
             $pid = false;
             if ($alive) {        
                 log_cmsg("~C93 #STOP:~C00 found pid file $pid_file");
@@ -578,6 +801,168 @@
         pcntl_sigtimedwait([SIGQUIT, SIGTERM], $info, $timeout,0); 
     }
 
+    function bm_backup_defaults(): array {
+        return [
+            'backup_enabled' => '1',
+            'backup_time_utc' => '23:59',
+            'backup_dir' => '/var/backup/mysql',
+            'backup_retention_days' => '7',
+            'backup_last_run_ymd' => '',
+        ];
+    }
+
+    function bm_ensure_backup_config_table(): void {
+        $query = "CREATE TABLE IF NOT EXISTS `config__bot_manager` ("
+               . " `account_id` int(11) NOT NULL DEFAULT 0,"
+               . " `param` varchar(32) NOT NULL,"
+               . " `value` varchar(128) NOT NULL,"
+               . " UNIQUE KEY `strictor` (`account_id`,`param`)"
+               . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin";
+        try_query($query);
+
+        try_query("INSERT INTO config__bot_manager(account_id,param,value) VALUES (0,'backup_enabled','1') ON DUPLICATE KEY UPDATE value=value");
+        try_query("INSERT INTO config__bot_manager(account_id,param,value) VALUES (0,'backup_time_utc','23:59') ON DUPLICATE KEY UPDATE value=value");
+        try_query("INSERT INTO config__bot_manager(account_id,param,value) VALUES (0,'backup_dir','/var/backup/mysql') ON DUPLICATE KEY UPDATE value=value");
+        try_query("INSERT INTO config__bot_manager(account_id,param,value) VALUES (0,'backup_retention_days','7') ON DUPLICATE KEY UPDATE value=value");
+    }
+
+    function bm_load_backup_config(): array {
+        static $cache = null;
+        static $cache_ts = 0;
+        static $warned = false;
+        static $ensure_attempted = false;
+
+        $now = time();
+        if (is_array($cache) && ($now - $cache_ts) < 30)
+            return $cache;
+
+        $cfg = bm_backup_defaults();
+        $rows = sqli()->select_rows('param,value', 'config__bot_manager', 'WHERE account_id = 0', MYSQLI_ASSOC);
+        if (!is_array($rows)) {
+            if (!$ensure_attempted) {
+                bm_ensure_backup_config_table();
+                $ensure_attempted = true;
+                $rows = sqli()->select_rows('param,value', 'config__bot_manager', 'WHERE account_id = 0', MYSQLI_ASSOC);
+            }
+
+            if (!$warned) {
+                log_cmsg('~C91#WARN:~C00 config__bot_manager is unavailable, using backup defaults');
+                $warned = true;
+            }
+            $cache = $cfg;
+            $cache_ts = $now;
+            return $cfg;
+        }
+
+        foreach ($rows as $row) {
+            $p = trim(strval($row['param'] ?? ''));
+            if ($p === '')
+                continue;
+            $cfg[$p] = strval($row['value'] ?? '');
+        }
+
+        if (!preg_match('/^\d{2}:\d{2}$/', $cfg['backup_time_utc'])) {
+            $cfg['backup_time_utc'] = '23:59';
+        } else {
+            $hh = intval(substr($cfg['backup_time_utc'], 0, 2));
+            $mm = intval(substr($cfg['backup_time_utc'], 3, 2));
+            if ($hh < 0 || $hh > 23 || $mm < 0 || $mm > 59)
+                $cfg['backup_time_utc'] = '23:59';
+        }
+
+        $cache = $cfg;
+        $cache_ts = $now;
+        return $cfg;
+    }
+
+    function bm_mark_backup_run(string $ymd): void {
+        $ymd = addslashes($ymd);
+        try_query("INSERT INTO config__bot_manager(account_id,param,value) VALUES (0,'backup_last_run_ymd','$ymd') ON DUPLICATE KEY UPDATE value=VALUES(value)");
+    }
+
+    function bm_run_scheduled_backup(): void {
+        static $last_slot = '';
+
+        $cfg = bm_load_backup_config();
+        if (intval($cfg['backup_enabled'] ?? '0') !== 1)
+            return;
+
+        $now_hm = gmdate('H:i');
+        $target_hm = $cfg['backup_time_utc'] ?? '23:59';
+        if ($now_hm !== $target_hm)
+            return;
+
+        $slot = gmdate('YmdHi');
+        if ($slot === $last_slot)
+            return;
+
+        $today = gmdate('Ymd');
+        if (($cfg['backup_last_run_ymd'] ?? '') === $today) {
+            $last_slot = $slot;
+            return;
+        }
+
+        $payload = [
+            'backup_dir' => strval($cfg['backup_dir'] ?? '/var/backup/mysql'),
+            'backup_retention_days' => strval($cfg['backup_retention_days'] ?? '7'),
+            'db_host' => strval($cfg['backup_db_host'] ?? ''),
+            'db_name' => strval($cfg['backup_db_name'] ?? ''),
+            'db_user' => strval($cfg['backup_db_user'] ?? ''),
+            'db_pass' => strval($cfg['backup_db_pass'] ?? ''),
+        ];
+
+        $script = __DIR__ . '/db_backup.php';
+        $cmd = 'php ' . escapeshellarg($script) . ' ' . escapeshellarg(json_encode($payload));
+        $out = [];
+        $code = 0;
+
+        log_cmsg('~C93#BACKUP:~C00 scheduled backup started for UTC %s', $target_hm);
+        exec($cmd . ' 2>&1', $out, $code);
+        if ($code === 0) {
+            bm_mark_backup_run($today);
+            log_cmsg('~C92#BACKUP_OK:~C00 scheduled backup finished, UTC day %s', $today);
+        } else {
+            log_cmsg('~C91#BACKUP_FAIL:~C00 scheduled backup failed (%d): %s', $code, implode("\n", $out));
+        }
+
+        $last_slot = $slot;
+    }
+
+    function bm_run_log_cleanup(): void {
+        static $last_ymd = '';
+
+        $today = gmdate('Ymd');
+        if ($last_ymd === $today)
+            return;
+
+        // Only execute at midnight UTC; don't mark as done so next midnight triggers properly.
+        if ((int)gmdate('H') !== 0)
+            return;
+
+        $last_ymd       = $today;
+        $log_root       = getenv('LOG_ROOT') ?: '/app/var/log';
+        $retention_days = max(1, (int)(getenv('LOG_RETENTION_DAYS') ?: 7));
+        $script         = __DIR__ . '/log_cleanup.php';
+
+        if (!file_exists($script)) {
+            log_cmsg('~C91#WARN:~C00 log_cleanup.php not found at %s', $script);
+            return;
+        }
+
+        $cmd  = 'php ' . escapeshellarg($script)
+              . ' ' . escapeshellarg($log_root)
+              . ' ' . escapeshellarg((string)$retention_days);
+        $out  = [];
+        $code = 0;
+
+        log_cmsg('~C93#LOG_CLEANUP:~C00 retention cleanup started (>=%d days) in %s', $retention_days, $log_root);
+        exec($cmd . ' 2>&1', $out, $code);
+        if ($code === 0)
+            log_cmsg('~C92#LOG_CLEANUP_OK:~C00 %s', implode('; ', $out));
+        else
+            log_cmsg('~C91#LOG_CLEANUP_FAIL:~C00 exit %d: %s', $code, implode("\n", $out));
+    }
+
     while ($active) {  // MAIN LOOP
         set_time_limit(70);
         $minute = date('i') * 1;  
@@ -593,7 +978,9 @@
         $acnt = 0;
         $count = count($bots);    
 
-        if ($ready)       
+        if ($ready) {
+            bm_run_scheduled_backup();
+            bm_run_log_cleanup();
             foreach ($bots as $idx => $bot) {    
                 if (0 == $minute % 10)
                     $bot->restarts = 0;
@@ -611,7 +998,8 @@
                 } 
                 $states[$idx] = $bot->GetStatus();
                 // 
-            } 
+            }
+        }
         else // not ready
             log_cmsg("~C91 #NOT_READY~C00(%d): redudancy checks failed ", $loops);
 

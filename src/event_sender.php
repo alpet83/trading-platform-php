@@ -1,5 +1,11 @@
 #!/usr/bin/php
 <?php
+    // Ensure include_path matches the parent bot process so all lib/* resolves correctly.
+    $__ipath = getenv('PHP_INCLUDE_PATH');
+    if (false !== $__ipath && '' !== $__ipath) {
+        set_include_path($__ipath);
+    }
+    unset($__ipath);
     require_once 'lib/common.php';
     require_once 'lib/esctext.php';
     require_once 'lib/trading_info.php';

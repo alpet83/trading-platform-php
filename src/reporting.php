@@ -1,7 +1,7 @@
 <?php
 
     require_once 'lib/common.php';
-    require_once 'lib/table_render.php';
+    require_once __DIR__.'/lib/table_render.php';
     require_once 'bot_globals.php';
 
     /**
@@ -12,6 +12,30 @@
         protected  $order_reports = [];  // every 10 minutes send: any minor orders accumulation
 
         protected  $report_color = [0, 0, 0];
+
+        protected function resolve_report_font(): string {
+            $candidates = [
+                __DIR__.'/fonts/arial.ttf',
+                __DIR__.'/fonts/DejaVuSansMono.ttf',
+                __DIR__.'/fonts/LiberationMono-Regular.ttf',
+                __DIR__.'/arial.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+            ];
+            foreach ($candidates as $font) {
+                if (is_string($font) && $font !== '' && file_exists($font))
+                    return $font;
+            }
+            return '';
+        }
+
+        protected function draw_report_text($img, int $size, int $x, int $y, int $color, string $font, string $text): void {
+            if ('' !== $font && file_exists($font)) {
+                imagettftext($img, $size, 0, $x, $y, $color, $font, $text);
+                return;
+            }
+            imagestring($img, 3, $x, max(0, $y - 14), $text, $color);
+        }
 
         public function send_event(string $tag, string $msg, $value = 0) {
             global $g_queue;
@@ -100,7 +124,7 @@
             if ($icon)
                 imagecopy($img, $icon, $width - 80, 30, 0, 0, 64, 64);
 
-            $font = $cwd.'/arial.ttf';
+            $font = $this->resolve_report_font();
             $side  = $info->buy ? 'buy' : 'sell';
             $color = $info->buy ? $green : $red;
 
@@ -115,17 +139,17 @@
 
             // imagettftext($img, $size, 0,  15, $yy, $color,   $font, $side);
             imagefilledpolygon($img, $pts, count($pts) / 2, $color);
-            imagettftext($img, $size, 0,  70, $yy, $magenta, $font, $info->amount);
-            imagettftext($img, $size, 0, 190, $yy, $yellow,  $font, $info->pair);
+            $this->draw_report_text($img, $size, 70, $yy, $magenta, $font, strval($info->amount));
+            $this->draw_report_text($img, $size, 190, $yy, $yellow, $font, strval($info->pair));
             $yy = 1 * $row_h + 30;
-            imagettftext($img, $size, 0,  15, $yy, $white,   $font, '@');
-            imagettftext($img, $size, 0,  70, $yy, $magenta, $font, $tinfo->FormatPrice($info->price));
+            $this->draw_report_text($img, $size, 15, $yy, $white, $font, '@');
+            $this->draw_report_text($img, $size, 70, $yy, $magenta, $font, strval($tinfo->FormatPrice($info->price)));
             $yy = 2 * $row_h + 30;
-            imagettftext($img, $size, 0,  15, $yy, $white,    $font, "batch ");
-            imagettftext($img, $size, 0, 130, $yy, $magenta,  $font, $info->batch_id);
+            $this->draw_report_text($img, $size, 15, $yy, $white, $font, 'batch ');
+            $this->draw_report_text($img, $size, 130, $yy, $magenta, $font, strval($info->batch_id));
             $yy = 3 * $row_h + 30;
-            imagettftext($img, $size, 0,  15, $yy, $white,    $font, "order_no ");
-            imagettftext($img, 10, 0, 130, $yy, $magenta,  $font, $info->order_no);
+            $this->draw_report_text($img, $size, 15, $yy, $white, $font, 'order_no ');
+            $this->draw_report_text($img, 10, 130, $yy, $magenta, $font, strval($info->order_no));
 
             // imageline($img, 0, $height - 1, $width, , $white);
             $fd = fopen($cwd.$fname, 'wb');
@@ -365,9 +389,14 @@
             $coef = $this->configuration->position_coef;
 
             // $font = $cwd.'/arial.ttf';
-            $font = '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf';
+            $font = $this->resolve_report_font();
             $size = 12;
             $now_ms = time_ms();
+
+            if ('' === $font) {
+                $this->LogError("~C91#REPORT_WARN:~C00 no TTF font found, skip %s report image", $type);
+                return;
+            }
 
             imagettftext($img, $size, 0, 10, $row_o,  $white,  $font, $engine->exchange.'@'.$engine->account_id." hourly report");
             imagettftext($img, $size, 0, 400, $row_o,  $yellow,  $font, 'used funds: ');
@@ -447,8 +476,10 @@
                 imagettftext($img, $size, 0, $cols[3] + 10, $yy,    $white,  $font, $text); // position cost
 
                 $text = sprintf("%.1f%%", $alloc);
-                $bb = imagettfbbox($size, 0, $font, $text); // using for right format, just substract from col position        
-                $cx = min (60, $bb[4] - $bb[0]);
+                $bb = imagettfbbox($size, 0, $font, $text); // using for right format, just substract from col position
+                $cx = 0;
+                if (is_array($bb) && isset($bb[4], $bb[0]))
+                    $cx = min(60, $bb[4] - $bb[0]);
                 imagettftext($img, $size, 0, $cols[4] + 70 - $cx, $yy,   $alloc < 20 ? $white : $red,  $font, $text); // position allocation
                 // $html .= "<tr><td>$pair<td>{}<td>$curr\n";
                 imageline($img, 0, $y, $width, $y, $white); // draw horizontal 

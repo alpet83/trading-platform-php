@@ -154,6 +154,7 @@
         protected $btc_price = 0; // цена для расчетов контрактов
 
         protected $updates = 0;
+        protected $missing_orders = [];
         
 
         public function __construct(SignalFeed $owner) {       
@@ -163,6 +164,7 @@
             $this->account_id = $this->engine->account_id;
             $this->gen_orders = []; // new ArrayTracer();
             $this->gen_batches = []; // new ArrayTracer();
+            $this->missing_orders = [];
             $this->ts = date(SQL_TIMESTAMP);
         }
 
@@ -613,10 +615,20 @@
                 $oinfo = $owner->FindOrder($id, $this->pair_id, true); // TODO: use epsilon
                 
                 if (!$oinfo) {
-                    $core->LogMsg("~C91#WARN(CurrentDeltaPos):~C00 order %d not found in cache - removing as rejected", $id);                          
+                    $miss = 1 + intval($this->missing_orders[$id] ?? 0);
+                    $this->missing_orders[$id] = $miss;
+                    if ($miss < 3) {
+                        $core->LogMsg("~C95#WARN(CurrentDeltaPos):~C00 order %d not found in cache (%d/3), keep pending", $id, $miss);
+                        continue;
+                    }
+
+                    $core->LogMsg("~C91#WARN(CurrentDeltaPos):~C00 order %d not found in cache - removing as rejected", $id);
+                    unset($this->missing_orders[$id]);
                     $this->ExcludeOrder($id, 'lost/rejected');
                     continue;
-                }                  
+                }
+
+                unset($this->missing_orders[$id]);
                 
                 $bs = $oinfo->buy ? 'B' : 'S';  
                 if ($oinfo->IsCanceled() || $oinfo->IsOutbound() || $oinfo->flags & OFLAG_RESTORED) {

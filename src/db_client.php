@@ -22,6 +22,14 @@
             return in_array($this->RedundancyMode(), ['single', 'standalone', 'none', 'off'], true);
         }
 
+        protected function IsShutdownInProgress(): bool {
+            if (property_exists($this, 'aborted') && boolval($this->aborted))
+                return true;
+            if (property_exists($this, 'active') && !boolval($this->active))
+                return true;
+            return false;
+        }
+
         public function CheckDBConnection(string $kind = '', bool $force = false): ?mysqli_ex {
             global $db_servers;
             $key = 'mysqli';
@@ -33,12 +41,29 @@
                 return null;
             }         
 
+            if ($this->IsShutdownInProgress()) {
+                $this->$key = null;
+                return null;
+            }
+
             $mysqli = $this->$key;        
             $minute = date('i') * 1;       
             
             while ($this->conn_attempts < 3) {
-                if (is_object($mysqli) && $mysqli->ping()) 
-                    return $mysqli;           
+                if ($this->IsShutdownInProgress()) {
+                    $this->$key = null;
+                    break;
+                }
+                if (is_object($mysqli)) {
+                    try {
+                        if ($mysqli->ping())
+                            return $mysqli;
+                    } catch (Throwable $E) {
+                        $mysqli = null;          // must be before LogError to prevent recursive ping via sqli() → CheckDBConnection
+                        $this->$key = null;
+                        $this->LogError("~C91 #WARN:~C00 database connection %s ping failed: %s", $kind, $E->getMessage());
+                    }
+                }
                 if ('' == $kind)
                     $this->conn_attempts ++;
 
@@ -50,10 +75,22 @@
                 $local_host = getenv('DB_LOCAL_HOST') ?: $this->db_local_host;
                 $remote_host = getenv('DB_REMOTE_HOST') ?: $this->db_remote_host;
                 $host = 'remote' == $kind ? $remote_host : $local_host; 
-                $error = $mysqli ? $mysqli->error : 'not init yet';
+                $error = 'not init yet';
+                if (is_object($mysqli)) {
+                    try {
+                        $error = strval($mysqli->error ?: 'not init yet');
+                    } catch (Throwable $E) {
+                        $error = 'connection object invalid';
+                    }
+                }
                 $this->LogMsg("~C91 #WARN:~C00 database connection %s to host %s lost (%s), %d attempt reconnect...", $kind, $host, $error, $this->conn_attempts); 
-                if (is_object($mysqli))
-                    $mysqli->close();      
+                if (is_object($mysqli)) {
+                    try {
+                        $mysqli->close();
+                    } catch (Throwable $E) {
+                        // Ignore close failures; a new handle will be created below.
+                    }
+                }
 
                 $db_servers = [$host];        
                 $db = 'trading';

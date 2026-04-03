@@ -18,10 +18,10 @@
     require_once('esctext.php');
     
 
+
     $ds = date('d F Y');
     log_cmsg("~C95 --------- =========================================~C92 $ds~C95 ==================================================== ---------~C00");
     log_cmsg("~C93 #START:~C00 bot instance %s~C00...", $impl_name);
-
     error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
     // echo ("1.\n");
     require_once('lib/db_config.php');

@@ -131,6 +131,12 @@ services:
       SIGNALS_FEED_URL: ${BOT_SIGNALS_FEED_URL:-http://signals-legacy/}
       BMX_TESTNET: ${BMX_TESTNET:-1}
       BMX_API_BASE_URL: ${BMX_API_BASE_URL:-}
+      BYBIT_TESTNET: ${BYBIT_TESTNET:-1}
+      BYBIT_API_BASE_URL: ${BYBIT_API_BASE_URL:-https://api-demo.bybit.com/}
+      BYBIT_TESTNET_MODE: ${BYBIT_TESTNET_MODE:-demo}
+      BYBIT_CATEGORY: ${BYBIT_CATEGORY:-linear}
+      BYBIT_SETTLE_COIN: ${BYBIT_SETTLE_COIN:-USDT}
+      BYBIT_RECV_WINDOW: ${BYBIT_RECV_WINDOW:-5000}
       BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bot}
       BOT_CREDENTIAL_SOURCE: db
       PHP_INCLUDE_PATH: ${PHP_INCLUDE_PATH:-.:./lib:/app/src:/app:/usr/share/php:/usr/share/php/lib:/usr/sbin/lib}
@@ -142,6 +148,7 @@ services:
       BOT_TRADER_PASSWORD: ${BOT_TRADER_PASSWORD:-placeholder}
       BOT_DB_API_KEY_PARAM: ${BOT_DB_API_KEY_PARAM:-api_key}
       BOT_DB_API_SECRET_PARAM: ${BOT_DB_API_SECRET_PARAM:-api_secret}
+      BOT_MANAGER_SECRET_KEY: ${BOT_MANAGER_SECRET_KEY:-}
       PHP_ERROR_LOG_FILE: ${BOTS_HIVE_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_bots_hive.log}
     volumes:
       - ./src:/app/src
@@ -150,6 +157,7 @@ services:
       - ./docker/entrypoints/integrity_check.sh:/usr/local/bin/integrity_check.sh:ro
       - ./docker/php/conf.d/zz-runtime-logging.ini:/usr/local/etc/php/conf.d/zz-runtime-logging.ini:ro
       - ./docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
+      - ./var/backup/mysql:/var/backup/mysql
       - ./var/log:/app/var/log
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data

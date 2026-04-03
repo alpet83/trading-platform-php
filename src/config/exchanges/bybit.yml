@@ -1,0 +1,28 @@
+version: 1
+exchange: bybit
+default_profile: demo
+
+profiles:
+  main:
+    api_base: https://api.bybit.com/
+    category: linear
+    settle_coins: [USDT]
+    recv_window: 5000
+    allow_spot_fallback: false
+    require_private_auth_check: true
+
+  demo:
+    api_base: https://api-demo.bybit.com/
+    category: linear
+    settle_coins: [USDT]
+    recv_window: 5000
+    allow_spot_fallback: false
+    require_private_auth_check: true
+
+  testnet:
+    api_base: https://api-testnet.bybit.com/
+    category: linear
+    settle_coins: [USDT]
+    recv_window: 5000
+    allow_spot_fallback: false
+    require_private_auth_check: true

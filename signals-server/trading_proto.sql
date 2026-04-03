@@ -299,6 +299,7 @@ CREATE TABLE `pairs_map` (
   `binance_pair` varchar(16) NOT NULL,
   `bitfinex_pair` varchar(16) NOT NULL,
   `bitmex_pair` varchar(16) NOT NULL,
+  `bybit_pair` varchar(32) DEFAULT NULL,
   `deribit_pair` varchar(32) DEFAULT NULL,
   `coinm_fut` tinyint(1) NOT NULL DEFAULT 0,
   `contract_ratio` float NOT NULL DEFAULT 1,
@@ -310,9 +311,9 @@ CREATE TABLE `pairs_map` (
 ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
-INSERT INTO `pairs_map` (`id`, `symbol`, `binance_pair`, `bitfinex_pair`, `bitmex_pair`, `deribit_pair`, `coinm_fut`, `contract_ratio`, `color`) VALUES
-(1, 'BTCUSD', 'BTCUSDC', 'tBTCUSD', 'XBTUSD', 'BTC-PERPETUAL', 0, 0.01, '#F7FF00'),
-(3, 'ETHUSD', 'ETHUSDC', 'tETHUSD', 'ETHUSD', 'ETH-PERPETUAL', 0, 1, '#B8860B');
+INSERT INTO `pairs_map` (`id`, `symbol`, `binance_pair`, `bitfinex_pair`, `bitmex_pair`, `bybit_pair`, `deribit_pair`, `coinm_fut`, `contract_ratio`, `color`) VALUES
+(1, 'BTCUSD', 'BTCUSDC', 'tBTCUSD', 'XBTUSD', 'BTCUSDT', 'BTC-PERPETUAL', 0, 0.01, '#F7FF00'),
+(3, 'ETHUSD', 'ETHUSDC', 'tETHUSD', 'ETHUSD', 'ETHUSDT', 'ETH-PERPETUAL', 0, 1, '#B8860B');
 
 --
 -- Table structure for table `post_queue`

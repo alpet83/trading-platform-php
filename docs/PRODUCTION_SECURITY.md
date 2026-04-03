@@ -37,6 +37,8 @@ secrets/gnupg/private.gpg
 | Level | Method | Setup Time | Cost | Security | Scale |
 |-------|--------|-----------|------|----------|-------|
 | **Tier 1** | gpg-agent + passphrase | 30 min | $0 | High ✅ | Single host |
+| **Tier 0.5** | AES-256-GCM DB secret encryption | 5 min | $0 | Medium ✅ (DB dump safe) | Any |
+| **Tier 1** | gpg-agent + passphrase | 30 min | $0 | High ✅ | Single host |
 | **Tier 2** | HashiCorp Vault | 1-2 hours | $0 (OSS) | Enterprise ✅✅ | Multi-host |
 | **Tier 3** | AWS Secrets Manager | 30 min | $0.40/month | Cloud-native ✅✅ | AWS only |
 | **Tier 4** | Azure Key Vault | 30 min | ~$7/month | Cloud-native ✅✅ | Azure only |
@@ -44,6 +46,24 @@ secrets/gnupg/private.gpg
 ---
 
 ## Tier 1: GPG Agent + Passphrase (On-Premises Production)
+
+---
+
+## Tier 0.5: DB Secret Encryption (AES-256-GCM)
+
+The simplest hardening step when using `CREDENTIAL_SOURCE=db`. Encrypts HMAC secrets stored
+in MariaDB config tables so that a DB dump does not expose plaintext keys.
+
+1. Add `BOT_MANAGER_SECRET_KEY=<strong-random-value>` to `.env`
+2. Migrate existing bot secrets: `php /app/src/cli/encrypt_key.php <bot_name>`
+3. Verify: `php /app/src/cli/verify_secret.php <bot_name>`
+
+The bot decrypts transparently at boot. See **COMMANDS_REFERENCE.md → DB Secret Encryption**
+for full details and non-interactive injection examples.
+
+> **Limitation:** Does not protect against a host compromise where the master key env var
+> is visible. Combine with Tier 1–4 for stronger protection.
+
 
 ### Step 1: Create Production init-pass Script
 

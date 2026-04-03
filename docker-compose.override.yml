@@ -45,3 +45,14 @@ services:
       # Optional: use test DB credentials
       DB_PASS: test_trading_456
       DB_USER: trading
+
+  bots-hive:
+    # Exchange-specific runtime env overlays.
+    # Keep production defaults in docker-compose.yml unchanged; use these local files instead.
+    env_file:
+      - path: ./.envs/exchanges/common.env
+        required: false
+      - path: ./.envs/exchanges/bybit.env
+        required: false
+      - path: ./.envs/exchanges/bitmex.env
+        required: false

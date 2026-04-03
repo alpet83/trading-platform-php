@@ -75,7 +75,7 @@
         global $g_bot;
         print_r(error_get_last());
 
-        if (is_object($g_bot) && $g_bot instanceof TradingCore && $g_bot->Alive()) {
+        if (is_object($g_bot) && $g_bot instanceof TradingCore && !$g_bot->aborted) {
             $g_bot->LogError("~C91#BREAK:~C00 script execution interrupted, on_shutdown...\n");
             $g_bot->Shutdown("Shutdown callback");
         }
@@ -353,6 +353,11 @@
         $t_start = time();    
         // $this->LogMsg("~C96#PERF:~C00 Initializing engine class %s", get_class($engine));
         $engine->Initialize(); // late order
+        if ($engine instanceof RestAPIEngine) {
+            $engine->api_key_trade_allowed = $engine->GetAPIKeyRightsCached(0);
+            if ($engine->api_key_trade_allowed === false)
+                $this->LogMsg('~C93#AUTH_LIMIT:~C00 %s API key is read-only, trade actions stay disabled until config matches', $engine->exchange);
+        }
         $this->RegEvent('INITIALIZE', '');
         // $this->LogMsg("~C96#PERF:~C00 Engine initialized in %d sec", time() - $t_start);
 
@@ -1075,6 +1080,16 @@
                 sleep(5);
                 return; // прерывание в этом месте важно, т.к. хост перестанет обновлять показания мастера
             }
+            $api_key_trade_allowed = true;
+            if ($engine instanceof RestAPIEngine) {
+                $api_key_trade_allowed = $engine->GetAPIKeyRightsCached($startup ? 0 : 60);
+                if (!$api_key_trade_allowed) {
+                    $this->LogMsg('~C93#AUTH_LIMIT:~C00 %s API key is read-only, trading actions will be skipped', $engine->exchange);
+                    if ($this->trade_enabled)
+                        throw new Exception(sprintf('%s API key is read-only, but trade_enabled=true', $engine->exchange));
+                }
+            }
+
             $load_t = $engine->LoadTickers();          
             if ($load_t)
                 $engine->SaveTickersToDB();
@@ -1116,7 +1131,7 @@
                 $this->signal_feed->LoadSignals();
                 // $this->position_feed->LoadPositions($after_ts);             
 
-                if (!$startup && $this->TradingAllowed() && ($hour < 23 || $minute <= 58) && $load_p >= 0) { // no trades before script reload 
+                if (!$startup && $api_key_trade_allowed && $this->TradingAllowed() && ($hour < 23 || $minute <= 58) && $load_p >= 0) { // no trades before script reload 
                 $engine->ConfigureMM(); // загрузить настройки маркет-мейкера
                 if (0 == $this->trade_skip)               
                     $engine->ProcessMM();   // обработать заявки маркет-мейкера

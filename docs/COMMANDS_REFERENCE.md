@@ -204,6 +204,117 @@ CREDENTIAL_SOURCE=db BOT_NAME=bitmex_bot ACCOUNT_ID=1 API_KEY='k' API_SECRET='fu
 
 ---
 
+## DB Secret Encryption (AES-256-GCM)
+
+DB credentials can be encrypted at rest using AES-256-GCM, keyed by a master secret
+(`BOT_MANAGER_SECRET_KEY`). Encryption is **optional**: unencrypted DB secrets still work,
+but encrypting removes the risk of a DB dump exposing plaintext HMAC keys.
+
+### How it Works
+
+```text
+Plaintext secret
+  ↓  AES-256-GCM (key = SHA-256(BOT_MANAGER_SECRET_KEY))
+  ↓  IV[12] + AuthTag[16] + Ciphertext
+  ↓  base64-encode → "v1:<base64>"
+  ↓  split at midpoint → api_secret_s0 + api_secret_sep + api_secret_s1
+
+Flag secret_key_encrypted = 1 in DB config table marks the record as encrypted.
+
+Boot path (run-bot.sh bootstrap):
+  Reads s0+sep+s1 from DB → assembles v1: payload → detects prefix → decrypts
+  → writes base64(plaintext) to runtime key file → PHP reads it normally.
+```
+
+### Prerequisite: Set Master Key
+
+Add `BOT_MANAGER_SECRET_KEY` to `.env`:
+
+```bash
+# .env (use a strong random value in production)
+BOT_MANAGER_SECRET_KEY=<your-master-key>
+```
+
+The same variable must be available in the `bots-hive` container; `docker-compose.yml`
+already passes it via `BOT_MANAGER_SECRET_KEY: ${BOT_MANAGER_SECRET_KEY:-}`.
+
+Key resolution order (PHP runtime):
+1. `BOT_MANAGER_SECRET_KEY` env var
+2. `BOT_MANAGER_SECRET_KEY_FILE` env var (path to file)
+3. `/run/secrets/bot_manager_key`
+4. `/run/secrets/bot_manager_secret_key`
+5. `/run/secrets/bot_manager_master_key`
+
+### Encrypt Existing DB Secret (migrate existing bot)
+
+```bash
+# Inside the running container:
+docker exec -e BOT_MANAGER_SECRET_KEY='<key>' trd-bots-hive \
+  sh -c "php /app/src/cli/encrypt_key.php bybit"
+
+# Or, if BOT_MANAGER_SECRET_KEY is already in container env:
+docker exec trd-bots-hive sh -c "php /app/src/cli/encrypt_key.php bybit"
+```
+
+The script:
+- Finds the bot's config table via `config__table_map`
+- Iterates all `account_id` rows
+- Skips accounts already marked `secret_key_encrypted=1`
+- Encrypts the secret, splits it, writes `s0`/`sep`/`s1`, clears `api_secret`, sets flag=1
+- Is **idempotent**: safe to run multiple times
+
+```text
+Example output:
+  #OK: account_id=10001 param=api_secret encrypted (len=91)
+  #WARN: account_id=425992 has no secret params to encrypt
+  #DONE: bot=bybit_bot, updated_accounts=1, skipped=0
+```
+
+### Verify Round-Trip (diagnostic)
+
+```bash
+docker exec trd-bots-hive \
+  sh -c "php /app/src/cli/verify_secret.php bybit"
+```
+
+Output shows assembled payload, whether it is `v1:`-encrypted, and the decrypted plaintext:
+
+```text
+--- account_id=10001 (secret_key_encrypted=1) ---
+  api_secret_s0     = 'v1:nwJU0a3F1...' (len=45)
+  api_secret_sep    = 'G'
+  api_secret_s1     = 'R56humXb...'     (len=45)
+  > assembled: s0[45] + sep('G') + s1[45] = packed[91]
+  > looks_encrypted   = YES (v1: prefix present)
+  > DECRYPTED secret  = 'OT8AOaZxQkN1s38rPQXWm57lawMhS6kwcJyL' (len=36)
+```
+
+### Inject Keys with Encryption Enabled
+
+The interactive script prompts whether to encrypt:
+
+```bash
+# Linux/macOS (interactive)
+sh scripts/inject-api-keys-interactive.sh
+# Prompted: "Encrypt API secret in DB using bot_manager key? (0/1) [1]: "
+
+# Windows (interactive)
+./scripts/inject-api-keys-interactive.ps1
+```
+
+Non-interactive with encryption:
+
+```bash
+CREDENTIAL_SOURCE=db BOT_NAME=bybit_bot ACCOUNT_ID=10001 \
+  API_KEY='key' API_SECRET='plaintext_secret' SECRET_KEY_ENCRYPTED=1 \
+  sh scripts/inject-api-keys.sh
+```
+
+> **Note:** `SECRET_KEY_ENCRYPTED=1` encrypts on the way into the DB. The bot decrypts
+> transparently at boot provided `BOT_MANAGER_SECRET_KEY` is set.
+
+---
+
 ## Container Management
 
 ```bash

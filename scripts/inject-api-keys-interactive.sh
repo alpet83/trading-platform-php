@@ -121,11 +121,13 @@ else
 
   api_key="$(ask_secret "API key")"
   api_secret="$(ask_secret "API secret")"
+  secret_encrypted="$(ask "Encrypt API secret in DB using bot_manager key? (0/1)" "1")"
 
   CREDENTIAL_SOURCE=db \
   BOT_NAME="$bot_name" \
   ACCOUNT_ID="$account_id" \
   API_KEY="$api_key" \
   API_SECRET="$api_secret" \
+  SECRET_KEY_ENCRYPTED="$secret_encrypted" \
   sh scripts/inject-api-keys.sh
 fi

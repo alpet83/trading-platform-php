@@ -22,6 +22,9 @@ API_SECRET_SPLIT_POS="${API_SECRET_SPLIT_POS:-}"
 BOT_NAME_VALUE="${BOT_NAME:-}"
 PARAM_KEY="${BOT_DB_API_KEY_PARAM:-api_key}"
 PARAM_SECRET="${BOT_DB_API_SECRET_PARAM:-api_secret}"
+SECRET_ENCRYPTED_FLAG="${SECRET_KEY_ENCRYPTED:-0}"
+BOT_MANAGER_SECRET_KEY_VALUE="${BOT_MANAGER_SECRET_KEY:-}"
+BOT_MANAGER_SECRET_KEY_FILE_VALUE="${BOT_MANAGER_SECRET_KEY_FILE:-/run/secrets/bot_manager_key}"
 
 log() {
   printf '%s\n' "$*"
@@ -38,6 +41,50 @@ require_cmd() {
 
 sql_escape() {
   printf "%s" "$1" | sed "s/'/''/g"
+}
+
+resolve_bot_manager_secret_key() {
+  if [ -n "$BOT_MANAGER_SECRET_KEY_VALUE" ]; then
+    printf '%s' "$BOT_MANAGER_SECRET_KEY_VALUE"
+    return 0
+  fi
+
+  if [ -n "$BOT_MANAGER_SECRET_KEY_FILE_VALUE" ] && [ -f "$BOT_MANAGER_SECRET_KEY_FILE_VALUE" ]; then
+    tr -d '\r\n' < "$BOT_MANAGER_SECRET_KEY_FILE_VALUE"
+    return 0
+  fi
+
+  for candidate in /run/secrets/bot_manager_secret_key /run/secrets/bot_manager_master_key; do
+    if [ -f "$candidate" ]; then
+      tr -d '\r\n' < "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+encrypt_db_secret() {
+  plain="$1"
+  master_key="$2"
+  require_cmd php
+
+  php -r '
+$key = $argv[1] ?? "";
+$plain = $argv[2] ?? "";
+if ($key === "" || $plain === "") {
+    fwrite(STDERR, "missing key/plain\n");
+    exit(2);
+}
+$iv = random_bytes(12);
+$tag = "";
+$cipher = openssl_encrypt($plain, "aes-256-gcm", hash("sha256", $key, true), OPENSSL_RAW_DATA, $iv, $tag);
+if ($cipher === false || strlen($tag) !== 16) {
+    fwrite(STDERR, "encrypt failed\n");
+    exit(3);
+}
+echo "v1:" . base64_encode($iv . $tag . $cipher);
+' "$master_key" "$plain"
 }
 
 resolve_secret_parts() {
@@ -135,6 +182,7 @@ inject_db() {
   param_secret_s0_sql="$(sql_escape "${PARAM_SECRET}_s0")"
   param_secret_s1_sql="$(sql_escape "${PARAM_SECRET}_s1")"
   param_secret_sep_sql="$(sql_escape "${PARAM_SECRET}_sep")"
+  param_secret_encrypted_sql="$(sql_escape 'secret_key_encrypted')"
   param_key_sql="$(sql_escape "$PARAM_KEY")"
   param_secret_sql="$(sql_escape "$PARAM_SECRET")"
 
@@ -142,46 +190,69 @@ inject_db() {
   [ -n "$cfg_table" ] || fail "config table not found in config__table_map for applicant '${BOT_NAME_VALUE}'"
   cfg_table_sql="$(sql_escape "$cfg_table")"
 
-  if [ -z "$API_SECRET_S0_VALUE" ] || [ -z "$API_SECRET_S1_VALUE" ]; then
-    if [ -n "$API_SECRET_SPLIT_POS" ]; then
-      auto_split_secret
-    else
-      existing_sep="$(docker-compose -f "$COMPOSE_FILE" exec -T mariadb mariadb -N -uroot -p"${MARIADB_ROOT_PASSWORD:-root_change_me}" "${MARIADB_DATABASE:-trading}" -e "SELECT value FROM ${cfg_table} WHERE account_id=${ACCOUNT_ID} AND param='${PARAM_SECRET}_sep' LIMIT 1")"
-      existing_sep="$(printf '%s' "$existing_sep" | tr -d '\r\n')"
-      if [ -n "$existing_sep" ]; then
-        API_SECRET_SEP="$existing_sep"
-        if split_by_separator_literal; then
-          log "#INFO: auto-split used existing DB separator '${API_SECRET_SEP}'"
+  db_secret_encrypted_value=0
+  encrypted_secret_sql=''
+  secret_s0_sql=''
+  secret_s1_sql=''
+  secret_sep_sql=''
+
+  if [ "$SECRET_ENCRYPTED_FLAG" = "1" ]; then
+    [ -n "$API_SECRET_VALUE" ] || fail "API_SECRET is required when SECRET_KEY_ENCRYPTED=1"
+    manager_key="$(resolve_bot_manager_secret_key || true)"
+    [ -n "$manager_key" ] || fail "secret encryption requested but BOT_MANAGER_SECRET_KEY (or BOT_MANAGER_SECRET_KEY_FILE) is empty"
+    encrypted_secret="$(encrypt_db_secret "$API_SECRET_VALUE" "$manager_key")"
+    [ -n "$encrypted_secret" ] || fail "failed to encrypt API secret"
+    encrypted_secret_sql="$(sql_escape "$encrypted_secret")"
+    db_secret_encrypted_value=1
+    secret_s0_sql=''
+    secret_s1_sql=''
+    secret_sep_sql='-'
+    log "#INFO: DB secret encrypted with bot_manager master key"
+  else
+    if [ -z "$API_SECRET_S0_VALUE" ] || [ -z "$API_SECRET_S1_VALUE" ]; then
+      if [ -n "$API_SECRET_SPLIT_POS" ]; then
+        auto_split_secret
+      else
+        existing_sep="$(docker-compose -f "$COMPOSE_FILE" exec -T mariadb mariadb -N -uroot -p"${MARIADB_ROOT_PASSWORD:-root_change_me}" "${MARIADB_DATABASE:-trading}" -e "SELECT value FROM ${cfg_table} WHERE account_id=${ACCOUNT_ID} AND param='${PARAM_SECRET}_sep' LIMIT 1")"
+        existing_sep="$(printf '%s' "$existing_sep" | tr -d '\r\n')"
+        if [ -n "$existing_sep" ]; then
+          API_SECRET_SEP="$existing_sep"
+          if split_by_separator_literal; then
+            log "#INFO: auto-split used existing DB separator '${API_SECRET_SEP}'"
+          else
+            auto_split_secret
+          fi
         else
           auto_split_secret
         fi
-      else
-        auto_split_secret
       fi
     fi
-  fi
 
-  secret_s0_sql="$(sql_escape "$API_SECRET_S0_VALUE")"
-  secret_s1_sql="$(sql_escape "$API_SECRET_S1_VALUE")"
-  secret_sep_sql="$(sql_escape "$API_SECRET_SEP")"
+    secret_s0_sql="$(sql_escape "$API_SECRET_S0_VALUE")"
+    secret_s1_sql="$(sql_escape "$API_SECRET_S1_VALUE")"
+    secret_sep_sql="$(sql_escape "$API_SECRET_SEP")"
+    db_secret_encrypted_value=0
+  fi
 
   query="SET @cfg_table='${cfg_table_sql}';\
 SET @q1=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_key_sql}', ''',''', '${api_key_sql}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
 PREPARE s1 FROM @q1; EXECUTE s1; DEALLOCATE PREPARE s1;\
-SET @q2=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_sql}', ''','''' ) ON DUPLICATE KEY UPDATE value=VALUES(value)');\
+SET @q2=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_sql}', ''',''', '${encrypted_secret_sql}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
 PREPARE s2 FROM @q2; EXECUTE s2; DEALLOCATE PREPARE s2;\
 SET @q3=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_s0_sql}', ''',''', '${secret_s0_sql}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
 PREPARE s3 FROM @q3; EXECUTE s3; DEALLOCATE PREPARE s3;\
 SET @q4=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_s1_sql}', ''',''', '${secret_s1_sql}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
 PREPARE s4 FROM @q4; EXECUTE s4; DEALLOCATE PREPARE s4;\
 SET @q5=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_sep_sql}', ''',''', '${secret_sep_sql}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
-PREPARE s5 FROM @q5; EXECUTE s5; DEALLOCATE PREPARE s5;"
+PREPARE s5 FROM @q5; EXECUTE s5; DEALLOCATE PREPARE s5;\
+SET @q6=CONCAT('INSERT INTO ', @cfg_table, ' (account_id,param,value) VALUES (', ${ACCOUNT_ID}, ',''', '${param_secret_encrypted_sql}', ''',''', '${db_secret_encrypted_value}', ''') ON DUPLICATE KEY UPDATE value=VALUES(value)');\
+PREPARE s6 FROM @q6; EXECUTE s6; DEALLOCATE PREPARE s6;"
 
   log "#INFO: writing keys into DB config for bot '${BOT_NAME_VALUE}', account '${ACCOUNT_ID}'"
   docker-compose -f "$COMPOSE_FILE" exec -T mariadb mariadb -uroot -p"${MARIADB_ROOT_PASSWORD:-root_change_me}" "${MARIADB_DATABASE:-trading}" -e "$query"
 
   verify_query="SET @cfg_table='${cfg_table_sql}';\
-SET @vq=CONCAT('SELECT param,value FROM ', @cfg_table, ' WHERE account_id=', ${ACCOUNT_ID}, ' AND param IN (''${param_key_sql}'',''${param_secret_sql}'',''${param_secret_s0_sql}'',''${param_secret_s1_sql}'',''${param_secret_sep_sql}'') ORDER BY param');\
+SET @vq=CONCAT('SELECT param,value FROM ', @cfg_table, ' WHERE account_id=', ${ACCOUNT_ID}, ' AND param IN (''${param_key_sql}'',''${param_secret_sql}'',''${param_secret_s0_sql}'',''${param_secret_s1_sql}'',''${param_secret_sep_sql}'',''${param_secret_encrypted_sql}'') ORDER BY param');\
 PREPARE vq FROM @vq; EXECUTE vq; DEALLOCATE PREPARE vq;"
   docker-compose -f "$COMPOSE_FILE" exec -T mariadb mariadb -uroot -p"${MARIADB_ROOT_PASSWORD:-root_change_me}" "${MARIADB_DATABASE:-trading}" -e "$verify_query"
 

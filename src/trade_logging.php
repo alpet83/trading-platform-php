@@ -27,11 +27,17 @@
         }
 
         protected function InitLogging() {
-            $this->logger        = new BasicLogger($this->impl_name, 'core');
-            $this->engine_logger = new BasicLogger($this->impl_name, 'engine', null);                  
-            $this->error_logger  = new BasicLogger($this->impl_name, 'errors');      
-            $this->order_logger  = new BasicLogger($this->impl_name, 'order', null);
-            $this->mm_logger     = new BasicLogger($this->impl_name, 'market_maker', null);                  
+            $log_subdir = $this->impl_name;
+            $account_id = trim((string)(getenv('BOT_ACCOUNT_ID') ?: ''));
+            if (preg_match('/^\d+$/', $account_id)) {
+                $log_subdir .= '/'.$account_id;
+            }
+
+            $this->logger        = new BasicLogger($log_subdir, 'core');
+            $this->engine_logger = new BasicLogger($log_subdir, 'engine', null);                  
+            $this->error_logger  = new BasicLogger($log_subdir, 'errors');      
+            $this->order_logger  = new BasicLogger($log_subdir, 'order', null);
+            $this->mm_logger     = new BasicLogger($log_subdir, 'market_maker', null);                  
             $this->error_logger->std_out = STDERR;
         }
 

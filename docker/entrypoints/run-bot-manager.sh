@@ -78,8 +78,12 @@ require_file /app/src/lib/db_tools.php
 
 mkdir -p /app/var/log /app/var/tmp /app/var/data
 
-if [ ! -e /app/src/log ]; then
-  ln -s /app/var/log /app/src/log
+if [ -L /app/src/log ]; then
+  rm -f /app/src/log
+elif [ -d /app/src/log ]; then
+  mkdir -p /app/src/logs
+  cp -a /app/src/log/. /app/src/logs/ 2>/dev/null || true
+  rm -rf /app/src/log
 fi
 
 if [ ! -e /app/src/logs ]; then

@@ -31,6 +31,23 @@ CREATE TABLE `config__table_map` (
 ALTER TABLE `config__table_map`
   ADD UNIQUE KEY `strictor` (`table_key`,`applicant`);
 
+-- config__bot_manager
+CREATE TABLE `config__bot_manager` (
+  `account_id` int(11) NOT NULL DEFAULT 0,
+  `param` varchar(32) NOT NULL,
+  `value` varchar(128) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
+
+ALTER TABLE `config__bot_manager`
+  ADD UNIQUE KEY `strictor` (`account_id`,`param`);
+
+INSERT INTO `config__bot_manager` (`account_id`, `param`, `value`) VALUES
+  (0, 'backup_enabled', '1'),
+  (0, 'backup_time_utc', '23:59'),
+  (0, 'backup_dir', '/var/backup/mysql'),
+  (0, 'backup_retention_days', '7')
+ON DUPLICATE KEY UPDATE `value` = VALUES(`value`);
+
 -- bot__activity
 CREATE TABLE `bot__activity` (
   `ts` timestamp NOT NULL DEFAULT current_timestamp(),

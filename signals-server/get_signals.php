@@ -182,10 +182,25 @@
         return intval($raw);
     }
 
+    function purge_stale_offset_signals(mysqli_ex $db, int $setupId): int {
+        $maxOffsetSig = 222;
+        $query = "DELETE FROM `signals` WHERE (setup = $setupId) AND (id > 0) AND (id < $maxOffsetSig) AND (id <> pair_id)";
+        if (!$db->query($query)) {
+            error_log("#WARN(get_signals): failed purge stale lower-range signals for setup=$setupId: {$db->error}");
+            return 0;
+        }
+        return intval($db->affected_rows);
+    }
+
     $setup_id = parse_setup_id($setup_raw);
     if ($setup_id === null) {
         echo "#ERROR: invalid setup param: " . substr($setup_raw, 0, 200);
         exit(0);
+    }
+
+    $purged = purge_stale_offset_signals($mysqli, $setup_id);
+    if ($purged > 0) {
+        error_log("#WARN(get_signals): purged stale lower-range signals for setup=$setup_id, rows=$purged");
     }
 
     $pairs_map = $mysqli->select_map('id,symbol', 'pairs_map', '');

@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1060" style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px;">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#616161"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1060" fill="#FAFAFA"/>
+
+  <text x="800" y="30" text-anchor="middle" font-size="20" font-weight="bold" fill="#1A1A1A">Trading Platform PHP - Architecture and Runtime Relations</text>
+  <text x="800" y="50" text-anchor="middle" font-size="11" fill="#666">trading-platform-php, signals-server.ts, and sibling runtime libraries</text>
+
+  <!-- Docker runtime panel -->
+  <g transform="translate(40,80)">
+    <rect x="0" y="0" width="500" height="280" rx="8" fill="#F3F7FB" stroke="#90CAF9" stroke-width="1.5"/>
+    <text x="16" y="24" font-size="14" font-weight="bold" fill="#1565C0">Docker Runtime</text>
+
+    <g transform="translate(24,52)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="58" rx="4" fill="#1565C0"/>
+      <text x="64" y="25" text-anchor="middle" fill="white" font-size="11" font-weight="bold">mariadb</text>
+      <text x="64" y="42" text-anchor="middle" fill="#DCEEFF" font-size="9">MariaDB 11</text>
+    </g>
+
+    <g transform="translate(190,40)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="50" rx="4" fill="#388E3C"/>
+      <text x="64" y="21" text-anchor="middle" fill="white" font-size="10" font-weight="bold">web</text>
+      <text x="64" y="37" text-anchor="middle" fill="#D9F2DD" font-size="8">depends_on mariadb</text>
+    </g>
+
+    <g transform="translate(346,40)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="50" rx="4" fill="#F57C00"/>
+      <text x="64" y="21" text-anchor="middle" fill="white" font-size="10" font-weight="bold">phpmyadmin</text>
+      <text x="64" y="37" text-anchor="middle" fill="#FFE8C6" font-size="8">PMA_HOST=mariadb</text>
+    </g>
+
+    <g transform="translate(190,112)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="58" rx="4" fill="#C62828"/>
+      <text x="64" y="23" text-anchor="middle" fill="white" font-size="10" font-weight="bold">bots-hive</text>
+      <text x="64" y="39" text-anchor="middle" fill="#FFD8D8" font-size="8">DB_LOCAL and DB_REMOTE</text>
+      <text x="64" y="50" text-anchor="middle" fill="#FFD8D8" font-size="8">configured as mariadb</text>
+    </g>
+
+    <g transform="translate(346,112)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="58" rx="4" fill="#00838F"/>
+      <text x="64" y="23" text-anchor="middle" fill="white" font-size="10" font-weight="bold">datafeed</text>
+      <text x="64" y="39" text-anchor="middle" fill="#D4F4F8" font-size="8">depends_on mariadb</text>
+      <text x="64" y="50" text-anchor="middle" fill="#D4F4F8" font-size="8">mounts ../datafeed/src</text>
+    </g>
+
+    <g transform="translate(190,198)" filter="url(#shadow)">
+      <rect x="0" y="0" width="128" height="44" rx="4" fill="#7B1FA2"/>
+      <text x="64" y="19" text-anchor="middle" fill="white" font-size="10" font-weight="bold">gpg-agent</text>
+      <text x="64" y="34" text-anchor="middle" fill="#F0D8F5" font-size="8">credential helper</text>
+    </g>
+
+    <!-- orthogonal DB relations -->
+    <polyline points="152,81 176,81 176,65 190,65" fill="none" stroke="#607D8B" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="152,81 330,81 330,65 346,65" fill="none" stroke="#607D8B" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="152,92 176,92 176,141 190,141" fill="none" stroke="#607D8B" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="152,92 330,92 330,141 346,141" fill="none" stroke="#607D8B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Signal systems panel -->
+  <g transform="translate(580,80)">
+    <rect x="0" y="0" width="980" height="280" rx="8" fill="#F9FBF5" stroke="#AED581" stroke-width="1.5"/>
+    <text x="16" y="24" font-size="14" font-weight="bold" fill="#558B2F">Signal Systems</text>
+
+    <g transform="translate(24,52)" filter="url(#shadow)">
+      <rect x="0" y="0" width="440" height="178" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.5"/>
+      <text x="220" y="22" text-anchor="middle" fill="#E65100" font-size="11" font-weight="bold">signals-server legacy (PHP)</text>
+      <line x1="12" y1="30" x2="428" y2="30" stroke="#FFCC80"/>
+      <text x="16" y="50" fill="#5D4037" font-size="9">- get_signals.php and signal_data.php endpoints</text>
+      <text x="16" y="66" fill="#5D4037" font-size="9">- lastpos.php and sig_edit.php for admin workflows</text>
+      <text x="16" y="82" fill="#5D4037" font-size="9">- telegram-bot helpers and auth adapters</text>
+      <text x="16" y="98" fill="#5D4037" font-size="9">- heavy use of lib/db_tools.php for DB access</text>
+      <text x="16" y="118" fill="#BF360C" font-size="9" font-weight="bold">Database backend: MariaDB</text>
+      <text x="16" y="136" fill="#BF360C" font-size="9" font-weight="bold">Primary output for bot runtime feed</text>
+    </g>
+
+    <g transform="translate(508,52)" filter="url(#shadow)">
+      <rect x="0" y="0" width="448" height="178" rx="5" fill="#E8F5E9" stroke="#66BB6A" stroke-width="1.5"/>
+      <text x="224" y="22" text-anchor="middle" fill="#2E7D32" font-size="11" font-weight="bold">signals-server.ts (frontend plus backend)</text>
+      <line x1="12" y1="30" x2="436" y2="30" stroke="#A5D6A7"/>
+      <text x="16" y="50" fill="#355B3A" font-size="9">- frontend: Nuxt 3 and Tailwind</text>
+      <text x="16" y="66" fill="#355B3A" font-size="9">- backend: NestJS with TypeORM</text>
+      <text x="16" y="82" fill="#355B3A" font-size="9">- JWT sessions from Telegram auth flow</text>
+      <text x="16" y="98" fill="#355B3A" font-size="9">- proxies selected requests to legacy PHP API</text>
+      <text x="16" y="118" fill="#1B5E20" font-size="9" font-weight="bold">Database backend: PostgreSQL</text>
+      <text x="16" y="136" fill="#1B5E20" font-size="9" font-weight="bold">docker-compose: node depends_on db</text>
+    </g>
+
+    <line x1="508" y1="141" x2="464" y2="141" stroke="#FF9800" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+    <text x="486" y="132" text-anchor="middle" fill="#E65100" font-size="8">proxy path</text>
+  </g>
+
+  <!-- Core code structure panel -->
+  <g transform="translate(40,390)">
+    <rect x="0" y="0" width="760" height="400" rx="8" fill="#F8FAFC" stroke="#B0BEC5" stroke-width="1.5"/>
+    <text x="16" y="24" font-size="14" font-weight="bold" fill="#37474F">Core PHP Code Structure</text>
+
+    <g transform="translate(20,50)">
+      <rect x="0" y="0" width="230" height="134" rx="5" fill="#F3E5F5" stroke="#BA68C8" stroke-width="1.2"/>
+      <text x="115" y="20" text-anchor="middle" fill="#6A1B9A" font-size="11" font-weight="bold">External runtime proxies</text>
+      <line x1="10" y1="28" x2="220" y2="28" stroke="#CE93D8"/>
+      <text x="14" y="48" fill="#5D4037" font-size="9">src/common.php runtime proxy</text>
+      <text x="14" y="64" fill="#5D4037" font-size="9">src/esctext.php runtime proxy</text>
+      <text x="14" y="80" fill="#5D4037" font-size="9">src/lib/db_tools.php proxy loader</text>
+      <text x="14" y="100" fill="#6A1B9A" font-size="9" font-weight="bold">Targets sibling runtime libs</text>
+      <text x="14" y="116" fill="#6A1B9A" font-size="9" font-weight="bold">via ALPET_LIBS_RUNTIME path</text>
+    </g>
+
+    <g transform="translate(280,50)">
+      <rect x="0" y="0" width="220" height="134" rx="5" fill="#FFEBEE" stroke="#E57373" stroke-width="1.2"/>
+      <text x="110" y="20" text-anchor="middle" fill="#C62828" font-size="11" font-weight="bold">trading_core.php</text>
+      <line x1="10" y1="28" x2="210" y2="28" stroke="#EF9A9A"/>
+      <text x="14" y="48" fill="#5D4037" font-size="9">Application hub and cycle control</text>
+      <text x="14" y="64" fill="#5D4037" font-size="9">requires common, db_tools, esctext</text>
+      <text x="14" y="80" fill="#5D4037" font-size="9">loads reporting and trading modules</text>
+      <text x="14" y="100" fill="#C62828" font-size="9" font-weight="bold">owns trade_engine instance</text>
+    </g>
+
+    <g transform="translate(530,50)">
+      <rect x="0" y="0" width="210" height="134" rx="5" fill="#E3F2FD" stroke="#64B5F6" stroke-width="1.2"/>
+      <text x="105" y="20" text-anchor="middle" fill="#1565C0" font-size="11" font-weight="bold">Engine hierarchy</text>
+      <line x1="10" y1="28" x2="200" y2="28" stroke="#90CAF9"/>
+      <text x="14" y="48" fill="#355070" font-size="9">TradingEngine base class</text>
+      <text x="14" y="64" fill="#355070" font-size="9">RestAPIEngine extension layer</text>
+      <text x="14" y="80" fill="#355070" font-size="9">impl files provide exchange engines</text>
+      <text x="14" y="100" fill="#1565C0" font-size="9" font-weight="bold">exchange-specific execution logic</text>
+    </g>
+
+    <g transform="translate(280,208)">
+      <rect x="0" y="0" width="460" height="64" rx="5" fill="#E8F5E9" stroke="#81C784" stroke-width="1.2"/>
+      <text x="230" y="22" text-anchor="middle" fill="#2E7D32" font-size="11" font-weight="bold">Trading modules loaded by trading_core.php</text>
+      <text x="16" y="42" fill="#355B3A" font-size="9">trading_loop, ext_signals, market_maker, orders_lib,</text>
+      <text x="16" y="56" fill="#355B3A" font-size="9">orders_batch, trade_logging, reporting</text>
+    </g>
+
+    <g transform="translate(20,208)">
+      <rect x="0" y="0" width="230" height="164" rx="5" fill="#FFF8E1" stroke="#FFD54F" stroke-width="1.2"/>
+      <text x="115" y="20" text-anchor="middle" fill="#EF6C00" font-size="11" font-weight="bold">Exchange engine implementations</text>
+      <line x1="10" y1="28" x2="220" y2="28" stroke="#FFE082"/>
+      <text x="14" y="48" fill="#5D4037" font-size="9">BinanceEngine extends RestAPIEngine</text>
+      <text x="14" y="64" fill="#5D4037" font-size="9">BitMEXEngine extends RestAPIEngine</text>
+      <text x="14" y="80" fill="#5D4037" font-size="9">BybitEngine extends RestAPIEngine</text>
+      <text x="14" y="96" fill="#5D4037" font-size="9">BitfinexEngine and DeribitEngine</text>
+      <text x="14" y="116" fill="#EF6C00" font-size="9" font-weight="bold">Defined inside impl_*.php files</text>
+      <text x="14" y="132" fill="#EF6C00" font-size="9" font-weight="bold">used by BOT wrapper classes</text>
+    </g>
+
+    <g transform="translate(280,286)">
+      <rect x="0" y="0" width="460" height="86" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
+      <text x="230" y="22" text-anchor="middle" fill="#E65100" font-size="11" font-weight="bold">BOT wrapper classes</text>
+      <text x="16" y="42" fill="#5D4037" font-size="9">BinanceBOT, BitMEXBOT, BybitBOT, BitfinexBOT, DeribitBOT</text>
+      <text x="16" y="58" fill="#5D4037" font-size="9">extend TradingCore and assign matching engine instance</text>
+      <text x="16" y="74" fill="#5D4037" font-size="9">trade_engine = new ExchangeEngine(this)</text>
+    </g>
+
+    <!-- orthogonal relations without block intersection -->
+    <polyline points="250,117 268,117 268,117 280,117" fill="none" stroke="#757575" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="500,117 516,117 516,117 530,117" fill="none" stroke="#757575" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="390,184 390,200 390,200" fill="none" stroke="#757575" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="390,272 390,280 390,280" fill="none" stroke="#757575" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="530,138 262,138 262,250 250,250" fill="none" stroke="#90A4AE" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Operational panel -->
+  <g transform="translate(840,390)">
+    <rect x="0" y="0" width="720" height="400" rx="8" fill="#FBFCFD" stroke="#CFD8DC" stroke-width="1.5"/>
+    <text x="16" y="24" font-size="14" font-weight="bold" fill="#37474F">Operational and Sibling Repositories</text>
+
+    <g transform="translate(20,50)">
+      <rect x="0" y="0" width="220" height="150" rx="5" fill="#E0F2F1" stroke="#80CBC4" stroke-width="1.2"/>
+      <text x="110" y="20" text-anchor="middle" fill="#00695C" font-size="11" font-weight="bold">Bot management</text>
+      <line x1="10" y1="28" x2="210" y2="28" stroke="#B2DFDB"/>
+      <text x="14" y="48" fill="#355B57" font-size="9">bot_manager.php orchestrates</text>
+      <text x="14" y="64" fill="#355B57" font-size="9">bot_instance.php starts one bot</text>
+      <text x="14" y="80" fill="#355B57" font-size="9">trade_config, db_client, db_config</text>
+      <text x="14" y="96" fill="#355B57" font-size="9">reuse common DB access stack</text>
+      <text x="14" y="116" fill="#00695C" font-size="9" font-weight="bold">mainly inside bots-hive</text>
+    </g>
+
+    <g transform="translate(262,50)">
+      <rect x="0" y="0" width="210" height="150" rx="5" fill="#E1F5FE" stroke="#81D4FA" stroke-width="1.2"/>
+      <text x="105" y="20" text-anchor="middle" fill="#0277BD" font-size="11" font-weight="bold">Sibling: datafeed</text>
+      <line x1="10" y1="28" x2="200" y2="28" stroke="#B3E5FC"/>
+      <text x="14" y="48" fill="#355070" font-size="9">mounted as ../datafeed/src</text>
+      <text x="14" y="64" fill="#355070" font-size="9">datafeed_manager orchestrates</text>
+      <text x="14" y="80" fill="#355070" font-size="9">loader scripts and fetch loops</text>
+      <text x="14" y="96" fill="#355070" font-size="9">shares db_config with platform</text>
+      <text x="14" y="116" fill="#0277BD" font-size="9" font-weight="bold">uses MariaDB and ClickHouse path</text>
+    </g>
+
+    <g transform="translate(494,50)">
+      <rect x="0" y="0" width="206" height="150" rx="5" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1.2"/>
+      <text x="103" y="20" text-anchor="middle" fill="#6A1B9A" font-size="11" font-weight="bold">Sibling: alpet-libs-php</text>
+      <line x1="10" y1="28" x2="196" y2="28" stroke="#E1BEE7"/>
+      <text x="14" y="48" fill="#5D4037" font-size="9">runtime library provider</text>
+      <text x="14" y="64" fill="#5D4037" font-size="9">common, esctext, db_tools</text>
+      <text x="14" y="80" fill="#5D4037" font-size="9">and clickhouse adapters</text>
+      <text x="14" y="96" fill="#5D4037" font-size="9">loaded by generated proxies</text>
+    </g>
+
+    <g transform="translate(20,220)">
+      <rect x="0" y="0" width="680" height="152" rx="5" fill="#FFF3E0" stroke="#FFCC80" stroke-width="1.2"/>
+      <text x="340" y="22" text-anchor="middle" fill="#E65100" font-size="11" font-weight="bold">Key verified relations</text>
+      <line x1="10" y1="30" x2="670" y2="30" stroke="#FFE0B2"/>
+      <text x="14" y="50" fill="#5D4037" font-size="9">- web, phpmyadmin, bots-hive, and datafeed all point to mariadb in docker-compose</text>
+      <text x="14" y="66" fill="#5D4037" font-size="9">- signals-server.ts runs with PostgreSQL db and separate DATABASE_URL</text>
+      <text x="14" y="82" fill="#5D4037" font-size="9">- trading_core loads proxy libs and delegates exchange logic to engine hierarchy</text>
+      <text x="14" y="98" fill="#5D4037" font-size="9">- BOT wrapper classes instantiate the concrete exchange engine classes</text>
+      <text x="14" y="114" fill="#5D4037" font-size="9">- db_tools in src/lib is a runtime proxy, not the full original implementation</text>
+      <text x="14" y="132" fill="#5D4037" font-size="9">- selected requests from signals-server.ts are proxied to legacy PHP endpoints</text>
+    </g>
+  </g>
+
+  <!-- Footer -->
+  <g transform="translate(40,820)">
+    <rect x="0" y="0" width="1520" height="210" rx="8" fill="#FFFDF7" stroke="#E0E0E0" stroke-width="1.2"/>
+    <text x="16" y="24" font-size="14" font-weight="bold" fill="#5D4037">Legend and Notes</text>
+
+    <line x1="20" y1="50" x2="52" y2="50" stroke="#616161" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="62" y="54" fill="#616161" font-size="10">direct dependency or runtime wiring</text>
+
+    <line x1="260" y1="50" x2="292" y2="50" stroke="#FF9800" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+    <text x="302" y="54" fill="#616161" font-size="10">proxy or forwarding relation</text>
+
+    <text x="20" y="84" fill="#5D4037" font-size="10">src/common.php, src/esctext.php, and src/lib/db_tools.php are generated runtime proxies rather than full source implementations.</text>
+    <text x="20" y="104" fill="#5D4037" font-size="10">Concrete exchange engine classes are defined in impl_*.php; each file also contains a BOT wrapper that extends TradingCore.</text>
+    <text x="20" y="124" fill="#5D4037" font-size="10">This layout prioritizes readable topology: wrapped text, bounded labels, and orthogonal connectors routed between blocks.</text>
+    <text x="20" y="148" fill="#5D4037" font-size="10">Diagram focuses on verified runtime relations and avoids speculative inheritance branches that create visual noise.</text>
+    <text x="20" y="176" fill="#BF360C" font-size="10" font-weight="bold">Project status: archived, but runtime still spans MariaDB-based PHP services and PostgreSQL-backed TypeScript subsystem.</text>
+  </g>
+</svg>

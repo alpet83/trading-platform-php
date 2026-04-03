@@ -15,7 +15,10 @@
 
     final class BitfinexEngine extends RestAPIEngine {
 
-        private   $open_orders = [];
+    const API_BASE_PUBLIC  = 'https://api-pub.bitfinex.com/';
+    const API_BASE_PRIVATE = 'https://api.bitfinex.com/';
+
+    private   $open_orders = [];
         private   $outer_orders = [];  // external/manual/other bots orders
         private   $loaded_data = [];
         
@@ -30,21 +33,25 @@
             parent::__construct($core);
             $this->exchange = 'Bitfinex';
 
-            $env = getenv();
-            if (isset($env['BFX_API_KEY'])) {
-                $this->apiKey = trim($env['BFX_API_KEY']);
+            $auth = $this->InitializeAPIKey([
+                'env_prefix' => 'BFX',
+            ]);
+            $this->apiKey = strval($auth['key'] ?? '');
+            $this->secretKey = $auth['secret'] ?? [];
+            if (strval($auth['source'] ?? '') === 'env')
                 $this->LogMsg("#ENV: Used API Key {$this->apiKey}");
-                $ss = $env['BFX_API_SECRET'];
-                $this->secretKey = explode("\n", trim($ss));         
-            } else {
-                $key = file_get_contents('.bitfinex.api_key');
-                $this->apiKey = trim($key);
-                $this->secretKey = file('.bitfinex.key');
-                if (!$this->secretKey)
-                throw new Exception("#FATAL: can't load private key!\n");
-            }  
-            $this->public_api = 'https://api-pub.bitfinex.com/';
-            $this->private_api = 'https://api.bitfinex.com/';
+
+            $profile_name = trim((string)(getenv('BFX_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: 'main'));
+            $profile_file = trim((string)(getenv('BFX_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bitfinex.yml'));
+            $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
+                'public_api'  => self::API_BASE_PUBLIC,
+                'private_api' => self::API_BASE_PRIVATE,
+            ]);
+
+            $this->public_api  = trim((string)(getenv('BFX_PUBLIC_API')  ?: ($profile['public_api']  ?? self::API_BASE_PUBLIC)));
+            $this->private_api = trim((string)(getenv('BFX_PRIVATE_API') ?: ($profile['private_api'] ?? self::API_BASE_PRIVATE)));
+            $profile_mark = !empty($profile['_profile_loaded']) ? strval($profile['_profile_name']) : 'legacy-env';
+            $this->LogMsg('#ENV: Bitfinex public=%s, private=%s, profile %s', $this->public_api, $this->private_api, $profile_mark);
         }
 
 
@@ -91,6 +98,21 @@
                 $this->TradeCore()->LogError("~C91#ERROR:~C00 PrivateAPI user/info returned %s ", $json);
             }         
         }
+
+        public function CheckAPIKeyRights(): bool {
+            $json = $this->RequestPrivateAPI('v2/auth/r/info/user', []);
+            $res = json_decode($json);
+
+            if (error_test($res, 'apikey: invalid'))
+                throw new Exception(sprintf('#FATAL: Bitfinex API key rejected: %s', strval($json)));
+
+            if (!is_array($res) || count($res) < 10)
+                throw new Exception(sprintf('#FATAL: Bitfinex API key rights check failed: %s', strval($json)));
+
+            $this->LogMsg('~C93#AUTH_CHECK:~C00 Bitfinex API key %s validated, exchange does not expose read-only scope in current flow', $this->MaskApiKey());
+            return true;
+        }
+
         private function DecodeOrder($info, $rec) {
             // 0:ID, 1:GID, 2:CID, 3:SYMBOL, 4:MTS_CREATE, 5:MTS_UPDATE, 6:AMOUNT, 7:AMOUNT_ORIG, 8:TYPE, 9:TYPE_PREV,
             // 10:MTS_TIF,

@@ -1,0 +1,8 @@
+version: 1
+exchange: deribit
+default_profile: main
+profiles:
+    main:
+        api_base: https://www.deribit.com
+    testnet:
+        api_base: https://test.deribit.com
