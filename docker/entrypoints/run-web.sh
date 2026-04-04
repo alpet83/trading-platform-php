@@ -15,6 +15,19 @@ require_file() {
 
 mkdir -p /app/var/log /app/var/tmp /app/var/data
 
+# Initialize sys-config working copy (writable edit target for sys-config.php)
+mkdir -p /app/var/data/sys-config
+if [ ! -f /app/var/data/sys-config/docker-compose.override.yml ]; then
+    if [ -f /app/config/docker-compose.override.yml ]; then
+        cp /app/config/docker-compose.override.yml /app/var/data/sys-config/docker-compose.override.yml
+        echo "sys-config: initialized working copy from mount"
+    else
+        printf '# docker-compose override working copy -- edit via sys-config.php\nservices: {}\n' \
+            > /app/var/data/sys-config/docker-compose.override.yml
+        echo "sys-config: created empty working copy (source not mounted)"
+    fi
+fi
+
 if [ ! -f /app/src/lib/db_config.php ]; then
   echo "Missing /app/src/lib/db_config.php. Provide ./secrets/db_config.php on host."
   exit 1

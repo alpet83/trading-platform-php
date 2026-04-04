@@ -43,7 +43,15 @@ persist_root_password() {
   dir="$(dirname "$ROOT_PASSWORD_FILE")"
   mkdir -p "$dir"
   umask 077
-  printf '%s\n' "$ROOT_PASSWORD" > "$ROOT_PASSWORD_FILE"
+  if [ -e $ROOT_PASSWORD_FILE ]; 
+  then    
+    chown mysql $ROOT_PASSWORD_FILE
+    echo "WARN: existed $ROOT_PASSWORD_FILE" 
+    return 0
+  else   
+    echo "WARN: Saving root password into $ROOT_PASSWORD_FILE"
+    printf '%s\n' "$ROOT_PASSWORD" > $ROOT_PASSWORD_FILE
+  fi
 }
 
 create_root_client_defaults() {

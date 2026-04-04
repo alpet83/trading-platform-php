@@ -77,6 +77,7 @@ services:
       - ./var/tmp:/app/var/tmp
       - ./var/data:/app/var/data
       - ./secrets/db_config.php:/app/src/lib/db_config.php:ro
+      - ./docker-compose.override.yml:/app/config/docker-compose.override.yml:ro
 
   phpmyadmin:
     image: phpmyadmin:5-apache
@@ -149,6 +150,7 @@ services:
       BOT_DB_API_KEY_PARAM: ${BOT_DB_API_KEY_PARAM:-api_key}
       BOT_DB_API_SECRET_PARAM: ${BOT_DB_API_SECRET_PARAM:-api_secret}
       BOT_MANAGER_SECRET_KEY: ${BOT_MANAGER_SECRET_KEY:-}
+      DEBUG_MODE: ${DEBUG_MODE:-0}
       PHP_ERROR_LOG_FILE: ${BOTS_HIVE_PHP_ERROR_LOG_FILE:-/app/var/log/php_errors_bots_hive.log}
     volumes:
       - ./src:/app/src

@@ -38,10 +38,7 @@ require_file /app/src/esctext.php
 require_file /app/src/lib/db_tools.php
 
 prepare_runtime_workspace() {
-  runtime_data_subdir="workers/${BOT_IMPL_NAME}"
-  if [ -n "${BOT_ACCOUNT_ID:-}" ]; then
-    runtime_data_subdir="${runtime_data_subdir}/${BOT_ACCOUNT_ID}"
-  fi
+  runtime_data_subdir="${BOT_IMPL_NAME}"
 
   runtime_parent="/app/var/run/bot-runtime/${BOT_IMPL_NAME}"
   runtime_root="$runtime_parent"

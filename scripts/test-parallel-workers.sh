@@ -63,7 +63,7 @@ inject_keys_db() {
 }
 
 verify_runtime_layout() {
-  data_root="$ROOT_DIR/var/data/workers/$BOT_NAME"
+  data_root="$ROOT_DIR/var/data/$BOT_NAME"
   log_root="$ROOT_DIR/var/log/$BOT_NAME"
 
   for account_id in "$ACCOUNT_A" "$ACCOUNT_B"; do
