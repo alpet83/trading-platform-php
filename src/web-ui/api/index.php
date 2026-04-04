@@ -148,7 +148,10 @@ foreach ($activity as $acc_id => $row) {
 }
 
 $pairs_map_url = signals_api_url('pairs_map.php?full_dump=1');
-$pairs_map_json = curl_http_request($pairs_map_url);
+$pairs_map_opts = new CurlOptions();
+$pairs_map_opts->connect_timeout = 3;
+$pairs_map_opts->total_timeout = 8;
+$pairs_map_json = curl_http_request($pairs_map_url, null, $pairs_map_opts);
 $symbol_map = json_decode($pairs_map_json, true);
 
 if (!is_array($symbol_map)) {

@@ -11,7 +11,7 @@ class TradeConfig implements ArrayAccess {
     public     $shorts_mult    = 1.0;  // multiplier for short positions
     public     $db_tables      = [];
     public     $min_order_cost = 50;
-    public     $max_order_cost = 1000; // prevent big orders
+    public     $max_order_cost = 5000; // default single-order cap
     public     $working_source = [];
     protected  $trade_core     = null;
     protected  $updated        = false;
@@ -76,7 +76,22 @@ class TradeConfig implements ArrayAccess {
       $this->position_coef = 1.0 * $this->GetValue('position_coef', 0.01);
       $this->shorts_mult   = 1.0 * $this->GetValue('shorts_mult',   1.0);
       $this->min_order_cost = 1.0 * $this->GetValue('min_order_cost', $this->min_order_cost);
-      $this->max_order_cost = 1.0 * $this->GetValue('max_order_cost', $this->min_order_cost);      
+      $this->max_order_cost = 1.0 * $this->GetValue('max_order_cost', $this->max_order_cost);
+    }
+
+    public function Snapshot(int $acc_id = 0): array {
+      return [
+        'ts' => date('c'),
+        'account_id' => $acc_id,
+        'config_table' => $this->config_table,
+        'runtime' => [
+          'position_coef' => $this->position_coef,
+          'shorts_mult' => $this->shorts_mult,
+          'min_order_cost' => $this->min_order_cost,
+          'max_order_cost' => $this->max_order_cost,
+        ],
+        'raw_config' => $this->raw_config,
+      ];
     }
 
     function LoadValue(string $key, $acc_id = false) {

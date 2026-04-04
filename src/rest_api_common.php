@@ -117,11 +117,13 @@
                 if ($this->rate_remain < 10) {
                     $this->LogMsg("~C91#WARN:~C00 rate limit %d was reached, pause will be %d", $this->rate_limit, $this->rate_reset - time());
                     while (time() < $this->rate_reset) usleep(100000);
-                    file_put_contents('data/last_curl_resp_header.txt', $curl_resp_header);
+                    if (tp_debug_mode_enabled())
+                        file_put_contents('data/last_curl_resp_header.txt', $curl_resp_header);
                 }    
             } elseif (strlen($curl_resp_header) > 0) {
                 $this->LogMsg("~C91#WARN:~C00 rate limit headers not found in response %s", $curl_resp_header);
-                file_put_contents('data/wrong_curl_resp_header.txt', $curl_resp_header);
+                if (tp_debug_mode_enabled())
+                    file_put_contents('data/wrong_curl_resp_header.txt', $curl_resp_header);
             }        
         }
 

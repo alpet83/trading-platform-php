@@ -229,8 +229,12 @@
     </TBODY>
 </TABLE>
 <?php
-    $feed_host = rtrim((string)(getenv('TRADEBOT_PHP_HOST') ?: getenv('SIGNALS_API_URL') ?: getenv('SIGNALS_FEED_URL') ?: 'http://host.docker.internal'), '/');
-    $json = curl_http_request($feed_host."/pairs_map.php?full_dump=1");
+    // pairs_map must be fetched from signals/feed endpoint, not auth host.
+    $feed_host = rtrim((string)(getenv('SIGNALS_FEED_URL') ?: getenv('SIGNALS_API_URL') ?: getenv('TRADEBOT_PHP_HOST') ?: 'http://signals-legacy'), '/');
+    $feed_opts = new CurlOptions();
+    $feed_opts->connect_timeout = 3;
+    $feed_opts->total_timeout = 8;
+    $json = curl_http_request($feed_host."/pairs_map.php?full_dump=1", null, $feed_opts);
     $symbol_map = json_decode($json, true); // for all bots
 
     if (!is_array($symbol_map)) {        

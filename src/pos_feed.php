@@ -79,7 +79,8 @@ class PositionFeed {
      }
 
       $result = json_decode($json, true);
-      file_put_contents('data/source_pos.json', $json);
+        if (tp_debug_mode_enabled())
+          file_put_contents('data/source_pos.json', $json);
       if (is_array($result))
          $core->SetTargetPositions($result);
       else  {

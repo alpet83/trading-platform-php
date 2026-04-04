@@ -1268,7 +1268,8 @@
                }   
                else {
                   $this->LogMsg("~C91#LIMIT_ORDER_GONE($mark):~C00  %d not found in cache/lists", $order_id);
-                  file_put_contents('data/orders_cache.json', json_encode(array_keys($cache)));
+                  if (tp_debug_mode_enabled())
+                      file_put_contents('data/orders_cache.json', json_encode(array_keys($cache)));
                   return 0;
                }   
             }   

@@ -353,10 +353,10 @@
             
             $host_id = $this->host_id;
             $info_file = "data/$sym$mark-$host_id.info";
-            if (!file_exists($info_file) || filemtime($info_file) * 1000 < $tinfo->updated)
+            if (tp_debug_mode_enabled() && (!file_exists($info_file) || filemtime($info_file) * 1000 < $tinfo->updated))
                 file_put_contents($info_file, print_r($obj, true));      
             $json_file = "data/$sym$mark-$host_id.json";                  
-            if (!file_exists($json_file) || filemtime($json_file) * 1000 < $tinfo->updated)
+            if (tp_debug_mode_enabled() && (!file_exists($json_file) || filemtime($json_file) * 1000 < $tinfo->updated))
                 file_put_contents($json_file, $tinfo->SaveToJSON());      
 
             return $tinfo;
@@ -393,7 +393,8 @@
 
             //  $this->LogMsg(" acceptable symbols: %s ", implode(',', array_keys($pmap)));
             $loaded = [];
-            file_put_contents($core->tmp_dir.'/pairs_map.json', json_encode($core->pairs_map)); // для построения отчетов        
+            if (tp_debug_mode_enabled())
+                file_put_contents($core->tmp_dir.'/pairs_map.json', json_encode($core->pairs_map)); // для построения отчетов        
 
             if ($list && is_array($list))
                 foreach ($list as $obj) {                
@@ -411,7 +412,7 @@
                 if ($core->ErrorsCount() > 30)
                     throw new Exception("Instruments list retrieve failed to many times"); 
             }  
-            if ($updated)
+            if ($updated && tp_debug_mode_enabled())
                 file_put_contents($core->tmp_dir.'/active_instr.json', $json);
 
             sort($ignored);        
@@ -1055,7 +1056,8 @@
                 $core->total_funds = 0;
                 $core->used_funds = 0;
         
-                file_put_contents('data/'.$file_prefix."_margin.json", $json);
+                if (tp_debug_mode_enabled())
+                    file_put_contents('data/'.$file_prefix."_margin.json", $json);
                 foreach ($obj as $rec) {          
                     if (!isset($rec->currency) || strlen($rec->currency) > 6) continue;
                     $ti = null;
@@ -1124,7 +1126,8 @@
             $now = time_ms();
 
             if (is_array($obj)) {
-                file_put_contents('data/'.$file_prefix."_positions.json", $json);
+                if (tp_debug_mode_enabled())
+                    file_put_contents('data/'.$file_prefix."_positions.json", $json);
                 if (0 === count($obj)) {
                     if (date('i') === '00') {
                         $hdr = isset($this->curl_response['headers']) ? json_encode($this->curl_response['headers']) : 'n/a';
@@ -1194,8 +1197,10 @@
                 elseif (count($obj) > 0)
                     $core->LogMsg("~C94#CALM:~C00 no positions was updated from %d records", count($obj));
                 
-                file_put_contents("data/{$file_prefix}_posmap.json", json_encode($result));
-                file_put_contents("data/{$file_prefix}_pnl_map.info", print_r($this->pnl_map, true));
+                if (tp_debug_mode_enabled()) {
+                    file_put_contents("data/{$file_prefix}_posmap.json", json_encode($result));
+                    file_put_contents("data/{$file_prefix}_pnl_map.info", print_r($this->pnl_map, true));
+                }
                 return count ($result);
             }
             else {
@@ -1703,7 +1708,8 @@
                 else { 
                     $this->sign_fails = 0;
                     $this->last_good_rqs[$full_path] = $pdump;
-                    file_put_contents("data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
+                    if (tp_debug_mode_enabled())
+                        file_put_contents("data/last_good_rqs@{$this->account_id}.json", json_encode($this->last_good_rqs));
                 }  
             }  
             return $result;

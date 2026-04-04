@@ -144,7 +144,8 @@
                 mkdir($core->tmp_dir, 0775, true);
             }
 
-            file_put_contents($core->tmp_dir.'/pairs_map.json', json_encode($core->pairs_map)); // для построения отчетов
+            if (tp_debug_mode_enabled())
+                file_put_contents($core->tmp_dir.'/pairs_map.json', json_encode($core->pairs_map)); // для построения отчетов
 
             $symlist = json_encode($symlist);
             $json = $this->RequestPublicAPI('/api/v3/ticker/tradingDay', "symbols=$symlist&type=MINI");
@@ -744,7 +745,8 @@
                 return false;
             }
             $this->last_load['positions'] = time();
-            file_put_contents('data/margin_account.json', $json);
+            if (tp_debug_mode_enabled())
+                file_put_contents('data/margin_account.json', $json);
             $info = json_decode($json);
             $borrowed = array();
 

@@ -28,8 +28,7 @@ $account_id = $_SESSION['account_id'] ?? rqs_param('account', 0);
 $bot = rqs_param('bot', $impl_name);
 
 $missing_params = [];
-if (!$impl_name) $missing_params[] = 'bot';
-if (!$account_id) $missing_params[] = 'account';
+if (!$impl_name && !$account_id) $missing_params[] = 'bot or account';
 if (!empty($missing_params)) {
     $params = implode(', ', $missing_params);
     send_error("Parameters missing: $params", 400);

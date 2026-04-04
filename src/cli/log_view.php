@@ -145,19 +145,37 @@
         return $out;
     }
 
+    function lv_is_regular_file(string $path): bool {
+        return is_file($path) && !is_link($path);
+    }
+
+    function lv_mtime_safe(string $path): int {
+        $ts = @filemtime($path);
+        return ($ts === false) ? 0 : intval($ts);
+    }
+
+    function lv_label_with_mtime(string $path): string {
+        $ts = lv_mtime_safe($path);
+        $mtime = $ts > 0 ? date('Y-m-d H:i:s', $ts) : 'mtime:unknown';
+        return basename($path) . ' [' . $mtime . ']';
+    }
+
     function lv_collect_session_files(string $sessionDir): array {
         $files = [];
         $prefixes = ['core', 'engine', 'errors', 'order'];
 
         foreach ($prefixes as $prefix) {
             $current = $sessionDir . '/' . $prefix . '.log';
-            if (is_file($current) || is_link($current))
+            if (lv_is_regular_file($current))
                 $files[] = $current;
 
             $glob = glob($sessionDir . '/' . $prefix . '_*.log');
             if (is_array($glob) && count($glob) > 0) {
+                $glob = array_values(array_filter($glob, fn(string $f): bool => lv_is_regular_file($f)));
+                if (count($glob) === 0)
+                    continue;
                 usort($glob, function (string $a, string $b): int {
-                    return filemtime($b) <=> filemtime($a);
+                    return lv_mtime_safe($b) <=> lv_mtime_safe($a);
                 });
                 $files[] = $glob[0];
             }
@@ -165,8 +183,11 @@
 
         $all = glob($sessionDir . '/*.log');
         if (is_array($all) && count($all) > 0) {
+            $all = array_values(array_filter($all, fn(string $f): bool => lv_is_regular_file($f)));
+            if (count($all) === 0)
+                return lv_unique_files($files);
             usort($all, function (string $a, string $b): int {
-                return filemtime($b) <=> filemtime($a);
+                return lv_mtime_safe($b) <=> lv_mtime_safe($a);
             });
             foreach (array_slice($all, 0, 12) as $f)
                 $files[] = $f;
@@ -205,7 +226,7 @@
     }
 
     function lv_open_less(string $file): int {
-        if (!is_file($file) && !is_link($file))
+        if (!lv_is_regular_file($file))
             return 2;
 
         // Force pager to use terminal device directly, otherwise less can exit
@@ -272,9 +293,7 @@
                     continue;
                 }
 
-                $fileLabels = array_map(function (string $f): string {
-                    return basename($f) . ' [' . date('Y-m-d H:i:s', filemtime($f)) . ']';
-                }, $files);
+                $fileLabels = array_map(fn(string $f): string => lv_label_with_mtime($f), $files);
 
                 while (true) {
                     $fileIdx = lv_pick($fileLabels, 'Choose log file to open via less -rf:');
@@ -295,7 +314,7 @@
         }
 
         $fileLabels = array_map(function (string $f): string {
-            return basename($f) . ' [' . date('Y-m-d H:i:s', filemtime($f)) . ']';
+            return lv_label_with_mtime($f);
         }, $files);
 
         while (true) {

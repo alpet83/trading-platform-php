@@ -25,3 +25,16 @@ if (!function_exists('tp_debug_tmp_path')) {
         return $dir . '/' . $name;
     }
 }
+
+if (!function_exists('tp_debug_mode_enabled')) {
+    function tp_debug_mode_enabled(): bool {
+        $debug_mode = strtolower(trim((string)(getenv('DEBUG_MODE') ?: '0')));
+        return in_array($debug_mode, ['1', 'true', 'yes', 'on'], true);
+    }
+}
+
+if (!function_exists('print_html')) {
+    function print_html(mixed $value): void {
+        echo htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
+}

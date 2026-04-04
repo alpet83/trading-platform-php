@@ -14,9 +14,16 @@
     define('PAIRS_MAP_CACHE', 'pairs_map.last.json');
 
     if (!file_exists(PAIRS_MAP_CACHE) || time() - filemtime(PAIRS_MAP_CACHE) > 3600 * 24 * 30) {
-     $pmap = file_get_contents('https://vps.alpet.me/pairs_map.php');
-     file_put_contents(PAIRS_MAP_CACHE, $pmap);
-    }   
+      $feed_host = rtrim((string)(getenv('SIGNALS_FEED_URL') ?: getenv('SIGNALS_API_URL') ?: getenv('TRADEBOT_PHP_HOST') ?: 'http://signals-legacy'), '/');
+      $feed_opts = new CurlOptions();
+      $feed_opts->connect_timeout = 3;
+      $feed_opts->total_timeout = 8;
+      $pmap_remote = curl_http_request($feed_host . '/pairs_map.php?full_dump=1', null, $feed_opts);
+      $pmap_decoded = json_decode((string)$pmap_remote, true);
+      if (is_array($pmap_decoded)) {
+        file_put_contents(PAIRS_MAP_CACHE, json_encode($pmap_decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+      }
+    }
     $pmap = file_get_contents(PAIRS_MAP_CACHE);
     $pmap = json_decode($pmap, true);
     echo "<!--\n";

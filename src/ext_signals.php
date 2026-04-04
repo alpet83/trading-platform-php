@@ -452,7 +452,7 @@
                     }                            
                 }             
             }
-            if ($total >= 50) {
+            if ($total >= 50 && tp_debug_mode_enabled()) {
                 file_put_contents("data/{$this->account_id}/sig_{$this->id}.cln", "$total = ".json_encode($dump_map, JSON_PRETTY_PRINT));
             }
 
@@ -571,6 +571,9 @@
 
 
         protected function CDP_Log(string $content) {
+            if (!tp_debug_mode_enabled()) {
+                return;
+            }
             $cdp_file = "data/{$this->account_id}/sig_{$this->id}.cdp";
             $lines = file_exists($cdp_file) ? file($cdp_file) : [];                      
             $lines = array_slice($lines, -1000); // keep last 1000 lines before
@@ -1449,7 +1452,7 @@
       $mysqli = $this->core->mysqli;      
       $table = $this->engine->TableName('ext_signals');
       $dump = $mysqli->select_rows('*', $table, 'WHERE id = 742', MYSQLI_ASSOC);
-      if (is_array($dump)) 
+      if (is_array($dump) && tp_debug_mode_enabled()) 
           file_put_contents("data/{$this->engine->account_id}/ext_signals_dump-exit.json", json_encode($dump)."\n");
     }
 
@@ -1773,7 +1776,8 @@
         $start = $mysqli->select_value('MIN(id)', $table, 'WHERE (closed=0) and (id > 0)'); 
         $this->signal_info = $mysqli->select_map('signal_id, COUNT(ts) as count, MIN(ts) as first_order_ts, MAX(ts) as last_order_ts, MIN(id) as first_order, MAX(id) as last_order', 
                                 $ord_table, "WHERE (account_id = $acc_id) AND (signal_id > 0) GROUP BY signal_id", MYSQLI_OBJECT);
-        file_save_json("data/{$engine->account_id}/ext_signals_meta.json", $this->signal_info);                                
+        if (tp_debug_mode_enabled())
+            file_save_json("data/{$engine->account_id}/ext_signals_meta.json", $this->signal_info);                                
 
         $need_set = OFLAG_DIRECT;
         $skip_set = OFLAG_OUTBOUND | OFLAG_RESTORED;

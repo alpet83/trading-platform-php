@@ -425,7 +425,8 @@
                 $core->LogError("~C91#ERROR: public API request failed:~C97 tickers~C00 ");
                 return;
             }
-            file_put_contents('data/bfx_tickers.json', $json);
+            if (tp_debug_mode_enabled())
+                file_put_contents('data/bfx_tickers.json', $json);
             $tickers = json_decode($json);
             if (!is_array($tickers)) {
                 $core->LogError("~C91#ERROR: public API request failed:~C97 tickers~C00, invalid JSON returned:~C92 $json~C00");

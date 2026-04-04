@@ -391,7 +391,7 @@ class TradingEngine {
         foreach ($core->pairs_map as $id => $sym) {
             $tinfo = new TickerInfo($id, $sym, $this);
             $tinfo->trade_coef = $core->pairs_coef[$id];
-            $tinfo->cost_limit = $core->ConfigValue('max_order_cost', 1000); // base limit
+            $tinfo->cost_limit = $core->ConfigValue('max_order_cost', 5000); // base limit
             if ($ticker_map && isset($ticker_map[$sym])) {
                 $tinfo->ticker = $ticker_map[$sym];
                 $mysqli->try_query("UPDATE `$tmap_table` SET pair_id = $id WHERE ticker = '{$tinfo->ticker}'");

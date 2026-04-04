@@ -39,12 +39,37 @@
     <link rel="stylesheet" href="dark-theme.css">
     <link rel="stylesheet" href="apply-theme.css">
     <link rel="stylesheet" href="colors.css">     
-
-
+    <style>
+    .tp-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 12px;
+        margin-bottom: 14px;
+        background: rgba(20,20,30,0.85);
+        border: 1px solid #3a3a4a;
+        border-radius: 8px;
+        font-size: 13px;
+    }
+    .tp-nav a {
+        padding: 5px 11px;
+        border: 1px solid #4a4a66;
+        border-radius: 5px;
+        background: #1a1a2a;
+        color: #b0b8e0;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .tp-nav a:hover  { background: #26263a; border-color: #7070aa; color: #dde; }
+    .tp-nav a.active { background: #2a2a50; border-color: #6868c0; color: #d0d0ff; font-weight: bold; }
+    .tp-nav .sep { color: #444; user-select: none; }
+    </style>
     <script>
     function Edit(app, param, value) {
       document.location ='index.php?impl_name='+ app + '&param_edit=' + param + '&value='+prompt("Edit " + param, value);
-    }    
+    }
     function Toggle(app, param) {
       document.location ='index.php?impl_name='+ app +'&param_toggle=' + param;
     }
@@ -52,10 +77,10 @@
       document.location = 'index.php';
     }
     function DefferedReload() {
-      setTimeout(Reload, 2000);  
+      setTimeout(Reload, 2000);
     }
     </script>
-    </HEAD>    
+    </HEAD>
 <?php
     mysqli_report(MYSQLI_REPORT_OFF);
     $mysqli = init_remote_db('trading');
@@ -97,9 +122,14 @@
       echo "<BODY>\n";
 ?>
 
-<div style='margin-bottom:8px;'>
-    <a href='basic-admin.php'>Basic Admin</a>
-</div>
+<nav class="tp-nav">
+    <a href="/index.php" class="active">Home</a>
+    <?php if ($is_admin): ?>
+    <span class="sep">|</span>
+    <a href="/basic-admin.php">Admin</a>
+    <a href="/sys-config.php">Platform Config</a>
+    <?php endif; ?>
+</nav>
 
 
 <TABLE BORDER=1> 
@@ -233,8 +263,12 @@
     </TBODY>
 </TABLE>
 <?php
-    $feed_host = rtrim((string)(getenv('TRADEBOT_PHP_HOST') ?: getenv('SIGNALS_API_URL') ?: getenv('SIGNALS_FEED_URL') ?: 'http://host.docker.internal'), '/');
-    $json = curl_http_request($feed_host."/pairs_map.php?full_dump=1");
+    // pairs_map must be fetched from signals/feed endpoint, not auth host.
+    $feed_host = rtrim((string)(getenv('SIGNALS_FEED_URL') ?: getenv('SIGNALS_API_URL') ?: getenv('TRADEBOT_PHP_HOST') ?: 'http://signals-legacy'), '/');
+    $feed_opts = new CurlOptions();
+    $feed_opts->connect_timeout = 3;
+    $feed_opts->total_timeout = 8;
+    $json = curl_http_request($feed_host."/pairs_map.php?full_dump=1", null, $feed_opts);
     $symbol_map = json_decode($json, true); // for all bots
 
     if (!is_array($symbol_map)) {        

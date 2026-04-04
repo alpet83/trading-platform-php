@@ -582,6 +582,53 @@
         return $this->configuration->GetValue($key, $default);
     }   
 
+    protected function DumpActiveConfig(int $account_id): void {
+        $debug_mode = strtolower(trim((string)(getenv('DEBUG_MODE') ?: '0')));
+        if (!in_array($debug_mode, ['1', 'true', 'yes', 'on'], true)) {
+            return;
+        }
+
+        $data_subdir = trim((string)(getenv('BOT_DATA_SUBDIR') ?: ''), '/');
+        $dump_dir = '/app/var/data';
+        if (strlen($data_subdir) > 0) {
+            $dump_dir .= '/'.$data_subdir;
+        }
+        $dump_dir .= '/'.$account_id;
+
+        if (!is_dir($dump_dir)) {
+            @mkdir($dump_dir, 0775, true);
+        }
+
+        $dump_file = $dump_dir.'/active_config.json';
+        $tmp_file = $dump_file.'.tmp';
+
+        $payload = $this->configuration->Snapshot($account_id);
+        $payload['bot'] = [
+            'impl_name' => $this->impl_name,
+            'updates' => $this->updates,
+            'updated_time' => $this->updated_time,
+            'active_role' => $this->active_role,
+        ];
+
+        $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (false === $json) {
+            $this->LogError("~C91#WARN:~C00 failed encode active config dump to JSON");
+            return;
+        }
+
+        $json .= "\n";
+        if (false === @file_put_contents($tmp_file, $json, LOCK_EX)) {
+            $this->LogError("~C91#WARN:~C00 failed write active config temp dump %s", $tmp_file);
+            return;
+        }
+
+        if (!@rename($tmp_file, $dump_file)) {
+            @unlink($tmp_file);
+            $this->LogError("~C91#WARN:~C00 failed move active config temp dump to %s", $dump_file);
+            return;
+        }
+    }
+
     public function GetDebugPair(): int {
         $dbg_pair = $this->ConfigValue('debug_pair', 0);
         if (is_string($dbg_pair) && strlen($dbg_pair) >= 3) {
@@ -734,7 +781,8 @@
       }      
       if ($qty > 0)
          $price =  $price / $qty; // average it
-      file_put_contents("data/last_batch_price_$pair_id.dbg", " result = $price \n");
+      if (tp_debug_mode_enabled())
+          file_put_contents("data/last_batch_price_$pair_id.dbg", " result = $price \n");
       return $price;  
     }
 
@@ -927,7 +975,8 @@
       $query = "INSERT INTO `$table`(exchange, account_id, master_host, master_pid, ts_alive, uptime, `status`, reserve_status)\n 
                 VALUES('$exch', $acc_id, '$hostname', $pid, '$now', $uptime, '$status', 0)\n
                 ON DUPLICATE KEY UPDATE master_host = '$hostname', master_pid = $pid, ts_alive = '$now', uptime = $uptime, `status` = '$status', reserve_status = reserve_status / 16; "; // refresh mains
-      file_put_contents('data/alive.sql', "$query # TZ = ".date_default_timezone_get());
+      if (tp_debug_mode_enabled())
+          file_put_contents('data/alive.sql', "$query # TZ = ".date_default_timezone_get());
       if (try_query($query) && sqli()->affected_rows > 0) {         
         // verify, due replication may revert changes
         sleep(1);
@@ -1071,6 +1120,7 @@
             //  $after_ts = date(SQL_TIMESTAMP, $this->updated_time - 3600); // request changes for last hour
             $this->updated_time = time();          
             $this->configuration->Load($engine->account_id);  // update runtime config
+            $this->DumpActiveConfig($engine->account_id);
 
             $this->trade_enabled = $this->ConfigValue('trade_enabled', false);  // internals can drop this flag!
 

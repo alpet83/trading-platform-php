@@ -1,4 +1,5 @@
 <?php
+require_once('../trading_common.php');
 require_once('../lib/admin_ip.php');
 require_once('../lib/db_tools.php');
 require_once('../lib/db_config.php');
@@ -27,18 +28,18 @@ function is_local_client(string $remote): bool {
 function normalize_signals_setup_cfg(array $cfg, string $fallback): array {
     $setupId = 0;
     if (isset($cfg['setup_id'])) {
-    $setupId = intval($cfg['setup_id']);
+        $setupId = intval($cfg['setup_id']);
     }
 
     if ($setupId >= 0) {
-    $cfg['signals_setup'] = strval($setupId);
+        $cfg['signals_setup'] = strval($setupId);
     } elseif (isset($cfg['signals_setup'])) {
-    $raw = trim((string)$cfg['signals_setup']);
-    if (preg_match('/^\d+$/', $raw)) {
-      $cfg['signals_setup'] = strval(intval($raw));
-    } elseif ($raw === '') {
-      $cfg['signals_setup'] = $fallback;
-    }
+        $raw = trim((string)$cfg['signals_setup']);
+        if (preg_match('/^\d+$/', $raw)) {
+            $cfg['signals_setup'] = strval(intval($raw));
+        } elseif ($raw === '') {
+            $cfg['signals_setup'] = $fallback;
+        }
     }
 
     unset($cfg['setup_id']);
@@ -48,11 +49,12 @@ function normalize_signals_setup_cfg(array $cfg, string $fallback): array {
 function extract_setup_id_from_cfg(string $signalsSetup): int {
     $raw = trim($signalsSetup);
     if ($raw === '') {
-    return 0;
+        return 0;
     }
     if (preg_match('/^\d+$/', $raw)) {
-    return intval($raw);
+        return intval($raw);
     }
+
     // Strict mode: setup in config is numeric-only.
     return 0;
 }
@@ -72,113 +74,117 @@ $botOk = '';
 $botErr = '';
 $botsList = [];
 $firstBot = '';
+$firstBotAccountId = 1;
 $selectedBot = trim((string)($_GET['bot_select'] ?? $_POST['bot_select'] ?? ''));
 
 if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = trim((string)($_POST['action'] ?? ''));
     if ($action === 'otp_generate') {
-    $res = admin_otp_activate_once($remote);
-    if (!empty($res['ok'])) {
-      $token = (string)$res['token'];
-      $expires = (string)$res['expires_at'];
-      $otpInfo = 'One-time OTP generated: ' . $token . ($expires !== '' ? (' (expires ' . $expires . ' UTC)') : '');
-      $otpState = admin_otp_load_state();
-    } else {
-      $otpErr = (string)($res['error'] ?? 'OTP generation failed');
-    }
-    } elseif ($action === 'otp_set_mode') {
-    $newMode = strtolower(trim((string)($_POST['otp_mode'] ?? '')));
-    if (in_array($newMode, ['off', 'on', 'required'], true)) {
-      $modeState = admin_otp_load_state();
-      $modeState['mode'] = $newMode;
-      if (admin_otp_save_state($modeState)) {
-        $otpInfo = 'OTP mode set to: ' . $newMode;
-        $otpState = admin_otp_load_state();
-      } else {
-        $otpErr = 'Failed to save OTP mode (cannot write config file)';
-      }
-    } else {
-      $otpErr = 'Invalid mode value';
-    }
-    } elseif ($action === 'create_bot') {
-    mysqli_report(MYSQLI_REPORT_OFF);
-    $botMysqli = init_remote_db('trading');
-    if ($botMysqli) {
-      $cfgIn = normalize_signals_setup_cfg((array)($_POST['config'] ?? []), $defaultSignalsSetup);
-      $res = bot_create(
-        $botMysqli,
-        (string)($_POST['bot_name'] ?? ''),
-        intval($_POST['account_id'] ?? 0),
-        $cfgIn
-      );
-      @$botMysqli->close();
-      if ($res['ok']) {
-        $botOk = 'Bot created successfully: ' . htmlspecialchars($res['applicant'], ENT_QUOTES, 'UTF-8');
-      } else {
-        $botErr = $res['error'];
-      }
-    } else {
-      $botErr = 'Database not available';
-    }
-    } elseif ($action === 'update_bot_cfg') {
-    $applicant = trim((string)($_POST['applicant'] ?? ''));
-    $cfg = normalize_signals_setup_cfg((array)($_POST['cfg'] ?? $_POST['config'] ?? []), $defaultSignalsSetup);
-    mysqli_report(MYSQLI_REPORT_OFF);
-    $botMysqli = init_remote_db('trading');
-    if (!$botMysqli) {
-      $botErr = 'Database not available';
-    } elseif ($applicant === '') {
-      $botErr = 'Applicant is required';
-      @$botMysqli->close();
-    } else {
-      $appEsc = $botMysqli->real_escape_string($applicant);
-      $tableName = $botMysqli->select_value('table_name', 'config__table_map', "WHERE applicant = '$appEsc'");
-      if (!$tableName) {
-        $botErr = 'Bot not found: ' . $applicant;
-        @$botMysqli->close();
-      } else {
-        $accountId = intval($botMysqli->select_value('account_id', $tableName) ?: 0);
-        if ($accountId <= 0) {
-          $botErr = 'Invalid account for bot: ' . $applicant;
-          @$botMysqli->close();
+        $res = admin_otp_activate_once($remote);
+        if (!empty($res['ok'])) {
+            $token = (string)$res['token'];
+            $expires = (string)$res['expires_at'];
+            $otpInfo = 'One-time OTP generated: ' . $token . ($expires !== '' ? (' (expires ' . $expires . ' UTC)') : '');
+            $otpState = admin_otp_load_state();
         } else {
-          $allowedCfgKeys = [
-            'exchange',
-            'trade_enabled',
-            'position_coef',
-            'monitor_enabled',
-            'min_order_cost',
-            'max_order_cost',
-            'max_limit_distance',
-            'signals_setup',
-            'signals_feed_url',
-            'report_color',
-            'debug_pair',
-            'api_secret_sep',
-            'secret_key_encrypted',
-          ];
-          foreach ($cfg as $k => $v) {
-            if (!in_array($k, $allowedCfgKeys, true)) {
-              continue;
-            }
-            $kEsc = $botMysqli->real_escape_string((string)$k);
-            $vEsc = $botMysqli->real_escape_string((string)$v);
-            $exists = $botMysqli->select_value('param', $tableName, "WHERE account_id = $accountId AND param = '$kEsc'");
-            if ($exists) {
-              $botMysqli->try_query("UPDATE `$tableName` SET `value` = '$vEsc' WHERE account_id = $accountId AND param = '$kEsc'");
-            } else {
-              $botMysqli->try_query("INSERT INTO `$tableName` (account_id, param, value) VALUES ($accountId, '$kEsc', '$vEsc')");
-            }
-          }
-          if ($botMysqli->error !== '') {
-            $botErr = 'Update failed: ' . $botMysqli->error;
-          } else {
-            $botOk = 'Bot config updated: ' . htmlspecialchars($applicant, ENT_QUOTES, 'UTF-8');
-          }
-          @$botMysqli->close();
+            $otpErr = (string)($res['error'] ?? 'OTP generation failed');
         }
-      }
-    }
+    } elseif ($action === 'otp_set_mode') {
+        $newMode = strtolower(trim((string)($_POST['otp_mode'] ?? '')));
+        if (in_array($newMode, ['off', 'on', 'required'], true)) {
+            $modeState = admin_otp_load_state();
+            $modeState['mode'] = $newMode;
+            if (admin_otp_save_state($modeState)) {
+                $otpInfo = 'OTP mode set to: ' . $newMode;
+                $otpState = admin_otp_load_state();
+            } else {
+                $otpErr = 'Failed to save OTP mode (cannot write config file)';
+            }
+        } else {
+            $otpErr = 'Invalid mode value';
+        }
+    } elseif ($action === 'create_bot') {
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $botMysqli = init_remote_db('trading');
+        if ($botMysqli) {
+            $cfgIn = normalize_signals_setup_cfg((array)($_POST['config'] ?? []), $defaultSignalsSetup);
+            $res = bot_create(
+                $botMysqli,
+                (string)($_POST['bot_name'] ?? ''),
+                intval($_POST['account_id'] ?? 0),
+                $cfgIn
+            );
+            @$botMysqli->close();
+            if ($res['ok']) {
+                $botOk = 'Bot created successfully: ' . (string)$res['applicant'];
+            } else {
+                $botErr = $res['error'];
+            }
+        } else {
+            $botErr = 'Database not available';
+        }
+    } elseif ($action === 'update_bot_cfg') {
+        $applicant = trim((string)($_POST['applicant'] ?? ''));
+        $cfg = normalize_signals_setup_cfg((array)($_POST['cfg'] ?? $_POST['config'] ?? []), $defaultSignalsSetup);
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $botMysqli = init_remote_db('trading');
+        if (!$botMysqli) {
+            $botErr = 'Database not available';
+        } elseif ($applicant === '') {
+            $botErr = 'Applicant is required';
+            @$botMysqli->close();
+        } else {
+            $appEsc = $botMysqli->real_escape_string($applicant);
+            $tableName = $botMysqli->select_value('table_name', 'config__table_map', "WHERE applicant = '$appEsc'");
+            if (!$tableName) {
+                $botErr = 'Bot not found: ' . $applicant;
+                @$botMysqli->close();
+            } else {
+                $accountId = intval($botMysqli->select_value('account_id', $tableName) ?: 0);
+                if ($accountId <= 0) {
+                    $botErr = 'Invalid account for bot: ' . $applicant;
+                    @$botMysqli->close();
+                } else {
+                    $allowedCfgKeys = [
+                        'exchange',
+                        'trade_enabled',
+                        'position_coef',
+                        'monitor_enabled',
+                        'min_order_cost',
+                        'max_order_cost',
+                        'max_pos_cost',
+                        'max_lazy_order_cost',
+                        'hidden_cost_threshold',
+                        'max_limit_distance',
+                        'signals_setup',
+                        'signals_feed_url',
+                        'report_color',
+                        'debug_pair',
+                        'api_secret_sep',
+                        'secret_key_encrypted',
+                    ];
+                    foreach ($cfg as $k => $v) {
+                        if (!in_array($k, $allowedCfgKeys, true)) {
+                            continue;
+                        }
+                        $kEsc = $botMysqli->real_escape_string((string)$k);
+                        $vEsc = $botMysqli->real_escape_string((string)$v);
+                        $exists = $botMysqli->select_value('param', $tableName, "WHERE account_id = $accountId AND param = '$kEsc'");
+                        if ($exists) {
+                            $botMysqli->try_query("UPDATE `$tableName` SET `value` = '$vEsc' WHERE account_id = $accountId AND param = '$kEsc'");
+                        } else {
+                            $botMysqli->try_query("INSERT INTO `$tableName` (account_id, param, value) VALUES ($accountId, '$kEsc', '$vEsc')");
+                        }
+                    }
+                    if ($botMysqli->error !== '') {
+                        $botErr = 'Update failed: ' . $botMysqli->error;
+                    } else {
+                        $botOk = 'Bot config updated: ' . $applicant;
+                    }
+                    @$botMysqli->close();
+                }
+            }
+        }
     }
 }
 
@@ -206,49 +212,49 @@ if ($mysqli) {
     $replica = null;
     $replicaRes = @$mysqli->query('SHOW REPLICA STATUS');
     if ($replicaRes instanceof mysqli_result) {
-    $replica = $replicaRes->fetch_assoc();
-    $replicaRes->free();
+        $replica = $replicaRes->fetch_assoc();
+        $replicaRes->free();
     } else {
-    $slaveRes = @$mysqli->query('SHOW SLAVE STATUS');
-    if ($slaveRes instanceof mysqli_result) {
-      $replica = $slaveRes->fetch_assoc();
-      $slaveRes->free();
-    }
+        $slaveRes = @$mysqli->query('SHOW SLAVE STATUS');
+        if ($slaveRes instanceof mysqli_result) {
+            $replica = $slaveRes->fetch_assoc();
+            $slaveRes->free();
+        }
     }
 
     if (is_array($replica) && count($replica) > 0) {
-    $dbState['role'] = 'replica';
-    $io = strtolower((string)($replica['Replica_IO_Running'] ?? $replica['Slave_IO_Running'] ?? 'no'));
-    $sql = strtolower((string)($replica['Replica_SQL_Running'] ?? $replica['Slave_SQL_Running'] ?? 'no'));
-    $dbState['replication_ok'] = ($io === 'yes' && $sql === 'yes');
-    $dbState['seconds_behind'] = $replica['Seconds_Behind_Master'] ?? null;
-    $dbState['replication_note'] = sprintf('io=%s, sql=%s', $io, $sql);
+        $dbState['role'] = 'replica';
+        $io = strtolower((string)($replica['Replica_IO_Running'] ?? $replica['Slave_IO_Running'] ?? 'no'));
+        $sql = strtolower((string)($replica['Replica_SQL_Running'] ?? $replica['Slave_SQL_Running'] ?? 'no'));
+        $dbState['replication_ok'] = ($io === 'yes' && $sql === 'yes');
+        $dbState['seconds_behind'] = $replica['Seconds_Behind_Master'] ?? null;
+        $dbState['replication_note'] = sprintf('io=%s, sql=%s', $io, $sql);
     } else {
-    $masterRes = @$mysqli->query('SHOW MASTER STATUS');
-    if ($masterRes instanceof mysqli_result) {
-      $row = $masterRes->fetch_assoc();
-      $masterRes->free();
-      $dbState['role'] = is_array($row) ? 'primary' : 'standalone';
-      $dbState['replication_ok'] = true;
-      $dbState['replication_note'] = ($dbState['role'] === 'primary') ? 'master binlog active' : 'no replica configured';
-    }
+        $masterRes = @$mysqli->query('SHOW MASTER STATUS');
+        if ($masterRes instanceof mysqli_result) {
+            $row = $masterRes->fetch_assoc();
+            $masterRes->free();
+            $dbState['role'] = is_array($row) ? 'primary' : 'standalone';
+            $dbState['replication_ok'] = true;
+            $dbState['replication_note'] = ($dbState['role'] === 'primary') ? 'master binlog active' : 'no replica configured';
+        }
     }
 
     $binlogRes = @$mysqli->query('SHOW BINARY LOGS');
     if ($binlogRes instanceof mysqli_result) {
-    $sum = 0;
-    while ($r = $binlogRes->fetch_assoc()) {
-      $sum += intval($r['File_size'] ?? 0);
-    }
-    $binlogRes->free();
-    $dbState['binlog_bytes'] = $sum;
+        $sum = 0;
+        while ($r = $binlogRes->fetch_assoc()) {
+            $sum += intval($r['File_size'] ?? 0);
+        }
+        $binlogRes->free();
+        $dbState['binlog_bytes'] = $sum;
     }
 
     $relayRes = @$mysqli->query("SHOW GLOBAL STATUS LIKE 'Relay_log_space'");
     if ($relayRes instanceof mysqli_result) {
-    $relay = $relayRes->fetch_assoc();
-    $relayRes->free();
-    $dbState['relay_bytes'] = intval($relay['Value'] ?? 0);
+        $relay = $relayRes->fetch_assoc();
+        $relayRes->free();
+        $dbState['relay_bytes'] = intval($relay['Value'] ?? 0);
     }
 
     $binWarn = intval(getenv('BINLOG_WARN_BYTES') ?: '1073741824');
@@ -258,42 +264,45 @@ if ($mysqli) {
 
     $tableMap = $mysqli->select_map('applicant,table_name', 'config__table_map', 'ORDER BY applicant');
     if (is_array($tableMap)) {
-    foreach ($tableMap as $applicant => $cfgTable) {
-      if ($firstBot === '') {
-        $firstBot = (string)$applicant;
-      }
-      $accountId = intval($mysqli->select_value('account_id', $cfgTable) ?: 0);
-      $cfg = $mysqli->select_map('param,value', $cfgTable, $accountId > 0 ? "WHERE account_id = $accountId" : '');
-      if (!is_array($cfg)) {
-        $cfg = [];
-      }
-      $prefix = (strpos((string)$cfgTable, 'config__') === 0) ? substr((string)$cfgTable, 8) : (string)$cfgTable;
-      $required = ['positions', 'pairs_map', 'tickers', 'ticker_map', 'matched_orders', 'last_errors', 'events'];
-      $missing = [];
-      foreach ($required as $suffix) {
-        $tbl = $prefix . '__' . $suffix;
-        $exists = $mysqli->select_value('TABLE_NAME', 'INFORMATION_SCHEMA.TABLES', "WHERE TABLE_SCHEMA = 'trading' AND TABLE_NAME = '$tbl'");
-        if (!$exists) {
-          $missing[] = $tbl;
-        }
-      }
+        foreach ($tableMap as $applicant => $cfgTable) {
+            if ($firstBot === '') {
+                $firstBot = (string)$applicant;
+            }
+            $accountId = intval($mysqli->select_value('account_id', $cfgTable) ?: 0);
+          if ($firstBot === (string)$applicant && $accountId > 0) {
+            $firstBotAccountId = $accountId;
+          }
+            $cfg = $mysqli->select_map('param,value', $cfgTable, $accountId > 0 ? "WHERE account_id = $accountId" : '');
+            if (!is_array($cfg)) {
+                $cfg = [];
+            }
+            $prefix = (strpos((string)$cfgTable, 'config__') === 0) ? substr((string)$cfgTable, 8) : (string)$cfgTable;
+            $required = ['positions', 'pairs_map', 'tickers', 'ticker_map', 'matched_orders', 'last_errors', 'events'];
+            $missing = [];
+            foreach ($required as $suffix) {
+                $tbl = $prefix . '__' . $suffix;
+                $exists = $mysqli->select_value('TABLE_NAME', 'INFORMATION_SCHEMA.TABLES', "WHERE TABLE_SCHEMA = 'trading' AND TABLE_NAME = '$tbl'");
+                if (!$exists) {
+                    $missing[] = $tbl;
+                }
+            }
 
-      $botsList[] = [
-        'applicant' => (string)$applicant,
-        'cfg_table' => (string)$cfgTable,
-        'prefix' => (string)$prefix,
-        'account_id' => $accountId,
-        'config' => $cfg,
-        'exchange' => (string)($cfg['exchange'] ?? ''),
-        'trade_enabled' => (string)($cfg['trade_enabled'] ?? ''),
-        'debug_pair' => (string)($cfg['debug_pair'] ?? ''),
-        'position_coef' => (string)($cfg['position_coef'] ?? ''),
-        'max_order_cost' => (string)($cfg['max_order_cost'] ?? ''),
-        'api_secret_sep' => (string)($cfg['api_secret_sep'] ?? '-'),
-        'secret_key_encrypted' => (string)($cfg['secret_key_encrypted'] ?? '0'),
-        'missing' => $missing,
-      ];
-    }
+            $botsList[] = [
+                'applicant' => (string)$applicant,
+                'cfg_table' => (string)$cfgTable,
+                'prefix' => (string)$prefix,
+                'account_id' => $accountId,
+                'config' => $cfg,
+                'exchange' => (string)($cfg['exchange'] ?? ''),
+                'trade_enabled' => (string)($cfg['trade_enabled'] ?? ''),
+                'debug_pair' => (string)($cfg['debug_pair'] ?? ''),
+                'position_coef' => (string)($cfg['position_coef'] ?? ''),
+                'max_order_cost' => (string)($cfg['max_order_cost'] ?? ''),
+                'api_secret_sep' => (string)($cfg['api_secret_sep'] ?? '-'),
+                'secret_key_encrypted' => (string)($cfg['secret_key_encrypted'] ?? '0'),
+                'missing' => $missing,
+            ];
+        }
     }
 
     // Keep create mode as default when no bot is explicitly selected.
@@ -312,7 +321,10 @@ if ($mysqli) {
 }
 
 function fmt_bytes(int $v): string {
-    if ($v <= 0) return '0 B';
+  if ($v <= 0) {
+    return '0 B';
+  }
+
     $u = ['B', 'KB', 'MB', 'GB', 'TB'];
     $i = 0;
     $x = (float)$v;
@@ -331,23 +343,55 @@ foreach ($botsList as $b) {
     }
 }
 
-$formBotName = $selectedBotData ? preg_replace('/_bot$/', '', (string)$selectedBotData['applicant']) : 'bitmex';
-$formAccountId = $selectedBotData ? intval($selectedBotData['account_id']) : 1;
+$botCfg = is_array($selectedBotData['config'] ?? null) ? $selectedBotData['config'] : [];
+$selectedApplicant = (string)($selectedBotData['applicant'] ?? '');
+$selectedAccountId = intval($selectedBotData['account_id'] ?? 1);
+$selectedMissing = is_array($selectedBotData['missing'] ?? null) ? $selectedBotData['missing'] : [];
+
+$formBotName = $selectedBotData ? preg_replace('/_bot$/', '', $selectedApplicant) : 'bitmex';
+$formAccountId = $selectedAccountId;
+
+// Build next-available bot name suggestion per exchange.
+$exchangeSuggestions = [];
+foreach (['bitmex', 'binance', 'bitfinex', 'deribit', 'bybit'] as $_exch) {
+    // Gather all existing bot_name prefixes (strip _bot suffix) for this exchange.
+    $names = [];
+    foreach ($botsList as $_b) {
+        if (($_b['exchange'] ?? '') === $_exch) {
+            $names[] = preg_replace('/_bot$/', '', $_b['applicant']);
+        }
+    }
+    if (empty($names)) {
+        $exchangeSuggestions[$_exch] = $_exch;
+    } else {
+        // Find lowest free index: exch, exch2, exch3, ...
+        $candidate = $_exch;
+        $idx = 2;
+        while (in_array($candidate, $names, true)) {
+            $candidate = $_exch . $idx;
+            $idx++;
+        }
+        $exchangeSuggestions[$_exch] = $candidate;
+    }
+}
 $formCfg = [
-    'exchange' => $selectedBotData['config']['exchange'] ?? 'bitmex',
-    'trade_enabled' => $selectedBotData['config']['trade_enabled'] ?? '0',
-    'position_coef' => $selectedBotData['config']['position_coef'] ?? '0.010000',
-    'monitor_enabled' => $selectedBotData['config']['monitor_enabled'] ?? '1',
-    'min_order_cost' => $selectedBotData['config']['min_order_cost'] ?? '20',
-    'max_order_cost' => $selectedBotData['config']['max_order_cost'] ?? '100',
-    'max_limit_distance' => $selectedBotData['config']['max_limit_distance'] ?? '0.003',
-    'signals_setup' => $selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup,
-    'signals_feed_url' => $selectedBotData['config']['signals_feed_url'] ?? $defaultSignalsFeedUrl,
-    'setup_id' => extract_setup_id_from_cfg((string)($selectedBotData['config']['signals_setup'] ?? $defaultSignalsSetup)),
-    'report_color' => $selectedBotData['config']['report_color'] ?? '32,42,56',
-    'debug_pair' => $selectedBotData['config']['debug_pair'] ?? 'XBTUSD',
-    'api_secret_sep' => $selectedBotData['config']['api_secret_sep'] ?? '-',
-    'secret_key_encrypted' => $selectedBotData['config']['secret_key_encrypted'] ?? '0',
+  'exchange' => $botCfg['exchange'] ?? 'bitmex',
+  'trade_enabled' => $botCfg['trade_enabled'] ?? '0',
+  'position_coef' => $botCfg['position_coef'] ?? '0.010000',
+  'monitor_enabled' => $botCfg['monitor_enabled'] ?? '1',
+  'min_order_cost' => $botCfg['min_order_cost'] ?? '20',
+  'max_order_cost' => $botCfg['max_order_cost'] ?? '5000',
+  'max_pos_cost' => $botCfg['max_pos_cost'] ?? '100000',
+  'max_lazy_order_cost' => $botCfg['max_lazy_order_cost'] ?? '500',
+  'hidden_cost_threshold' => $botCfg['hidden_cost_threshold'] ?? '500',
+  'max_limit_distance' => $botCfg['max_limit_distance'] ?? '0.003',
+  'signals_setup' => $botCfg['signals_setup'] ?? $defaultSignalsSetup,
+  'signals_feed_url' => $botCfg['signals_feed_url'] ?? $defaultSignalsFeedUrl,
+  'setup_id' => extract_setup_id_from_cfg((string)($botCfg['signals_setup'] ?? $defaultSignalsSetup)),
+  'report_color' => $botCfg['report_color'] ?? '32,42,56',
+  'debug_pair' => $botCfg['debug_pair'] ?? 'XBTUSD',
+  'api_secret_sep' => $botCfg['api_secret_sep'] ?? '-',
+  'secret_key_encrypted' => $botCfg['secret_key_encrypted'] ?? '0',
 ];
 ?>
 <!DOCTYPE html>
@@ -359,6 +403,43 @@ $formCfg = [
     <link rel="stylesheet" href="dark-theme.css">
     <link rel="stylesheet" href="apply-theme.css">
     <link rel="stylesheet" href="colors.css">
+    <style>
+    .tp-nav {
+        display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+        padding: 8px 12px; margin-bottom: 14px;
+        background: rgba(20,20,30,0.85); border: 1px solid #3a3a4a;
+        border-radius: 8px; font-size: 13px;
+    }
+    .tp-nav a {
+        padding: 5px 11px; border: 1px solid #4a4a66; border-radius: 5px;
+        background: #1a1a2a; color: #b0b8e0; text-decoration: none; white-space: nowrap;
+    }
+    .tp-nav a:hover  { background: #26263a; border-color: #7070aa; color: #dde; }
+    .tp-nav a.active { background: #2a2a50; border-color: #6868c0; color: #d0d0ff; font-weight: bold; }
+    .tp-nav .sep { color: #444; user-select: none; }
+    </style>
+    <script>
+    var EXCHANGE_SUGGESTIONS = <?php echo json_encode($exchangeSuggestions, JSON_UNESCAPED_UNICODE); ?>;
+
+    function tp_suggest_bot_name(exchange) {
+        var inp = document.getElementById('bot_name_input');
+        if (!inp || inp.readOnly) return; // don't touch update mode
+        var suggestion = EXCHANGE_SUGGESTIONS[exchange] || exchange;
+        inp.value = suggestion;
+        // update the hint badge next to the label
+        var badge = document.getElementById('bot_name_hint');
+        if (badge) badge.textContent = '→ ' + suggestion + '_bot';
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var sel = document.getElementById('exchange_select');
+        if (sel) {
+            // fire once on load for the pre-selected exchange in create mode
+            var inp = document.getElementById('bot_name_input');
+            if (inp && !inp.readOnly) tp_suggest_bot_name(sel.value);
+        }
+    });
+    </script>
     <style>
     body { margin: 0; padding: 24px; font-family: Arial, sans-serif; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
@@ -375,16 +456,23 @@ $formCfg = [
     button { margin-top: 12px; padding: 9px 14px; border: 1px solid #6a6a6a; border-radius: 6px; background: #1f1f1f; color: #fff; cursor: pointer; }
     button:hover { background: #2c2c2c; }
     .mono { font-family: Consolas, monospace; font-size: 12px; }
+    .hint-badge { font-size:11px; color:#8ec9f1; margin-left:6px; }
     .mono-pre { font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
     .otp { font-size: 16px; letter-spacing: 1px; font-weight: bold; }
     </style>
 </head>
 <body>
+    <nav class="tp-nav">
+        <a href="/index.php">Home</a>
+        <span class="sep">|</span>
+        <a href="/basic-admin.php" class="active">Admin</a>
+        <a href="/sys-config.php">Platform Config</a>
+    </nav>
     <h1>TradeBot Basic Admin</h1>
     <p class="muted">Bootstrap interface for local deployment when TS admin is not deployed on the same machine.</p>
 
     <div class="card" style="margin-bottom:16px;">
-    <div><b>Client:</b> <span class="mono"><?php echo htmlspecialchars($remote, ENT_QUOTES, 'UTF-8'); ?></span></div>
+    <div><b>Client:</b> <span class="mono"><?php print_html($remote); ?></span></div>
     <?php if ($allowed): ?>
       <div class="ok">Local access enabled (passwordless bootstrap mode).</div>
     <?php else: ?>
@@ -395,19 +483,19 @@ $formCfg = [
     <div class="grid">
     <section class="card">
       <h2>Admin OTP (Single-Use)</h2>
-      <div class="muted">Mode: <span class="mono"><?php echo htmlspecialchars(admin_otp_mode(), ENT_QUOTES, 'UTF-8'); ?></span></div>
-      <div class="muted">Config file: <span class="mono"><?php echo htmlspecialchars(admin_otp_config_path(), ENT_QUOTES, 'UTF-8'); ?></span></div>
+      <div class="muted">Mode: <span class="mono"><?php print_html(admin_otp_mode()); ?></span></div>
+      <div class="muted">Config file: <span class="mono"><?php print_html(admin_otp_config_path()); ?></span></div>
       <?php if ($otpInfo !== ''): ?>
-        <div class="ok otp"><?php echo htmlspecialchars($otpInfo, ENT_QUOTES, 'UTF-8'); ?></div>
+        <div class="ok otp"><?php print_html($otpInfo); ?></div>
         <div class="warn">Copy now: plaintext OTP is shown only once. Stored config keeps only hash.</div>
       <?php endif; ?>
       <?php if ($otpErr !== ''): ?>
-        <div class="err"><?php echo htmlspecialchars($otpErr, ENT_QUOTES, 'UTF-8'); ?></div>
+        <div class="err"><?php print_html($otpErr); ?></div>
       <?php endif; ?>
       <div class="muted">Active: <span class="mono"><?php echo !empty($otpState['enabled']) ? 'yes' : 'no'; ?></span></div>
-      <div class="muted">Generated: <span class="mono"><?php echo htmlspecialchars((string)($otpState['generated_at'] ?: '-'), ENT_QUOTES, 'UTF-8'); ?></span></div>
-      <div class="muted">Expires: <span class="mono"><?php echo htmlspecialchars((string)($otpState['expires_at'] ?: '-'), ENT_QUOTES, 'UTF-8'); ?></span></div>
-      <div class="muted">Used: <span class="mono"><?php echo htmlspecialchars((string)($otpState['used_at'] ?: '-'), ENT_QUOTES, 'UTF-8'); ?></span></div>
+      <div class="muted">Generated: <span class="mono"><?php print_html((string)($otpState['generated_at'] ?: '-')); ?></span></div>
+      <div class="muted">Expires: <span class="mono"><?php print_html((string)($otpState['expires_at'] ?: '-')); ?></span></div>
+      <div class="muted">Used: <span class="mono"><?php print_html((string)($otpState['used_at'] ?: '-')); ?></span></div>
       <form method="post" style="display:inline-block; margin-right:8px;">
         <input type="hidden" name="action" value="otp_generate">
         <button type="submit" <?php echo $allowed ? '' : 'disabled'; ?>>Generate One-Time OTP</button>
@@ -428,22 +516,22 @@ $formCfg = [
     <section class="card">
       <h2>DB and Replication State</h2>
       <?php if (!$dbState['connected']): ?>
-        <div class="err">Database: down (<?php echo htmlspecialchars($dbState['error'], ENT_QUOTES, 'UTF-8'); ?>)</div>
-        <div class="muted">MySQL error log path: <span class="mono"><?php echo htmlspecialchars($mysqlLogPath, ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <div class="err">Database: down (<?php print_html($dbState['error']); ?>)</div>
+        <div class="muted">MySQL error log path: <span class="mono"><?php print_html($mysqlLogPath); ?></span></div>
         <?php if ($mysqlLogTail !== ''): ?>
           <p class="warn">Tail (last ~60 lines):</p>
-          <pre class="mono-pre"><?php echo htmlspecialchars($mysqlLogTail, ENT_QUOTES, 'UTF-8'); ?></pre>
+          <pre class="mono-pre"><?php print_html($mysqlLogTail); ?></pre>
         <?php else: ?>
           <p class="warn">MySQL log not found/readable yet. If needed, ensure mariadb writes error log and host folder is shared.</p>
         <?php endif; ?>
       <?php else: ?>
         <div class="ok">Database: connected</div>
-        <div>Role: <span class="mono"><?php echo htmlspecialchars($dbState['role'], ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <div>Role: <span class="mono"><?php print_html($dbState['role']); ?></span></div>
         <div>Replication: <span class="mono <?php echo $dbState['replication_ok'] ? 'ok' : 'err'; ?>"><?php echo $dbState['replication_ok'] ? 'ok' : 'problem'; ?></span></div>
-        <div class="muted">Details: <span class="mono"><?php echo htmlspecialchars($dbState['replication_note'], ENT_QUOTES, 'UTF-8'); ?></span></div>
-        <div class="muted">Seconds behind master: <span class="mono"><?php echo htmlspecialchars((string)($dbState['seconds_behind'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></span></div>
-        <div>Binary logs size: <span class="mono <?php echo $dbState['binlog_warn'] ? 'warn' : 'ok'; ?>"><?php echo htmlspecialchars(fmt_bytes((int)$dbState['binlog_bytes']), ENT_QUOTES, 'UTF-8'); ?></span></div>
-        <div>Relay logs size: <span class="mono <?php echo $dbState['relay_warn'] ? 'warn' : 'ok'; ?>"><?php echo htmlspecialchars(fmt_bytes((int)$dbState['relay_bytes']), ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <div class="muted">Details: <span class="mono"><?php print_html($dbState['replication_note']); ?></span></div>
+        <div class="muted">Seconds behind master: <span class="mono"><?php print_html((string)($dbState['seconds_behind'] ?? '-')); ?></span></div>
+        <div>Binary logs size: <span class="mono <?php echo $dbState['binlog_warn'] ? 'warn' : 'ok'; ?>"><?php print_html(fmt_bytes((int)$dbState['binlog_bytes'])); ?></span></div>
+        <div>Relay logs size: <span class="mono <?php echo $dbState['relay_warn'] ? 'warn' : 'ok'; ?>"><?php print_html(fmt_bytes((int)$dbState['relay_bytes'])); ?></span></div>
       <?php endif; ?>
     </section>
 
@@ -452,10 +540,10 @@ $formCfg = [
         <h2>Bot Form (Create / Update)</h2>
         <p class="muted">Select an existing bot to load fields and update it, or keep New Bot to create.</p>
         <?php if ($botOk !== ''): ?>
-          <div class="ok"><?php echo htmlspecialchars($botOk, ENT_QUOTES, 'UTF-8'); ?></div>
+          <div class="ok"><?php print_html($botOk); ?></div>
         <?php endif; ?>
         <?php if ($botErr !== ''): ?>
-          <div class="err"><?php echo htmlspecialchars($botErr, ENT_QUOTES, 'UTF-8'); ?></div>
+          <div class="err"><?php print_html($botErr); ?></div>
         <?php endif; ?>
 
         <form method="get" action="basic-admin.php">
@@ -463,8 +551,8 @@ $formCfg = [
             <select name="bot_select" onchange="this.form.submit()">
               <option value="">-- New Bot --</option>
               <?php foreach ($botsList as $b): ?>
-                <option value="<?php echo htmlspecialchars($b['applicant'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo ($selectedBot === $b['applicant']) ? 'selected' : ''; ?>>
-                  <?php echo htmlspecialchars($b['applicant'], ENT_QUOTES, 'UTF-8'); ?>
+                <option value="<?php print_html($b['applicant']); ?>" <?php echo ($selectedBot === $b['applicant']) ? 'selected' : ''; ?>>
+                  <?php print_html($b['applicant']); ?>
                 </option>
               <?php endforeach; ?>
             </select>
@@ -473,31 +561,34 @@ $formCfg = [
 
         <?php if ($selectedBotData): ?>
           <div class="muted">Health:
-            <?php if (count($selectedBotData['missing']) === 0): ?>
+            <?php if (count($selectedMissing) === 0): ?>
               <span class="ok">ok</span>
             <?php else: ?>
-              <span class="warn">missing <?php echo htmlspecialchars(implode(', ', $selectedBotData['missing']), ENT_QUOTES, 'UTF-8'); ?></span>
+              <span class="warn">missing <?php print_html(implode(', ', $selectedMissing)); ?></span>
             <?php endif; ?>
           </div>
           <div class="actions" style="margin-top:8px;">
-            <a href="/dashboard.php?bot=<?php echo urlencode($selectedBotData['applicant']); ?>&account=<?php echo intval($selectedBotData['account_id']); ?>" target="_blank" rel="noopener">Open Dashboard</a>
+            <a href="/dashboard.php?bot=<?php echo urlencode($selectedApplicant); ?>" target="_blank" rel="noopener">Open Dashboard</a>
           </div>
         <?php endif; ?>
 
         <form method="post" action="basic-admin.php">
           <input type="hidden" name="action" value="<?php echo $selectedBotData ? 'update_bot_cfg' : 'create_bot'; ?>">
-          <input type="hidden" name="bot_select" value="<?php echo htmlspecialchars($selectedBot, ENT_QUOTES, 'UTF-8'); ?>">
+          <input type="hidden" name="bot_select" value="<?php print_html($selectedBot); ?>">
           <?php if ($selectedBotData): ?>
-            <input type="hidden" name="applicant" value="<?php echo htmlspecialchars($selectedBotData['applicant'], ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" name="applicant" value="<?php print_html($selectedApplicant); ?>">
           <?php endif; ?>
           <label>Bot Name
-            <input name="bot_name" value="<?php echo htmlspecialchars($formBotName, ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?> <?php echo $selectedBotData ? 'readonly' : ''; ?>>
+            <?php if (!$selectedBotData): ?>
+              <span class="hint-badge" id="bot_name_hint"></span>
+            <?php endif; ?>
+            <input id="bot_name_input" name="bot_name" value="<?php echo htmlspecialchars($formBotName, ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?> <?php echo $selectedBotData ? 'readonly' : ''; ?>>
           </label>
           <label>Account ID
             <input name="account_id" type="number" value="<?php echo intval($formAccountId); ?>" min="1" required <?php echo $allowed ? '' : 'disabled'; ?> <?php echo $selectedBotData ? 'readonly' : ''; ?>>
           </label>
           <label>Exchange
-            <select name="config[exchange]" <?php echo $allowed ? '' : 'disabled'; ?>>
+            <select id="exchange_select" name="config[exchange]" <?php echo $allowed ? '' : 'disabled'; ?> onchange="tp_suggest_bot_name(this.value)">
               <?php foreach (['bitmex','binance','bitfinex','deribit','bybit'] as $x): ?>
                 <option value="<?php echo $x; ?>" <?php echo ($formCfg['exchange'] === $x) ? 'selected' : ''; ?>><?php echo $x; ?></option>
               <?php endforeach; ?>
@@ -521,6 +612,20 @@ $formCfg = [
           <label>Max Limit Distance
             <input name="config[max_limit_distance]" value="<?php echo htmlspecialchars((string)$formCfg['max_limit_distance'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
+
+          <details style="margin-top:10px; border:1px solid #444; border-radius:6px; padding:8px 10px;">
+            <summary class="muted" style="cursor:pointer; font-size:13px;">Advanced Risk Controls</summary>
+            <label>Max Position Cost
+              <input name="config[max_pos_cost]" value="<?php echo htmlspecialchars((string)$formCfg['max_pos_cost'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
+            </label>
+            <label>Max Lazy Order Cost
+              <input name="config[max_lazy_order_cost]" value="<?php echo htmlspecialchars((string)$formCfg['max_lazy_order_cost'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
+            </label>
+            <label>Hidden Cost Threshold
+              <input name="config[hidden_cost_threshold]" value="<?php echo htmlspecialchars((string)$formCfg['hidden_cost_threshold'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
+            </label>
+          </details>
+
           <label>Signals Setup ID <span class="muted">(simple mode, auto-syncs JSON)</span>
             <input name="config[setup_id]" type="number" min="0" value="<?php echo intval($formCfg['setup_id']); ?>" <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
@@ -563,15 +668,7 @@ $formCfg = [
       <p class="warn">For production, keep this bootstrap page reachable only from local/private network.</p>
     </section>
 
-    <section class="card">
-      <h2>Bridge with Legacy UI</h2>
-      <p class="muted">Use these links to hop between bootstrap admin and legacy pages:</p>
-      <div class="actions">
-        <a href="/index.php" rel="noopener">Open Legacy Index</a>
-        <a href="/dashboard.php?bot=<?php echo urlencode($firstBot !== '' ? $firstBot : 'bitmex_bot'); ?>&account=1" rel="noopener">Open Legacy Dashboard</a>
-        <a href="/basic-admin.php" rel="noopener">Reload Basic Admin</a>
-      </div>
-    </section>
+
     </div>
 </body>
 </html>

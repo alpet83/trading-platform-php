@@ -77,7 +77,8 @@
                     $this->target_pos[$pair_id] = $rec;
                 }
 
-            file_put_contents("data/target_pos.dump",  print_r($this->target_pos, true));  
+            if (tp_debug_mode_enabled())
+                file_put_contents("data/target_pos.dump",  print_r($this->target_pos, true));  
 
             $result = [];    
             foreach ($this->target_pos as $pair_id => $rec) {
@@ -113,7 +114,8 @@
             }
 
             ksort($result);      
-            file_put_contents("data/trading_pos.dump",  print_r($result, true));
+            if (tp_debug_mode_enabled())
+                file_put_contents("data/trading_pos.dump",  print_r($result, true));
             return $result;  
         }
 

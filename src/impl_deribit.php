@@ -169,7 +169,8 @@
                     $tinfo->is_linear = ('linear' == $obj->future_type);  
                 }   
 
-                file_put_contents("data/$sym.info", print_r($obj, true));                
+                if (tp_debug_mode_enabled())
+                    file_put_contents("data/$sym.info", print_r($obj, true));                
 
                 $loaded ++;
             } // foreach
@@ -198,7 +199,8 @@
                     $core->LogError("API request `ticker`, failed decode response %s ", $json);
                     continue;
                 }
-                file_put_contents("data/$instr_name.last", print_r($obj, true));
+                if (tp_debug_mode_enabled())
+                    file_put_contents("data/$instr_name.last", print_r($obj, true));
                 $obj = $obj->result;
                 $tinfo = $this->TickerInfo($pair_id);
 
@@ -489,7 +491,8 @@
             if (false === $currency)
                 $currency = 'all';
 
-            file_put_contents("data/$kind-open_orders-$currency.json", $json);
+            if (tp_debug_mode_enabled())
+                file_put_contents("data/$kind-open_orders-$currency.json", $json);
 
             $active = $this->MixOrderList('pending,market_maker');
             $loaded = 0;
@@ -562,7 +565,8 @@
             if (is_object($obj) && isset($obj->result) && is_array($obj->result)) {
             $dump = $obj->result;
             if (1 == count($dump)) $dump = $dump[0]; // single is typical
-            file_put_contents('data/'.$file_prefix."positions.json", json_encode($dump));
+            if (tp_debug_mode_enabled())
+                file_put_contents('data/'.$file_prefix."positions.json", json_encode($dump));
             $result = $core->current_pos;
 
             foreach ($obj->result as $pos)
@@ -577,7 +581,8 @@
                 $rpos->set_amount($pos->size, $rpos->avg_price, $this->btc_price);
                 $rpos->ref_qty = $pos->size_currency;
                 $this->LogMsg ("~C97#POS_CHANGED:~C00 for $iname %s", strval($rpos));
-                file_add_contents("data/$file_prefix-$iname-pos.log", strval($rpos)."\n");          
+                if (tp_debug_mode_enabled())
+                    file_add_contents("data/$file_prefix-$iname-pos.log", strval($rpos)."\n");          
                 // $result[$pair_id] = $rpos;
             }        
             $core->current_pos = $result;
@@ -598,7 +603,8 @@
             $out = array();
 
             if ($obj && isset($obj->result) && isset($obj->result->balance) ) {
-                file_put_contents('data/'.$file_prefix."_margin.json", $json);
+                if (tp_debug_mode_enabled())
+                    file_put_contents('data/'.$file_prefix."_margin.json", $json);
                 $out['balance'] = $obj->result->margin_balance;
                 $out['avail_funds']  = $obj->result->available_funds;
                 $out['used_balance'] = $obj->result->balance;
