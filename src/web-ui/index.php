@@ -124,8 +124,11 @@
 
 <nav class="tp-nav">
     <a href="/index.php" class="active">Home</a>
-    <?php if ($is_admin): ?>
+    <?php if ($is_admin || $is_trader): ?>
     <span class="sep">|</span>
+    <a href="/mm-config.php">MM Config</a>
+    <?php endif; ?>
+    <?php if ($is_admin): ?>
     <a href="/basic-admin.php">Admin</a>
     <a href="/sys-config.php">Platform Config</a>
     <?php endif; ?>

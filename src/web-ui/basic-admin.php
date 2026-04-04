@@ -465,6 +465,7 @@ $formCfg = [
     <nav class="tp-nav">
         <a href="/index.php">Home</a>
         <span class="sep">|</span>
+        <a href="/mm-config.php">MM Config</a>
         <a href="/basic-admin.php" class="active">Admin</a>
         <a href="/sys-config.php">Platform Config</a>
     </nav>
