@@ -1,13 +1,18 @@
 var/
 misc/
-secrets/
-!secrets/
-.env
-.envs/exchanges/*.env
-.envs/exchanges/.local/
+secrets/*
 !secrets/.gitkeep
 !secrets/db_config.php.example
 !secrets/signals_db_config.php.example
+.env
+.envs/exchanges/*.env
+.envs/exchanges/.local/
+
+# Runtime data and logs (not for distribution)
+src/data
+src/data/**
+src/logs
+src/logs/**
 
 # Runtime-generated compatibility files from alpet-libs-php.
 src/common.php
