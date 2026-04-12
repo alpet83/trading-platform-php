@@ -32,7 +32,7 @@
 
     if (!$impl_name && $account_id > 0)
         foreach ($bots as $app => $table) {
-            $acc_id = $mysqli->select_value('account_id', $table);
+            $acc_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1");
             if ($acc_id != $account_id) continue;
             printf("<!-- for account %d detected bot id %s -->\n", $account_id, $app);
             $impl_name = $app;
@@ -57,7 +57,7 @@
 
     $account_id = $core->trade_engine->account_id;    
     if (0 == $account_id)
-       $account_id = $mysqli->select_value('account_id', $cfg_table); // any as default
+       $account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfg_table' LIMIT 1"); // any as default
 
     $_SESSION['account_id'] = $account_id;
     

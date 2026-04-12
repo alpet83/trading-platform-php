@@ -128,7 +128,7 @@
             $uptime = $rd_info['uptime'];
         }
         $cfg_table = $bots[$app] ?? 'none';
-        $config = $mysqli->select_map('param,value', $cfg_table, "WHERE account_id = $acc_id");
+        $config = $mysqli->select_map('param,value', $cfg_table);
         if (is_null($config)) {
             print("<tr><td colspan=5>ERROR: no config for $app => $cfg_table</tr>\n"); 
             continue;

@@ -7,7 +7,7 @@
     require_once('lib/mini_core.php');
     require_once('lib/basic_html.php');
 
-    $log_file = fopen('logs/matched_orders.log', 'w');
+    $log_file = fopen('/app/var/log/matched_orders.log', 'w');
 
     if (!str_in($user_rights, 'view'))
         error_exit("Rights restricted to %s", $user_rights);

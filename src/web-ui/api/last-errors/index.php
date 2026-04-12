@@ -37,7 +37,7 @@ if (is_null($config)) {
 }
 
 $exch = strtolower($config['exchange'] ?? 'NYMEX');
-$acc_id = $mysqli->select_value('account_id', $bots[$bot]);
+$acc_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '{$bots[$bot]}' LIMIT 1");
 $acc_id = rqs_param('account',  $acc_id);
 
 $detailed = rqs_param('ts', false);

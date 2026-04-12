@@ -36,7 +36,7 @@ if (!$table_name) {
     exit;
 }
 
-$account_id = $mysqli->select_value('account_id', $table_name);
+$account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table_name' LIMIT 1");
 
 $bot_prefix = str_replace('config__', '', $table_name);
 
@@ -47,14 +47,6 @@ $result = $mysqli->try_query($delete_map);
 if ($result === false) {
     $mysqli->try_query("ROLLBACK");
     send_error('Failed to delete bot from table map: ' . $mysqli->error, 500);
-    exit;
-}
-
-$delete_config = "DELETE FROM `$table_name` WHERE account_id = $account_id";
-$result = $mysqli->try_query($delete_config);
-if ($result === false) {
-    $mysqli->try_query("ROLLBACK");
-    send_error('Failed to delete bot configuration: ' . $mysqli->error, 500);
     exit;
 }
 

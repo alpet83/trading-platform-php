@@ -81,7 +81,13 @@ if (!function_exists('tp_registered_users_count')) {
             return $cached;
         }
 
-        $db_candidates = ['signals_system', 'trading'];
+        global $db_configs;
+        // Candidates in priority order: legacy 'signals_system' alias → new 'sigsys' name → 'trading' fallback.
+        // Only DBs present in $db_configs are tried; passing a hostname as DB name is a bug and must not occur.
+        $db_candidates = array_filter(
+            ['signals_system', 'sigsys', 'trading'],
+            static fn($db) => !isset($db_configs) || isset($db_configs[$db])
+        );
         foreach ($db_candidates as $db_name) {
             $mysqli = init_remote_db($db_name);
             if (!$mysqli instanceof mysqli_ex) {

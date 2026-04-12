@@ -41,7 +41,7 @@ $cfg_table = 'config__test';
 
 if (!$impl_name && $account_id > 0) {
     foreach ($bots as $app => $table) {
-        $acc_id = $mysqli->select_value('account_id', $table);
+        $acc_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1");
         if ($acc_id != $account_id) continue;
         $impl_name = $app;
         $cfg_table = $table;
@@ -69,7 +69,7 @@ if (!is_array($config)) {
 
 $account_id = $core->trade_engine->account_id;
 if (0 == $account_id) {
-    $account_id = $mysqli->select_value('account_id', $cfg_table);
+    $account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfg_table' LIMIT 1");
 }
 
 $_SESSION['account_id'] = $account_id;

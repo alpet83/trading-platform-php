@@ -59,9 +59,9 @@ skip_head:
         die("#ERROR: not found entry for bot $bot in config");
 
     if ($acc_id < 0)
-        $acc_id = intval($mysqli->select_value('account_id', $cfg_table)); // default first
+        $acc_id = intval($mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfg_table' LIMIT 1")); // default first
 
-    $cfg = $mysqli->select_map('param,value', $cfg_table, "WHERE account_id = $acc_id");
+    $cfg = $mysqli->select_map('param,value', $cfg_table);
     if (is_array($cfg) && isset($cfg['exchange']) && $cfg['exchange'] !== '') {
         $exch = strtolower($cfg['exchange']);
     }

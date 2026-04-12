@@ -93,7 +93,7 @@
     if (!$bot) {
         $bots = $mysqli->select_map('applicant,table_name', 'config__table_map');     
         foreach ($bots as $app => $table) {
-            if ($acc_id != $mysqli->select_value('account_id', $table)) continue;
+            if ($acc_id != $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1")) continue;
             $bot = $app;
             break;
         }

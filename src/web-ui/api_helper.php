@@ -30,3 +30,50 @@ if (!function_exists('send_error')) {
     }
 }
 
+/**
+ * Universal action reply with browser auto-detect.
+ *
+ * - Browser (HTTP_ACCEPT contains text/html): renders a dark mini-page with
+ *   a status message and meta-refresh back to HTTP_REFERER after $delay seconds.
+ * - CLI / API client: outputs a plain-text line.
+ *
+ * @param bool   $ok      Whether the action succeeded.
+ * @param string $message Human-readable status (already HTML-safe caller's choice; will be escaped here).
+ * @param string $title   <title> / page heading shown in browser mode.
+ * @param int    $delay   Redirect delay in seconds (default 3).
+ * @param string $back    Override redirect URL (default: HTTP_REFERER or 'index.php').
+ */
+if (!function_exists('http_reply')) {
+    function http_reply(bool $ok, string $message, string $title = 'Action', int $delay = 3, string $back = ''): void {
+        $from_browser = !empty($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'text/html')
+                        && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest';
+
+        if (!$from_browser) {
+            echo ($ok ? 'OK: ' : 'ERROR: ') . $message . "\n";
+            return;
+        }
+
+        $referer  = $back !== '' ? $back : (trim($_SERVER['HTTP_REFERER'] ?? '') ?: 'index.php');
+        $safe_ref = htmlspecialchars($referer, ENT_QUOTES, 'UTF-8');
+        $safe_msg = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+        $safe_ttl = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $cls      = $ok ? 'ok' : 'err';
+
+        if (!headers_sent())
+            header('Content-Type: text/html; charset=utf-8');
+
+        echo <<<HTML
+        <!DOCTYPE html><html><head><meta charset="utf-8">
+        <title>{$safe_ttl}</title>
+        <meta http-equiv="refresh" content="{$delay};url={$safe_ref}">
+        <style>body{font-family:monospace;padding:2em;background:#111;color:#ccc;}
+        .ok{color:#6f6}  .err{color:#f66}  a{color:#8af}</style>
+        </head><body>
+        <h3>{$safe_ttl}</h3>
+        <p class="{$cls}">{$safe_msg}</p>
+        <p>Returning to <a href="{$safe_ref}">{$safe_ref}</a> in {$delay} seconds&hellip;</p>
+        </body></html>
+        HTML;
+    }
+}
+

@@ -43,18 +43,18 @@
         $enabled = intval('on' === strtolower($enabled));
 
         if ($acc_id < 0)
-            $acc_id = $mysqli->select_value('account_id', $table); // default first
+            $acc_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1"); // default first
 
-        $prev_coef = $mysqli->select_value('value', $table, "WHERE (account_id = $acc_id) and (param = 'position_coef')");
-        $prev_enabled = $mysqli->select_value('value', $table, "WHERE (account_id = $acc_id) and (param = 'trade_enabled')");
+        $prev_coef = $mysqli->select_value('value', $table, "WHERE param = 'position_coef'");
+        $prev_enabled = $mysqli->select_value('value', $table, "WHERE param = 'trade_enabled'");
         printf("#CONFIG($bot @ $acc_id): coef = %.4f, enabled = %d \n", $prev_coef, $prev_enabled);
         // trade_enabled = $enabled
         if ($coef > -1) {
-          $query = "UPDATE `$table` SET value = $coef WHERE (account_id = $acc_id) and (param = 'position_coef');";
+          $query = "UPDATE `$table` SET value = $coef WHERE (param = 'position_coef');";
           $mysqli->try_query($query);
           if ($mysqli->affected_rows) echo "#SUCCESS: updated 'coef' = $coef\n";
         }
-        $query = "UPDATE `$table` SET value = $enabled WHERE (account_id = $acc_id) and (param = 'trade_enabled');";
+        $query = "UPDATE `$table` SET value = $enabled WHERE (param = 'trade_enabled');";
         $mysqli->try_query($query);
         if ($mysqli->affected_rows) echo "#SUCCESS: updated 'enabled' = $enabled\n";
         if ($rs) die("\n");
@@ -70,16 +70,16 @@
 
     $config = array();
     foreach ($tables as $bot => $table)  {
-      $res = $mysqli->select_from('account_id,param,value', $table);
-      while ($row = $res->fetch_array(MYSQLI_NUM)) {
-        $acc_id = $row[0];
-        $key = $row[1];
-        $val = $row[2];
-        if (!isset($config[$bot]))
-              $config[$bot] = array($acc_id => array());
-        $config[$bot][$acc_id][$key] = $val;
-      }
-
+        // account_id is now in config__table_map, not in the config table
+        $acc_id = intval($mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1") ?? 0);
+        $res = $mysqli->select_from('param,value', $table);
+        while ($row = $res->fetch_array(MYSQLI_NUM)) {
+            $key = $row[0];
+            $val = $row[1];
+            if (!isset($config[$bot]))
+                $config[$bot] = array($acc_id => array());
+            $config[$bot][$acc_id][$key] = $val;
+        }
     }
 
     $table = 'bot__activity';

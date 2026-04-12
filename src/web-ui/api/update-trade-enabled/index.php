@@ -44,7 +44,7 @@ if (!$cfg_table) {
     exit;
 }
 
-$account_id = $mysqli->select_value('account_id', $cfg_table);
+$account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfg_table' LIMIT 1");
 if (!$account_id) {
     send_error("Account not found for bot $bot", 404);
     exit;

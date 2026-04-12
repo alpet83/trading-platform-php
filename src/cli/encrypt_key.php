@@ -128,9 +128,7 @@
         cli_fail('failed connect to trading DB');
 
     $appEsc = $mysqli->real_escape_string($applicant);
-    $table = $mysqli->select_value('table_name', 'config__table_map', "WHERE table_key='config' AND applicant = '$appEsc'");
-    if (!$table)
-        $table = $mysqli->select_value('table_name', 'config__table_map', "WHERE applicant = '$appEsc'");
+    $table = $mysqli->select_value('table_name', 'config__table_map', "WHERE applicant = '$appEsc'");
     if (!$table)
         cli_fail("bot '$applicant' not found in config__table_map");
 

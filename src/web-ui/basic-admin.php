@@ -140,7 +140,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $botErr = 'Bot not found: ' . $applicant;
                 @$botMysqli->close();
             } else {
-                $accountId = intval($botMysqli->select_value('account_id', $tableName) ?: 0);
+                $accountId = intval($botMysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$tableName' LIMIT 1") ?: 0);
                 if ($accountId <= 0) {
                     $botErr = 'Invalid account for bot: ' . $applicant;
                     @$botMysqli->close();
@@ -162,6 +162,7 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         'debug_pair',
                         'api_secret_sep',
                         'secret_key_encrypted',
+                        'exchange_profile',
                     ];
                     foreach ($cfg as $k => $v) {
                         if (!in_array($k, $allowedCfgKeys, true)) {
@@ -169,11 +170,11 @@ if ($allowed && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         }
                         $kEsc = $botMysqli->real_escape_string((string)$k);
                         $vEsc = $botMysqli->real_escape_string((string)$v);
-                        $exists = $botMysqli->select_value('param', $tableName, "WHERE account_id = $accountId AND param = '$kEsc'");
+                        $exists = $botMysqli->select_value('param', $tableName, "WHERE param = '$kEsc'");
                         if ($exists) {
-                            $botMysqli->try_query("UPDATE `$tableName` SET `value` = '$vEsc' WHERE account_id = $accountId AND param = '$kEsc'");
+                            $botMysqli->try_query("UPDATE `$tableName` SET `value` = '$vEsc' WHERE param = '$kEsc'");
                         } else {
-                            $botMysqli->try_query("INSERT INTO `$tableName` (account_id, param, value) VALUES ($accountId, '$kEsc', '$vEsc')");
+                            $botMysqli->try_query("INSERT INTO `$tableName` (param, value) VALUES ('$kEsc', '$vEsc')");
                         }
                     }
                     if ($botMysqli->error !== '') {
@@ -268,11 +269,11 @@ if ($mysqli) {
             if ($firstBot === '') {
                 $firstBot = (string)$applicant;
             }
-            $accountId = intval($mysqli->select_value('account_id', $cfgTable) ?: 0);
+            $accountId = intval($mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfgTable' LIMIT 1") ?: 0);
           if ($firstBot === (string)$applicant && $accountId > 0) {
             $firstBotAccountId = $accountId;
           }
-            $cfg = $mysqli->select_map('param,value', $cfgTable, $accountId > 0 ? "WHERE account_id = $accountId" : '');
+            $cfg = $mysqli->select_map('param,value', $cfgTable);
             if (!is_array($cfg)) {
                 $cfg = [];
             }
@@ -384,7 +385,7 @@ $formCfg = [
   'max_pos_cost' => $botCfg['max_pos_cost'] ?? '100000',
   'max_lazy_order_cost' => $botCfg['max_lazy_order_cost'] ?? '500',
   'hidden_cost_threshold' => $botCfg['hidden_cost_threshold'] ?? '500',
-  'max_limit_distance' => $botCfg['max_limit_distance'] ?? '0.003',
+  'max_limit_distance' => $botCfg['max_limit_distance'] ?? '5',
   'signals_setup' => $botCfg['signals_setup'] ?? $defaultSignalsSetup,
   'signals_feed_url' => $botCfg['signals_feed_url'] ?? $defaultSignalsFeedUrl,
   'setup_id' => extract_setup_id_from_cfg((string)($botCfg['signals_setup'] ?? $defaultSignalsSetup)),
@@ -392,6 +393,7 @@ $formCfg = [
   'debug_pair' => $botCfg['debug_pair'] ?? 'XBTUSD',
   'api_secret_sep' => $botCfg['api_secret_sep'] ?? '-',
   'secret_key_encrypted' => $botCfg['secret_key_encrypted'] ?? '0',
+  'exchange_profile' => $botCfg['exchange_profile'] ?? 'main',
 ];
 ?>
 <!DOCTYPE html>
@@ -418,8 +420,68 @@ $formCfg = [
     .tp-nav a.active { background: #2a2a50; border-color: #6868c0; color: #d0d0ff; font-weight: bold; }
     .tp-nav .sep { color: #444; user-select: none; }
     </style>
+<?php
+function get_exchange_profiles(string $exchange): array {
+    static $cache = [];
+    if (isset($cache[$exchange])) return $cache[$exchange];
+    $file = __DIR__ . '/../config/exchanges/' . strtolower($exchange) . '.yml';
+    if (!file_exists($file)) return ($cache[$exchange] = ['main']);
+    $raw = file_get_contents($file);
+    $profiles = [];
+    $inProfiles = false;
+    $indent = 0;
+    $current_profile = null;
+    $spot_only_profiles = [];
+    foreach (preg_split('/\r?\n/', $raw) as $line) {
+        if (preg_match('/^profiles:\s*$/', $line)) {
+            $inProfiles = true;
+            $indent = 0; // detect on first profile key
+            continue;
+        }
+        if ($inProfiles) {
+            // detect indentation from first profile key
+            if ($indent === 0 && preg_match('/^( +)(\w+):\s*$/', $line, $m)) {
+                $indent = strlen($m[1]);
+            }
+            if ($indent > 0 && preg_match('/^ {' . $indent . '}(\w+):\s*$/', $line, $m)) {
+                $current_profile = $m[1];
+                $profiles[] = $m[1];
+            } elseif ($current_profile && preg_match('/^ {' . ($indent + 1) . ',}spot_only:\s*true/', $line)) {
+                $spot_only_profiles[] = $current_profile; // spot-only: not supported yet
+            } elseif ($line !== '' && $indent > 0 && !preg_match('/^ {' . $indent . '}/', $line)) {
+                break; // left the profiles block
+            }
+        }
+    }
+    if (!empty($spot_only_profiles)) {
+        $profiles = array_values(array_diff($profiles, $spot_only_profiles));
+    }
+    if (empty($profiles)) $profiles = ['main'];
+    return ($cache[$exchange] = $profiles);
+}
+$allExchangeProfiles = [];
+foreach (['bitmex', 'binance', 'bitfinex', 'deribit', 'bybit'] as $_xp) {
+    $allExchangeProfiles[$_xp] = get_exchange_profiles($_xp);
+}
+?>
     <script>
     var EXCHANGE_SUGGESTIONS = <?php echo json_encode($exchangeSuggestions, JSON_UNESCAPED_UNICODE); ?>;
+    var EXCHANGE_PROFILES = <?php echo json_encode($allExchangeProfiles, JSON_UNESCAPED_UNICODE); ?>;
+
+    function tp_update_profile_options(exchange) {
+        var sel = document.getElementById('exchange_profile_select');
+        if (!sel) return;
+        var profiles = EXCHANGE_PROFILES[exchange] || ['main'];
+        var current = sel.value;
+        sel.innerHTML = '';
+        for (var i = 0; i < profiles.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = profiles[i];
+            opt.textContent = profiles[i];
+            if (profiles[i] === current) opt.selected = true;
+            sel.appendChild(opt);
+        }
+    }
 
     function tp_suggest_bot_name(exchange) {
         var inp = document.getElementById('bot_name_input');
@@ -437,6 +499,7 @@ $formCfg = [
             // fire once on load for the pre-selected exchange in create mode
             var inp = document.getElementById('bot_name_input');
             if (inp && !inp.readOnly) tp_suggest_bot_name(sel.value);
+            tp_update_profile_options(sel.value);
         }
     });
     </script>
@@ -589,9 +652,19 @@ $formCfg = [
             <input name="account_id" type="number" value="<?php echo intval($formAccountId); ?>" min="1" required <?php echo $allowed ? '' : 'disabled'; ?> <?php echo $selectedBotData ? 'readonly' : ''; ?>>
           </label>
           <label>Exchange
-            <select id="exchange_select" name="config[exchange]" <?php echo $allowed ? '' : 'disabled'; ?> onchange="tp_suggest_bot_name(this.value)">
+            <select id="exchange_select" name="config[exchange]" <?php echo $allowed ? '' : 'disabled'; ?> onchange="tp_suggest_bot_name(this.value); tp_update_profile_options(this.value);">
               <?php foreach (['bitmex','binance','bitfinex','deribit','bybit'] as $x): ?>
                 <option value="<?php echo $x; ?>" <?php echo ($formCfg['exchange'] === $x) ? 'selected' : ''; ?>><?php echo $x; ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <label>Trading Profile
+            <select id="exchange_profile_select" name="config[exchange_profile]" <?php echo $allowed ? '' : 'disabled'; ?>>
+              <?php foreach (get_exchange_profiles($formCfg['exchange']) as $prof): ?>
+                <option value="<?php echo htmlspecialchars($prof, ENT_QUOTES, 'UTF-8'); ?>"
+                  <?php echo ($formCfg['exchange_profile'] === $prof) ? 'selected' : ''; ?>>
+                  <?php echo htmlspecialchars($prof, ENT_QUOTES, 'UTF-8'); ?>
+                </option>
               <?php endforeach; ?>
             </select>
           </label>
@@ -610,8 +683,8 @@ $formCfg = [
           <label>Max Order Cost
             <input name="config[max_order_cost]" value="<?php echo htmlspecialchars((string)$formCfg['max_order_cost'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
           </label>
-          <label>Max Limit Distance
-            <input name="config[max_limit_distance]" value="<?php echo htmlspecialchars((string)$formCfg['max_limit_distance'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?>>
+          <label>Max Limit Distance, %
+            <input name="config[max_limit_distance]" value="<?php echo htmlspecialchars((string)$formCfg['max_limit_distance'], ENT_QUOTES, 'UTF-8'); ?>" required <?php echo $allowed ? '' : 'disabled'; ?> title="Дистанция от спреда для отложенных заявок ММ. Превышать 5% можно при отсутствии ограничений со стороны биржи. Может ограничивать число одновременно активных заявок, выставляемых в сетке.">>>
           </label>
 
           <details style="margin-top:10px; border:1px solid #444; border-radius:6px; padding:8px 10px;">

@@ -65,6 +65,7 @@ send_response([
     'account_id' => $result['account_id'],
     'config'     => $created_config,
 ]);
+exit;
 
 if (!str_in($user_rights, 'admin')) {
     send_error("Rights restricted to $user_rights", 403);
@@ -145,10 +146,9 @@ if ($table_exists) {
 $mysqli->try_query("START TRANSACTION");
 
 $create_config = "CREATE TABLE `$config_table` (
-    account_id INT DEFAULT 0 NOT NULL,
     param VARCHAR(32) NOT NULL,
     value VARCHAR(64) NOT NULL,
-    PRIMARY KEY (account_id, param)
+    PRIMARY KEY (param)
 ) COLLATE = utf8mb3_bin";
 
 $result = $mysqli->try_query($create_config);
@@ -158,8 +158,8 @@ if ($result === false) {
     exit;
 }
 
-$insert_map = "INSERT INTO config__table_map (table_key, table_name, applicant) 
-               VALUES ('config', '$config_table', '$applicant')";
+$insert_map = "INSERT INTO config__table_map (table_name, account_id, applicant)
+               VALUES ('$config_table', $account_id, '$applicant')";
 $result = $mysqli->try_query($insert_map);
 if ($result === false) {
     $mysqli->try_query("ROLLBACK");
@@ -175,8 +175,8 @@ foreach ($config as $param => $value) {
     $param_escaped = $mysqli->real_escape_string($param);
     $value_escaped = $mysqli->real_escape_string($value);
 
-    $insert = "INSERT INTO `$config_table` (account_id, param, value) 
-               VALUES ($account_id, '$param_escaped', '$value_escaped')";
+    $insert = "INSERT INTO `$config_table` (param, value) 
+               VALUES ('$param_escaped', '$value_escaped')";
     $result = $mysqli->try_query($insert);
     if ($result === false) {
         $mysqli->try_query("ROLLBACK");

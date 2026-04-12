@@ -37,7 +37,7 @@ foreach ($bots as $applicant => $table_name) {
         continue;
     }
 
-    $account_id = $mysqli->select_value('account_id', $table_name);
+    $account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table_name' LIMIT 1");
 
     $bots_list[] = [
         'applicant' => $applicant,

@@ -60,13 +60,13 @@ if (!$table_name) {
     exit;
 }
 
-$account_id = $mysqli->select_value('account_id', $table_name);
+$account_id = $mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table_name' LIMIT 1");
 if (!$account_id) {
     send_error("Account not found for bot: $applicant", 404);
     exit;
 }
 
-$current_config = $mysqli->select_map('param,value', $table_name, "WHERE account_id = $account_id");
+$current_config = $mysqli->select_map('param,value', $table_name);
 if (!is_array($current_config)) {
     send_error('Failed to load current configuration', 500);
     exit;
@@ -105,7 +105,7 @@ $failed = [];
 foreach ($config as $param => $value) {
     if ($value === '' || $value === null) {
         $param_escaped = $mysqli->real_escape_string($param);
-        $delete_query = "DELETE FROM `$table_name` WHERE account_id = $account_id AND param = '$param_escaped'";
+        $delete_query = "DELETE FROM `$table_name` WHERE param = '$param_escaped'";
         $result = $mysqli->try_query($delete_query);
 
         if ($result === false) {
@@ -119,12 +119,12 @@ foreach ($config as $param => $value) {
     $param_escaped = $mysqli->real_escape_string($param);
     $value_escaped = $mysqli->real_escape_string($value);
 
-    $exists = $mysqli->select_value('param', $table_name, "WHERE account_id = $account_id AND param = '$param_escaped'");
+    $exists = $mysqli->select_value('param', $table_name, "WHERE param = '$param_escaped'");
 
     if ($exists) {
-        $query = "UPDATE `$table_name` SET `value` = '$value_escaped' WHERE account_id = $account_id AND param = '$param_escaped'";
+        $query = "UPDATE `$table_name` SET `value` = '$value_escaped' WHERE param = '$param_escaped'";
     } else {
-        $query = "INSERT INTO `$table_name` (account_id, param, value) VALUES ($account_id, '$param_escaped', '$value_escaped')";
+        $query = "INSERT INTO `$table_name` (param, value) VALUES ('$param_escaped', '$value_escaped')";
     }
 
     $result = $mysqli->try_query($query);
@@ -136,7 +136,7 @@ foreach ($config as $param => $value) {
     }
 }
 
-$updated_config = $mysqli->select_map('param,value', $table_name, "WHERE account_id = $account_id");
+$updated_config = $mysqli->select_map('param,value', $table_name);
 
 if (!empty($failed)) {
     send_response([

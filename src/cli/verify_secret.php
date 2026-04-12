@@ -93,9 +93,7 @@
         verify_fail('failed connect to trading DB');
 
     $appEsc = $db->real_escape_string($applicant);
-    $table = $db->select_value('table_name', 'config__table_map', "WHERE table_key='config' AND applicant='$appEsc'");
-    if (!$table)
-        $table = $db->select_value('table_name', 'config__table_map', "WHERE applicant='$appEsc'");
+    $table = $db->select_value('table_name', 'config__table_map', "WHERE applicant='$appEsc'");
     if (!$table)
         verify_fail("bot '$applicant' not found in config__table_map");
 

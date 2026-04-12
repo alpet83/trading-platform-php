@@ -1,37 +1,48 @@
 <?php // content="text/plain; charset=utf-8"
     // Этот скрипт рендерит график баланса аккаунта на бирже, с учетом депозитов и выводов. Опционально можно выбирать валюту вывода из USD и BTC
     $path = __DIR__;
+    $src_dir = dirname($path);
     chdir($path);
-    $data_dir = "$path/data/";
-    set_include_path(".:$path/lib:../lib:/usr/sbin/lib"); 
+    $runtime_dir = '/app/var/';
+    $data_dir = is_dir($runtime_dir) ? "$runtime_dir/charts/" : "$path/data/";
+    set_include_path(".:$path/lib:$src_dir/lib:/usr/sbin/lib"); 
     
-    $test = '/var/www/html/jpgraph/fonts/';
-    if (file_exists($test))
-      define('TTF_DIR', $test);  
-    else
-      define ("TTF_DIR","/usr/share/fonts/truetype/");
+        $project_ttf_dir = dirname($path).'/fonts/';
+        $ttf_fontfile = 'arial.ttf';
+        $ttf_candidates = [
+            $project_ttf_dir,
+            '/var/www/html/jpgraph/fonts/',
+            '/usr/share/fonts/truetype/',
+        ];
+        $ttf_dir = '/usr/share/fonts/truetype/';
+        foreach ($ttf_candidates as $candidate) {
+            if (!is_string($candidate) || '' === $candidate)
+                continue;
+            if (file_exists($candidate.$ttf_fontfile) || is_dir($candidate)) {
+                $ttf_dir = $candidate;
+                break;
+            }
+        }
+        define('TTF_DIR', $ttf_dir);
 
     const TTF_FONTFILE = "arial.ttf";
     
     ob_start();
 
-    require_once '../vendor/autoload.php';
+    require_once $src_dir.'/vendor/autoload.php';
 
-    // use mitoteam\jpgraph\MtJpGraph;
-    // MtJpGraph::load(['date', 'bar', 'line'], true);
-    require_once '../jpgraph/jpgraph.php';
-    require_once '../jpgraph/jpgraph_line.php';
-    require_once '../jpgraph/jpgraph_date.php';  
+    use mitoteam\jpgraph\MtJpGraph;
+    MtJpGraph::load(['date', 'bar', 'line']);
     
 
-    require_once 'lib/common.php';      
-    require_once 'lib/db_tools.php';
-    require_once 'lib/db_config.php';
-    require_once 'lib/esctext.php';
-    require_once 'jpgraph-dark-theme.php';
+    require_once $src_dir.'/lib/common.php';      
+    require_once $src_dir.'/lib/db_tools.php';
+    require_once $src_dir.'/lib/db_config.php';
+    require_once $src_dir.'/lib/esctext.php';
+    require_once $path.'/jpgraph-dark-theme.php';
 
     if (php_sapi_name() != 'cli')
-        require_once 'lib/auth_check.php';
+        require_once $path.'/lib/auth_check.php';
 
     ob_clean();
     $color_scheme = 'cli';
@@ -76,9 +87,11 @@
         die("#FATAL: invalid environment!");  
 
     $www = $_SERVER['DOCUMENT_ROOT'];   
-    $root = $offline_mode ? __DIR__.'/log' : "$www/bot/log"; 
+    $root = $offline_mode ? "$runtime_dir/log" : "$www/bot/log"; 
+    if ($offline_mode && !is_dir($data_dir))
+        mkdir($data_dir, 0775, true);
     $log_name = sprintf("draw_chart__%s@%d-u%d.log", $exch, $acc_id, $uid);  
-    $log_file = fopen("$root/$log_name", 'w');    
+    $log_file = fopen("$root/$log_name", 'a');    
     if (!$log_file && !$offline_mode)
         die("#FATAL:<pre> can't open log file for writing {./log/$log_name}\n".print_r($_SERVER, true));
     $mysqli = init_remote_db('trading');

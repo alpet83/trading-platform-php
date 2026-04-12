@@ -79,6 +79,10 @@
     function DefferedReload() {
       setTimeout(Reload, 2000);
     }
+    function RestartBot(app, acc_id) {
+      if (!confirm('Restart bot ' + app + '?')) return;
+      document.location = 'restart_bot.php?bot=' + app + '&account=' + acc_id;
+    }
     </script>
     </HEAD>
 <?php
@@ -104,8 +108,9 @@
         $switchable = ['trade_enabled'];
 
         $param = rqs_param('param_toggle', null);
-        if (in_array($param, $switchable) && $is_admin)             
-            $query = "UPDATE `$cfg_table` SET value = value ^ 1 WHERE param = '$param';";     
+        if (in_array($param, $switchable) && $is_admin) {
+            $query = "UPDATE `$cfg_table` SET value = value ^ 1 WHERE param = '$param';";
+        }
        
         if (is_admin_ip($remote) && $query) {                        
             if ($mysqli->try_query($query)) 
@@ -137,7 +142,7 @@
 
 <TABLE BORDER=1> 
     <THEAD>
-    <TR><TH>Bot<TH>Account</TH><TH>Started</TH><TH>Last alive</TH><TH>Matched orders</TH><TH>Funds usage</TH><TH>Restarts</TH><TH>Exceptions</TH><TH>Errors</TH><TH>Last error</TH><TH>PID</TH><TH>Position coef</TH><TH>Enabled</TH></TR>
+    <TR><TH>Bot<TH>Account</TH><TH>Started</TH><TH>Last alive</TH><TH>Orders count</TH><TH>Funds usage</TH><TH>Restarts</TH><TH>Exceptions</TH><TH>Errors</TH><TH>Last error</TH><TH>PID</TH><TH>WebSocket</TH><TH>Position coef</TH><TH>Enabled</TH><TH>Actions</TH></TR>
     </THEAD>
     <TBODY>
 
@@ -165,7 +170,7 @@
             $uptime = $rd_info['uptime'];
         }
         $cfg_table = $bots[$app] ?? 'none';
-        $config = $mysqli->select_map('param,value', $cfg_table, "WHERE account_id = $acc_id");
+        $config = $mysqli->select_map('param,value', $cfg_table);
         if (is_null($config)) {
             print("<tr><td colspan=5>ERROR: no config for $app => $cfg_table</tr>\n"); 
             continue;
@@ -214,8 +219,8 @@
         }
 
 
-        $mo_table = "{$bot_prefix}__matched_orders";
-        $err_table = "{$bot_prefix}__last_errors";
+        $mo_table   = "{$bot_prefix}__matched_orders";
+        $err_table  = "{$bot_prefix}__last_errors";
         $last_err = $row['last_error'];
         if ('' == $last_err)         
             $last_err = $mysqli->select_value('CONCAT(TIME(ts), " ", message)', $err_table, "WHERE (account_id = $acc_id) ORDER BY ts DESC LIMIT 1") ?? '';
@@ -226,6 +231,11 @@
 
 
         $matched_count = $mysqli->select_value('COUNT(*)', $mo_table, "WHERE (account_id = $acc_id) AND (ts >= '$day_start')");
+        $pend_where   = "WHERE account_id = $acc_id AND status IN ('new','active','proto','pending','partially_filled')";
+        $pending_count = (int)$mysqli->select_value('COUNT(*)', "{$bot_prefix}__pending_orders", $pend_where)
+                       + (int)$mysqli->select_value('COUNT(*)', "{$bot_prefix}__mm_asks",         $pend_where)
+                       + (int)$mysqli->select_value('COUNT(*)', "{$bot_prefix}__mm_bids",         $pend_where)
+                       + (int)$mysqli->select_value('COUNT(*)', "{$bot_prefix}__mm_limit",        $pend_where);
         $errors = $mysqli->select_value('COUNT(*)', $err_table, "WHERE (account_id = $acc_id)");
 
         $evt_table = "{$bot_prefix}__events";
@@ -236,20 +246,42 @@
             $restarts = $events['INITIALIZE'] ?? 0;
             $exceptions = $events['EXCEPTION'] ?? 0;
         }
+        $restarts_hour = intval($mysqli->select_value('COUNT(*)', $evt_table,
+            "WHERE account_id = $acc_id AND event = 'INITIALIZE' AND ts >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"));
+        $unhealthy = $restarts_hour > 10;
 
         $bgc = 'Canvas';        
         $color = $config['report_color'] ?? false;
         if ($color && str_in($color, ','))
-            $bgc = "rgb($color)";      
+            $bgc = "rgb($color)";
+        if ($unhealthy)
+            $bgc = '#3a0808'; // dark red — >10 restarts in last hour      
 
         $bot_details = "dashboard.php?bot=$app&account=$acc_id&exchange=$exch";
+        $ws_stats_row = $mysqli->select_row('packets_total,fallback,pub_packets,priv_packets', "{$bot_prefix}__ws_stats", "WHERE account_id = $acc_id");
+        if (is_array($ws_stats_row)) {
+            if ($ws_stats_row[1]) {
+                $ws_col = '<span style="color:#999">n/a</span>';
+            } else {
+                $pub_p  = intval($ws_stats_row[2] ?? 0);
+                $priv_p = intval($ws_stats_row[3] ?? 0);
+                $ws_col = ($pub_p || $priv_p)
+                    ? sprintf('<span title="public">%d</span>/<span title="private">%d</span>', $pub_p, $priv_p)
+                    : intval($ws_stats_row[0]);
+            }
+        } else {
+            $ws_col = '<span style="color:#555">&mdash;</span>';
+        }
         printf("<TR style='background-color:$bgc'><TD><a href='$bot_details'> %s</a><TD> %d <TD>%s <TD>%s", 
                     $app, $acc_id, $started, $ts);
-        printf("<TD><A href='matched_orders.php?bot=$app'>%d</a><TD>%.1f%%",$matched_count, $row['funds_usage']);
+        printf("<TD><A href='matched_orders.php?bot=$app' title='matched today'>%d</a>/<span title='pending'>%d</span> <a href='exec_context.php?bot=$app' title='Exec Context' style='font-size:8pt;opacity:.7'>[ctx]</a><TD>%.1f%%", $matched_count, $pending_count, $row['funds_usage']);
 
-        printf("<TD>%d<TD>%d", $restarts, $exceptions);
+        if ($unhealthy)
+            printf("<TD title='%d restarts in last hour'><b style='color:#ff6666'>%d &#9888;</b><TD>%d", $restarts_hour, $restarts, $exceptions);
+        else
+            printf("<TD>%d<TD>%d", $restarts, $exceptions);
         printf("<TD><a href='last_errors.php?bot=$app'>&nbsp;%7d</a>\n", $errors);
-        printf("\t\t<TD>%s<TD>%s\n",  $last_err, $pid);
+        printf("\t\t<TD>%s<TD>%s<TD>%s\n",  $last_err, $pid, $ws_col);
 
         $pos_coef = $config['position_coef'] ?? 0.0;
         $enabled =  $config['trade_enabled'];
@@ -260,7 +292,12 @@
 
         $active = $is_admin ? '' : 'disabled';
         printf ("\t\t<TD><INPUT TYPE='checkbox', onClick=\"Toggle('%s', 'trade_enabled')\" %s $active />", $app, $enabled ? 'checked' : '');
-        echo "</TD></TR>\n";
+        echo "</TD>";
+        if ($is_admin)
+            printf("\t\t<TD><button onClick=\"RestartBot('%s', %d)\">Restart</button></TD>", $app, $acc_id);
+        else
+            echo "\t\t<TD></TD>";
+        echo "</TR>\n";
     }        
 ?>
     </TBODY>

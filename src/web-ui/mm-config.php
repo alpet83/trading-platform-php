@@ -42,7 +42,7 @@ if ($cfgTable !== '') {
         $exch = strtolower((string)($mysqli->select_value('value', $cfgTable, "WHERE param = 'exchange' LIMIT 1") ?? ''));
         $botPrefix = $exch;
     }
-    $accId = intval($mysqli->select_value('account_id', $cfgTable, 'LIMIT 1') ?? 0);
+    $accId = intval($mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$cfgTable' LIMIT 1") ?? 0);
 }
 
 $mmTable     = $botPrefix !== '' ? "{$botPrefix}__mm_config" : '';
