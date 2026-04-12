@@ -86,6 +86,7 @@
     $source = $_SERVER['REMOTE_ADDR'] ?? 'local';
     $touched = false;
     $signal = false;
+    $script = basename($_SERVER['SCRIPT_NAME'] ?? 'sig_edit.php');
 
     // Р СњР В°РЎРѓРЎвЂљРЎР‚Р С•Р в„–Р С”Р В° Р В»Р С•Р С–Р С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘РЎРЏ
     $sfx = $input ? 'edit' : 'view';

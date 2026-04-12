@@ -8,7 +8,7 @@ LIB_DIR="$SRC_DIR/lib"
 DB_CONFIG_TARGET="$SECRETS_DIR/db_config.php"
 DB_CONFIG_SOURCE_DEFAULT="$SECRETS_DIR/db_config.php.initialized"
 DB_CONFIG_SOURCE="${DEPLOY_DB_CONFIG_SOURCE:-$DB_CONFIG_SOURCE_DEFAULT}"
-ALPET_LIBS_REPO="${ALPET_LIBS_REPO:-P:/GitHub/alpet-libs-php}"
+ALPET_LIBS_REPO="${ALPET_LIBS_REPO:-$ROOT_DIR/../alpet-libs-php}"
 
 need_file() {
   if [ ! -f "$1" ]; then

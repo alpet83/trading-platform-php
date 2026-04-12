@@ -56,3 +56,18 @@ services:
         required: false
       - path: ./.envs/exchanges/bitmex.env
         required: false
+    # Debug network so nginx-router (on mcp_debug_net) can reach mcp_server.py on port 8084.
+    # mcp_server.py is injected via scripts/mcp_inject.sh; no host port binding needed.
+    networks:
+      - exchange-egress
+      - trd_default
+      - mcp_debug_net      
+networks:
+  trd_default:
+    external: true
+    name: trd_default
+  mcp_debug_net:
+    external: true
+    name: mcp_debug_net
+  exchange-egress:
+    external: true

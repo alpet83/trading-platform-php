@@ -1,18 +1,17 @@
 var/
 misc/
-secrets/*
-!secrets/.gitkeep
-!secrets/db_config.php.example
-!secrets/signals_db_config.php.example
+secrets/
+!secrets/
+secrets/gnupg/
+# Runtime-only symlinks that don't exist on other machines
+src/data
+src/logs.td
 .env
 .envs/exchanges/*.env
 .envs/exchanges/.local/
-
-# Runtime data and logs (not for distribution)
-src/data
-src/data/**
-src/logs
-src/logs/**
+!secrets/.gitkeep
+!secrets/db_config.php.example
+!secrets/signals_db_config.php.example
 
 # Runtime-generated compatibility files from alpet-libs-php.
 src/common.php
@@ -31,3 +30,19 @@ init_grants.sql
 trading-structure.sql
 var/lib/mysql-prev-*/
 
+# PHP CS Fixer cache
+src/.php-cs-fixer.cache
+.php-cs-fixer.cache
+
+# Runtime log snapshots and report images
+src/logs*.td
+src/reports/
+signals-server/logs/
+
+# Composer dependencies (managed separately)
+src/vendor/
+
+# Local protocol/docs excluded from repository sync for now
+docs/COMMIT_PROTOCOL.md
+docs/DOCKER_ROUTE.md
+docs/EXCHANGE_API_KEY_NETWORKING.md

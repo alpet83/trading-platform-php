@@ -23,13 +23,12 @@ ALTER TABLE `config__hosts`
 
 -- config__table_map
 CREATE TABLE `config__table_map` (
-  `table_key` varchar(16) NOT NULL,
   `table_name` varchar(16) NOT NULL,
-  `applicant` varchar(16) NOT NULL
+  `account_id` int(11) NOT NULL DEFAULT 0,
+  `applicant` varchar(16) NOT NULL,
+  PRIMARY KEY (`applicant`),
+  UNIQUE KEY `uq_table_name` (`table_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
-
-ALTER TABLE `config__table_map`
-  ADD UNIQUE KEY `strictor` (`table_key`,`applicant`);
 
 -- config__bot_manager
 CREATE TABLE `config__bot_manager` (

@@ -95,7 +95,7 @@ if (!is_string($cfgTable) || "" === trim($cfgTable)) {
   exit(0);
 }
 
-$accountId = intval($db->select_value("account_id", $cfgTable, ""));
+$accountId = intval($db->select_value("account_id", "config__table_map", "WHERE table_name = \"$cfgTable\" LIMIT 1"));
 if ($accountId > 0) {
   echo $accountId;
 }
@@ -126,14 +126,14 @@ if (!is_string($cfgTable) || "" === trim($cfgTable)) {
   exit(0);
 }
 
-$accountId = intval($db->select_value("account_id", $cfgTable, ""));
+$accountId = intval($db->select_value("account_id", "config__table_map", "WHERE table_name = \"$cfgTable\" LIMIT 1"));
 if ($accountId <= 0) {
-  fwrite(STDERR, "#WARN: account_id missing in $cfgTable\\n");
+  fwrite(STDERR, "#WARN: account_id missing in config__table_map for $cfgTable\\n");
   exit(0);
 }
 
-$readCfg = function(string $param) use ($db, $cfgTable, $accountId) {
-  $v = $db->select_value("value", $cfgTable, "WHERE (account_id = $accountId) AND (param = \"$param\")");
+$readCfg = function(string $param) use ($db, $cfgTable) {
+  $v = $db->select_value("value", $cfgTable, "WHERE param = \"$param\"");
   return is_string($v) ? trim($v) : "";
 };
 
@@ -213,14 +213,14 @@ if (!is_string($cfgTable) || "" === trim($cfgTable)) {
   exit(0);
 }
 
-$accountId = intval($db->select_value("account_id", $cfgTable, ""));
+$accountId = intval($db->select_value("account_id", "config__table_map", "WHERE table_name = \"$cfgTable\" LIMIT 1"));
 if ($accountId <= 0) {
-  fwrite(STDERR, "#WARN: account_id missing in $cfgTable\\n");
+  fwrite(STDERR, "#WARN: account_id missing in config__table_map for $cfgTable\\n");
   exit(0);
 }
 
-$readCfg = function(string $param) use ($db, $cfgTable, $accountId) {
-  $v = $db->select_value("value", $cfgTable, "WHERE (account_id = $accountId) AND (param = \"$param\")");
+$readCfg = function(string $param) use ($db, $cfgTable) {
+  $v = $db->select_value("value", $cfgTable, "WHERE param = \"$param\"");
   return is_string($v) ? trim($v) : "";
 };
 

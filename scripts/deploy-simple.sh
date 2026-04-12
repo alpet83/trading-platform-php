@@ -33,7 +33,11 @@ require_cmd() {
 verify_datafeed_manager_source() {
   manager_path="$ROOT_DIR/../datafeed/src/datafeed_manager.php"
   if [ ! -f "$manager_path" ]; then
-    fail "required manager source missing: $manager_path"
+    log "#INFO: datafeed not found locally, cloning external repos..."
+    sh "$ROOT_DIR/shell/ensure_external_repos.sh"
+  fi
+  if [ ! -f "$manager_path" ]; then
+    fail "datafeed manager source still missing after clone: $manager_path"
   fi
 }
 
@@ -258,9 +262,12 @@ test_web_endpoints() {
 
 main() {
   require_cmd docker-compose
-  verify_datafeed_manager_source
   require_cmd docker
   require_cmd sh
+
+  log "#STEP 0/7: ensure external repos (alpet-libs-php, datafeed)"
+  sh "$ROOT_DIR/shell/ensure_external_repos.sh"
+  verify_datafeed_manager_source
 
   log "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
   prepare_deploy_passwords

@@ -15,11 +15,64 @@ $ErrorActionPreference = "Stop"
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
 
+# ---------- Docker Compose v1 / v2 detection ----------
+$script:DockerComposeV2 = $false
+docker compose version 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { $script:DockerComposeV2 = $true }
+
+function Invoke-Compose([string[]]$CompArgs) {
+    if ($script:DockerComposeV2) {
+        docker compose @CompArgs
+    } else {
+        docker-compose @CompArgs
+    }
+}
+
+# ---------- Ensure sibling repos are present ----------
+function Ensure-ExternalRepos {
+    $externalDir = if ($env:EXTERNAL_REPOS_DIR) {
+        $env:EXTERNAL_REPOS_DIR
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot ".."))
+    }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Info "#WARN: git not found in PATH; cannot auto-clone external repos"
+        return
+    }
+
+    $repos = @(
+        [pscustomobject]@{ Name = "alpet-libs-php"; Url = "https://github.com/alpet83/alpet-libs-php" },
+        [pscustomobject]@{ Name = "datafeed";       Url = "https://github.com/alpet83/datafeed" }
+    )
+
+    foreach ($repo in $repos) {
+        $destPath = Join-Path $externalDir $repo.Name
+        if (Test-Path (Join-Path $destPath ".git")) {
+            Info "#INFO: $($repo.Name) already present at $destPath"
+            continue
+        }
+        if (Test-Path $destPath) {
+            Info "#WARN: $destPath exists but is not a git repo — skipping clone"
+            continue
+        }
+        Info "#INFO: cloning $($repo.Url) -> $destPath"
+        git clone --depth=1 $repo.Url $destPath
+        if ($LASTEXITCODE -ne 0) {
+            Info "#WARN: failed to clone $($repo.Name) (exit $LASTEXITCODE)"
+        }
+    }
+}
+
 function Verify-DatafeedManagerSource {
-  $managerPath = Join-Path $ProjectRoot "../datafeed/src/datafeed_manager.php"
-  if (-not (Test-Path $managerPath)) {
-    Fail "required manager source missing: $managerPath"
-  }
+    $managerPath = Join-Path $ProjectRoot "../datafeed/src/datafeed_manager.php"
+    if (-not (Test-Path $managerPath)) {
+        Info "#INFO: datafeed manager not found — running Ensure-ExternalRepos first..."
+        Ensure-ExternalRepos
+        if (-not (Test-Path $managerPath)) {
+            Fail "datafeed manager still missing after repo clone: $managerPath"
+        }
+    }
 }
 
 function New-RandomPassword([int]$Length = 28) {
@@ -45,10 +98,11 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
   if ([regex]::IsMatch($content, $pattern)) {
     $content = [regex]::Replace($content, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $line })
   } else {
-    if ($content -ne "" -and -not $content.EndsWith("`n")) { $content += "`r`n" }
-    $content += "$line`r`n"
+    if ($content -ne "" -and -not $content.EndsWith("`n")) { $content += "`n" }
+    $content += "$line`n"
   }
-  Set-Content -Path $Path -Value $content -Encoding utf8
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($Path, $content, $utf8NoBom)
 }
 
 function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
@@ -72,7 +126,8 @@ function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
     return
   }
 
-  Set-Content -Path $Path -Value $lines -Encoding utf8
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $utf8NoBom)
 }
 
 function Prepare-DeployPasswords {
@@ -103,14 +158,16 @@ function Prepare-DeployPasswords {
       Copy-Item -Path $envExamplePath -Destination $envPathLocal -Force
       Info "#INFO: created $EnvFile from .env.example"
     } else {
-      @(
+      $minimalEnv = @(
         'COMPOSE_PROJECT_NAME=trd',
         'TZ=UTC',
         'MARIADB_DATABASE=trading',
         'MARIADB_USER=trading',
         'WEB_PORT=8088',
         'WEB_PUBLISH_IP=127.0.0.1'
-      ) | Set-Content -Path $envPathLocal -Encoding utf8
+      ) -join "`n"
+      $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+      [System.IO.File]::WriteAllText($envPathLocal, $minimalEnv + "`n", $utf8NoBom)
       Info "#INFO: created minimal $EnvFile"
     }
   }
@@ -175,87 +232,99 @@ function Invoke-NativeNoThrow([scriptblock]$Command) {
 }
 
 Set-Location $ProjectRoot
+
+# Resolve sibling-repos base dir and key paths
+$externalReposBase = if ($env:EXTERNAL_REPOS_DIR) {
+    $env:EXTERNAL_REPOS_DIR
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot ".."))
+}
+$AlpetLibsPath       = [System.IO.Path]::GetFullPath((Join-Path $externalReposBase "alpet-libs-php"))
+$AlpetLibsPathDocker = $AlpetLibsPath -replace '\\', '/'
+$ProjectRootDocker   = ([System.IO.Path]::GetFullPath($ProjectRoot)) -replace '\\', '/'
+
+Info "#STEP 0/8: ensure external repos (alpet-libs-php, datafeed)"
+Ensure-ExternalRepos
+
 Verify-DatafeedManagerSource
 
 $publishIp = "127.0.0.1"
 $envPath = Join-Path $ProjectRoot ".env"
 if (Test-Path $envPath) {
-  $line = Select-String -Path $envPath -Pattern '^WEB_PUBLISH_IP=' | Select-Object -First 1
-  if ($line) {
-    $publishIp = ($line.Line -replace '^WEB_PUBLISH_IP=', '').Trim()
-    if ([string]::IsNullOrWhiteSpace($publishIp)) { $publishIp = "127.0.0.1" }
-  }
+    $envLine = Select-String -Path $envPath -Pattern '^WEB_PUBLISH_IP=' | Select-Object -First 1
+    if ($envLine) {
+        $publishIp = ($envLine.Line -replace '^WEB_PUBLISH_IP=', '').Trim()
+        if ([string]::IsNullOrWhiteSpace($publishIp)) { $publishIp = "127.0.0.1" }
+    }
 }
 
 if ($CleanStart) {
-  Info "#STEP 0/7: clean previous containers"
-  docker-compose -f $ComposeFile down --remove-orphans
+    Info "#STEP 1/8: clean previous containers"
+    Invoke-Compose @("-f", $ComposeFile, "down", "--remove-orphans")
 }
 
-if (-not (Test-Path "P:/GitHub/alpet-libs-php")) {
-  Fail "Missing P:/GitHub/alpet-libs-php"
-}
-
-Info "#STEP 1/7: optional password preflight (.env + docker-compose.override.yml)"
+Info "#STEP 2/8: optional password preflight (.env + docker-compose.override.yml)"
 Prepare-DeployPasswords
 Ensure-CqdsDbSecretIfRepoPresent -TradingRoot $ProjectRoot
 
-Info "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
-docker run --rm -e ALPET_LIBS_REPO=/alpet-libs -v P:/GitHub/alpet-libs-php:/alpet-libs -v ${PWD}:/work -w /work alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
+Info "#STEP 3/8: bootstrap runtime and generate secrets/db_config.php with random trading password"
+docker run --rm `
+    -e ALPET_LIBS_REPO=/alpet-libs `
+    -v "${AlpetLibsPathDocker}:/alpet-libs" `
+    -v "${ProjectRootDocker}:/work" `
+    -w /work `
+    alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
 if ($LASTEXITCODE -ne 0) { Fail "Bootstrap stage failed" }
 
-Info "#STEP 3/7: build images for mariadb/web"
-docker-compose -f $ComposeFile build mariadb web
+Info "#STEP 4/8: build images for mariadb/web"
+Invoke-Compose @("-f", $ComposeFile, "build", "mariadb", "web")
 if ($LASTEXITCODE -ne 0) { Fail "Build stage failed" }
 
-Info "#STEP 4/7: start mariadb"
-docker-compose -f $ComposeFile up -d mariadb
+Info "#STEP 5/8: start mariadb"
+Invoke-Compose @("-f", $ComposeFile, "up", "-d", "mariadb")
 if ($LASTEXITCODE -ne 0) { Fail "Failed to start mariadb" }
 
-Info "#STEP 5/7: wait for mariadb health"
+Info "#STEP 6/8: wait for mariadb health"
 $ok = $false
-$oldNativeErrPref = $false
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
-  $oldNativeErrPref = $PSNativeCommandUseErrorActionPreference
-  $PSNativeCommandUseErrorActionPreference = $false
+    $oldNativeErrPref = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
 }
 
 function Test-DbPing {
-  $rc = Invoke-NativeNoThrow { docker-compose -f $ComposeFile exec -T mariadb sh -lc 'mariadb-admin ping -h 127.0.0.1 -uroot -p"$MARIADB_ROOT_PASSWORD"' }
-  if ($rc -eq 0) { return $true }
-
-  $rc = Invoke-NativeNoThrow { docker-compose -f $ComposeFile exec -T mariadb sh -lc 'mariadb-admin ping -h 127.0.0.1 -uroot' }
-  return ($rc -eq 0)
+    $rc = Invoke-NativeNoThrow { Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "mariadb", "sh", "-lc", 'mariadb-admin ping -h 127.0.0.1 -uroot -p"$MARIADB_ROOT_PASSWORD"') }
+    if ($rc -eq 0) { return $true }
+    $rc = Invoke-NativeNoThrow { Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "mariadb", "sh", "-lc", "mariadb-admin ping -h 127.0.0.1 -uroot") }
+    return ($rc -eq 0)
 }
 
 for ($i = 0; $i -lt [Math]::Ceiling($DbWaitTimeoutSec / $DbWaitIntervalSec); $i++) {
-  if (Test-DbPing) { $ok = $true; break }
-
-  Start-Sleep -Seconds $DbWaitIntervalSec
+    if (Test-DbPing) { $ok = $true; break }
+    Start-Sleep -Seconds $DbWaitIntervalSec
 }
 
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
-  $PSNativeCommandUseErrorActionPreference = $oldNativeErrPref
+    $PSNativeCommandUseErrorActionPreference = $oldNativeErrPref
 }
 
 if (-not $ok) {
-  docker-compose -f $ComposeFile logs --tail 80 mariadb
-  Fail "MariaDB was not healthy within ${DbWaitTimeoutSec}s"
+    Invoke-Compose @("-f", $ComposeFile, "logs", "--tail", "80", "mariadb")
+    Fail "MariaDB was not healthy within ${DbWaitTimeoutSec}s"
 }
 Info "#INFO: mariadb is healthy"
 
-Info "#STEP 6/7: start web(api + admin ui)"
-docker-compose -f $ComposeFile up -d web
+Info "#STEP 7/8: start web (api + admin ui)"
+Invoke-Compose @("-f", $ComposeFile, "up", "-d", "web")
 if ($LASTEXITCODE -ne 0) { Fail "Failed to start web" }
 
-Info "#STEP 7/7: test admin/api endpoints"
-docker-compose -f $ComposeFile exec -T web php -r "if(@file_get_contents('http://127.0.0.1/basic-admin.php')===false){fwrite(STDERR,'basic-admin probe failed\n'); exit(1);} echo 'basic-admin-ok\n';"
+Info "#STEP 8/8: test admin/api endpoints"
+Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "web", "php", "-r", "if(@file_get_contents('http://127.0.0.1/basic-admin.php')===false){fwrite(STDERR,'basic-admin probe failed\n'); exit(1);} echo 'basic-admin-ok\n';")
 if ($LASTEXITCODE -ne 0) { Fail "basic-admin endpoint probe failed" }
 
-docker-compose -f $ComposeFile exec -T web php -r "if(@file_get_contents('http://127.0.0.1/api/index.php')===false){fwrite(STDERR,'api probe failed\n'); exit(1);} echo 'api-ok\n';"
+Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "web", "php", "-r", "if(@file_get_contents('http://127.0.0.1/api/index.php')===false){fwrite(STDERR,'api probe failed\n'); exit(1);} echo 'api-ok\n';")
 if ($LASTEXITCODE -ne 0) { Fail "api endpoint probe failed" }
 
-docker-compose -f $ComposeFile exec -T web php -r "`$s=@file_get_contents('http://127.0.0.1/bot/get_vwap.php?pair_id=3&limit=5&exchange=bitmex'); if(`$s -eq `$false){fwrite(STDERR,'warn: get_vwap probe unavailable\n'); exit(0);} echo 'get-vwap-probe=' . substr(trim(`$s),0,80) . '\n';"
+Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "web", "php", "-r", "`$s=@file_get_contents('http://127.0.0.1/bot/get_vwap.php?pair_id=3&limit=5&exchange=bitmex'); if(`$s===false){fwrite(STDERR,'warn: get_vwap probe unavailable\n'); exit(0);} echo 'get-vwap-probe=' . substr(trim(`$s),0,80) . '\n';")
 if ($LASTEXITCODE -ne 0) { Fail "get_vwap endpoint probe failed" }
 
 Info ""

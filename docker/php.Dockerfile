@@ -22,9 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo-dev \
     libpng-dev \
     libwebp-dev \
+    libyaml-dev \
     procps \
     screen \
-    less \    
+    less \
+    traceroute \    
  && rm -rf /var/lib/apt/lists/*
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
@@ -38,8 +40,9 @@ RUN docker-php-ext-install -j"$(nproc)" \
     bcmath \
     gd
 
-# Xdebug for debugging and error handling
-RUN pecl install xdebug && docker-php-ext-enable xdebug
+# Xdebug for debugging; yaml for native YAML parsing (replaces ParseSimpleYamlBlock fallback)
+RUN pecl install xdebug yaml \
+ && docker-php-ext-enable xdebug yaml
 
 # Optional (future async runtime):
 # RUN pecl install swoole && docker-php-ext-enable swoole
@@ -54,6 +57,9 @@ RUN git clone --depth=1 https://github.com/alpet83/datafeed ${APP_DIR}/datafeed 
  && mkdir -p ${APP_DIR}/datafeed/src/logs \
  && cd ${APP_DIR}/datafeed \
  && composer require --no-interaction --prefer-dist arthurkushman/php-wss smi2/phpclickhouse
+
+# Provide shared ClickHouse helper to datafeed without extra volume mounts
+RUN cp ${APP_DIR}/lib/clickhouse.php ${APP_DIR}/datafeed/lib/clickhouse.php
 
 # Option B (alternative): use git submodule in repo instead of clone
 #   git submodule add https://github.com/alpet83/alpet-libs-php lib

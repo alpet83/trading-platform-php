@@ -46,4 +46,13 @@ fi
 # Apply: restart affected services
 echo "[update_restart] Running docker compose up -d ..."
 docker compose up -d
+
+# Push updated clickhouse.php to datafeed container if local alpet-libs-php is available.
+CLICKHOUSE_SRC="$PROJECT_DIR/../alpet-libs-php/clickhouse.php"
+if [ -f "$CLICKHOUSE_SRC" ]; then
+    echo "[update_restart] Copying clickhouse.php to datafeed container..."
+    docker compose cp "$CLICKHOUSE_SRC" datafeed:/app/lib/clickhouse.php \
+        || echo "[update_restart] WARN: datafeed not running, skip clickhouse.php copy"
+fi
+
 echo "[update_restart] Done."

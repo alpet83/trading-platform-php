@@ -142,7 +142,7 @@ if ($source -eq "pass") {
   }
 
   if ($accounts.Count -gt 0) {
-    Write-Host "Available account_id values for $botName:"
+    Write-Host "Available account_id values for ${botName}:"
     for ($i = 0; $i -lt $accounts.Count; $i++) {
       $n = $i + 1
       Write-Host ("[{0}] {1}" -f $n, $accounts[$i])
@@ -168,11 +168,7 @@ if ($source -eq "pass") {
   $env:ACCOUNT_ID = "$accountId"
   $env:API_KEY = "$apiKey"
   $env:API_SECRET = "$secret"
-  & sh scripts/inject-api-keys.sh
-
-  if ($LASTEXITCODE -ne 0) {
-    throw "db key injection failed with code $LASTEXITCODE"
-  }
+  & "$PSScriptRoot\inject-api-keys.ps1" -ComposeFile $ComposeFile -PassInitComposeFile $PassInitComposeFile
 
   Write-Host "#SUCCESS: db credentials injected for $botName, account $accountId"
 }
