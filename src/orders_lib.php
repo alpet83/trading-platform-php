@@ -242,7 +242,9 @@
     }
 
     public function IsFixed() {
-        // partially_filled or partial_filled is not fixed!             
+        // partially_filled or partial_filled is not fixed!
+        // lost = status uncertain (not confirmed closed) — treat as active until resolved
+        if ($this->status == OST_LOST) return false;
         if (false !== array_search($this->status, ARCHIVED_STATUSES)) return true;
         $ff = $this->flags & OFLAG_FIXED;      
         if ($ff) return true;

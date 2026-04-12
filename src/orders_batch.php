@@ -178,9 +178,13 @@ class OrdersBatch
         $engine = $this->engine;
         $core = $engine->TradeCore();
 
-        if (0 != $position && 0 != $this->target_pos && signval($position) != signval($this->target_pos) && !$force) {
-            $core->LogError("~C91#ERROR:~C00 can't change target position to different sign, current = %f, new = %f", $this->target_pos, $position);
-            return;
+        if (0 != $position && 0 != $this->target_pos && signval($position) != signval($this->target_pos)) {
+            if (!$force) {
+                $core->LogError("~C91#ERROR:~C00 can't change target position to different sign, current = %f, new = %f", $this->target_pos, $position);
+                return;
+            }
+            // force=true: allowed only for close-trim or same-sign batch-edit (caller must guard); log for audit
+            $core->LogMsg("~C93#WARN_EDIT_TARGET:~C00 forced sign reversal batch %s: target_pos %f => %f (force=true)", strval($this), $this->target_pos, $position);
         }
         if ($this->target_pos == $position)
             return true; // already set
@@ -469,9 +473,11 @@ skip_log:
         if ($pending > 0)
             $this->lock = count($orders) + 3;
         elseif ($this->lock > 0) {
-            $this->lock --; // countdown like TTL
-            if ($this->IsTimedout())
+            // release immediately when all orders filled/cancelled; no TTL countdown needed
+            if (0 == count($orders) || $this->IsTimedout())
                 $this->lock = 0;
+            else
+                $this->lock--; // countdown only while orders still tracked
         }    
         if (is_string($this->need_update))
             $this->UpdateExecStats($this->need_update);

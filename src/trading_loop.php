@@ -521,13 +521,36 @@
 
                     if (count($opposite) > 0) {
                         $this->LogMsg("~C91#WARN:~C00 %s have %d opposite direction pending orders, cancelling...", strval($ext_sig), count($opposite));
-                        $engine->CancelOrders($opposite);                                                   
+                        $engine->CancelOrders($opposite);
+                        // must wait this cycle while cancels propagate
+                        $this->LogMsg("~C07~C94#SIGNAL_WAIT:~C00 %s have pending amount %s (with opposite), saldo/sig/batch dir [%d, %d, %d], flags 0x%02x in: %s",
+                                strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $trade_dir, $sig_dir, $batch_dir, $ff, json_encode($dump));
+                        $ctx->update('target_pos', $curr_pos, 'signal have pending orders');
+                        return false;
                     }
 
-                    $this->LogMsg("~C07~C94#SIGNAL_WAIT:~C00 %s have pending amount %s, saldo/sig/batch dir [%d, %d, %d], flags 0x%02x in: %s", 
-                            strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $trade_dir, $sig_dir, $batch_dir, $ff, json_encode($dump));
-                    $ctx->update('target_pos', $curr_pos, 'signal have pending orders');                    
-                    return false;
+                    // only same-direction pending: check if it covers most of the delta
+                    $adj_sig_pos = $sig_pos - $pa * $sig_dir;  // reduce target by pending (same direction)
+                    $adj_bias    = $sig_dir * ($adj_sig_pos - $curr_pos);
+
+                    if ($adj_bias < $tinfo->lot_size || $pa >= $sig_bias * 0.5) {
+                        // pending covers >=50% of remaining delta or remainder below lot_size — full wait
+                        $this->LogMsg("~C07~C94#SIGNAL_WAIT:~C00 %s have pending amount %s (covers delta), saldo/sig/batch dir [%d, %d, %d], flags 0x%02x in: %s",
+                                strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $trade_dir, $sig_dir, $batch_dir, $ff, json_encode($dump));
+                        $ctx->update('target_pos', $curr_pos, 'signal have pending orders');
+                        return false;
+                    }
+
+                    // micro-pending: subtract from target, continue with remainder so bias is not zeroed
+                    $this->LogMsg("~C07~C94#SIGNAL_ADJ:~C00 %s micro-pending %s, adj target -%s (remain %s), saldo/sig/batch dir [%d, %d, %d], flags 0x%02x in: %s",
+                            strval($ext_sig), $tinfo->FormatAmount($pa, Y, Y), $tinfo->FormatAmount($pa, Y, Y),
+                            $tinfo->FormatAmount($adj_bias, Y, Y), $trade_dir, $sig_dir, $batch_dir, $ff, json_encode($dump));
+                    $sig_pos   = $sig_ctx->update('target_pos', $adj_sig_pos, 'signal micro-pending adj');
+                    $sig_bias  = $sig_ctx->bias;
+                    $sig_dir   = $sig_ctx->trade_dir_sign();
+                    $delta     = $sig_dir * $sig_bias;
+                    $bias_qty  = $engine->AmountToQty($pair_id, $price, $btc_price, $sig_bias);
+                    $bias_cost = $bias_qty * $price;
                 }
 
                 
@@ -908,6 +931,8 @@
                     $ignored_map[$pair] = $ignore_var;
                     if ($ctx->verbosity > 1)
                         $this->LogMsg("~C93 #DBG_IGNORE:~C00 reasons list: %s ", json_encode($ctx->ignore_by));
+                    $ig_reason = count($ctx->ignore_by) > 0 ? $ctx->ignore_by[0][1] : '';
+                    $this->PersistExecContext($ctx, 'ignore', $ig_reason);
                     continue; // на этом этапе ясно, что позиция достигнута, или этому мешают другие обстоятельства
                 }
 
@@ -915,8 +940,10 @@
 
                 $this->SyncPositions($pair_id, $rec);
                 if (!$this->TradingAllowed())  {
+                    $this->PersistExecContext($ctx, 'block', 'trading not allowed');
                     continue;
-                }        
+                }
+                $this->PersistExecContext($ctx, 'trade', $ext_sig ? 'signal#'.($ext_sig->id ?? 0) : 'saldo');        
 
                 $hidden = $cost_usd >= $this->ConfigValue('hidden_cost_threshold', 500); 
                 $ts_pos = date_ms(SQL_TIMESTAMP);
@@ -925,7 +952,16 @@
         
                 
                 if (floatval($amount) < $lot_size) {
-                    $this->LogError("~C91#ERROR:~C00 PostFilter check: pair %10s amount [%s:%f] < lot_size %8G, bias = %f, need manual check", $pair, $amount, $raw_amount, $lot_size, $ctx->bias);
+                    if (0 == $ctx->target_pos) {
+                        // Sub-lot dust residual with flat target — cannot be traded, only cleared via
+                        // the exchange's dust-conversion feature. Suppress for ~10 min to avoid log spam.
+                        $this->LogMsg("~C93#DUST_POS:~C00 pair %10s residual %f < lot_size %G (target=flat), dust position, suppressing for 10 min",
+                            $pair, $raw_amount, $lot_size);
+                        $this->postpone_orders[$pair_id] = 600;
+                    } else {
+                        $this->LogError("~C91#ERROR:~C00 PostFilter check: pair %10s amount [%s:%f] < lot_size %8G, bias = %f, need manual check",
+                            $pair, $amount, $raw_amount, $lot_size, $ctx->bias);
+                    }
                     continue;
                 }        
                         // $price = $tinfo->FormatPrice($price); //  sprintf("%.{$tinfo->price_precision}f", $price);

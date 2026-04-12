@@ -19,7 +19,7 @@
         public $tickers_map = []; 
         public function __construct(MiniCore $owner) {
             $this->owner = $owner;
-            $this->account_id = $owner->mysqli->select_value('account_id', $owner->config_table);      
+            $this->account_id = $owner->mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '{$owner->config_table}' LIMIT 1");
             $this->exchange = $owner->config['exchange'] ?? $this->exchange;            
         }
         public function TableName(string $table) {

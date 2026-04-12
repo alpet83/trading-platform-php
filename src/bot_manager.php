@@ -408,8 +408,8 @@
                     $api_key_sec = strtoupper($exch) . '_API_SECRET';
             }
 
-            if (strlen($this->api_key) < 4) {        
-                log_cmsg("~C94 #DBG:~C00 API key not cached, trying retrieve and set env[$api_key_name], secret separator [$separator]");        
+            if (strlen($this->api_key) < 4 || !strlen($this->api_secret_plaintext ?? '')) {        
+                log_cmsg("~C94 #DBG:~C00 API key or secret not cached, trying retrieve and set env[$api_key_name], secret separator [$separator]");        
 
                 global $credentials_source;
                 if ('db' === $credentials_source)
@@ -616,41 +616,33 @@
     // $tables = $mysqli->try_query("SHOW TABLES;");
     // while ($tables && $row = $tables->fetch_[]) printf(" %s ", $row[0]);
     
-    $configs = $mysqli->select_rows('table_name,applicant', 'config__table_map', "WHERE table_key = 'config'", MYSQLI_ASSOC);
+    $configs = $mysqli->select_rows('table_name,applicant', 'config__table_map', 'ORDER BY applicant', MYSQLI_ASSOC);
 
     $bots = [];
     foreach ($configs as $cfg) {
         $app = $cfg['applicant'];
         $table = $cfg['table_name'];
         log_msg("#CHECK_CFG: request params from $table...");
-        $rows = $mysqli->select_rows('account_id,param,value', $table, "WHERE ((param = 'trade_enabled') or (param = 'monitor_enabled'))", MYSQLI_ASSOC);
-        $acc_map = [];
+        // account_id is now stored in config__table_map, not in the config table
+        $acc_id = intval($mysqli->select_value('account_id', 'config__table_map', "WHERE table_name = '$table' LIMIT 1") ?? 0);
+        $rows = $mysqli->select_rows('param,value', $table, "WHERE ((param = 'trade_enabled') or (param = 'monitor_enabled'))", MYSQLI_ASSOC);
+        $account = new stdClass();
+        $account->id = $acc_id;
+        $account->name = $app;
         foreach ($rows as $row) {
-            $id = $row['account_id'];
-            $key = $app.'@'.$id; 
             $par = $row['param'];
             $val = $row['value'];
-            $account = new stdClass();      
-            if (isset($acc_map[$key]))                       
-                $account = $acc_map[$key]; // load previous
-            $account->id = $id;            
             $account->$par = $val;
-            $account->name = $app;
             if ($val > 0)
                 $account->active = true;
-                
-            $acc_map[$key] = $account;        
         }
-        
-        foreach ($acc_map as $account)  {      
-            if ($account->active ?? false) {             
-                $bot = new TradingBot($table, $account);
-                $bot->trader_pwd = $trader_pwd;
-                $bots []= $bot;
-            }   
-            else  
-                log_msg("#DBG: No instance created for account ".json_encode($account));
-        }     
+        if ($account->active ?? false) {
+            $bot = new TradingBot($table, $account);
+            $bot->trader_pwd = $trader_pwd;
+            $bots []= $bot;
+        } else {
+            log_msg("#DBG: No instance created for account ".json_encode($account));
+        }
         log_cmsg("#DBG: loaded %d bot configs", count($bots));
     }
     

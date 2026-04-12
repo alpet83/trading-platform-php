@@ -529,7 +529,7 @@
 
                 if ($funds_start > 0 && $funds_end > 0) {
                     $bias = $funds_end - $funds_start;
-                    $bias_pp = 100 * $ctxt->bias / $funds_start;
+                    $bias_pp = 100 * $bias / $funds_start;
                     $upnl = sprintf('funds: %.1f -> %.1f, change %.1f%%', $funds_start, $funds_end, $bias_pp);
                     
                     // 🅰🅱🌜🐬𝓔🔩🐋♓🕴🎷🎉👢Ⓜ😀🥄🅿🍳💲🍄⛎✌🔱💤🏋❎ 🅜🅜🅜🅜
@@ -554,10 +554,10 @@
                 $fcolor = sprintf('#%02x%02x%02x', ...$this->report_color);
                 if (5 == $d && $hour > 15) {
                     $period = 'Weekly';  
-                    exec("php ../draw_chart.php $exch weekly $acc_id", $out);
+                    exec("php web-ui/draw_chart.php $exch weekly $acc_id", $out);
                 }  
                 else
-                    exec("php ../draw_chart.php $exch daily $acc_id $fcolor", $out);
+                    exec("php web-ui/draw_chart.php $exch daily $acc_id $fcolor", $out);
                 
                 $fname = "default.png";
                 $log = '';           

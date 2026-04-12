@@ -166,18 +166,16 @@ class TradingEngine {
        return count($killed);
     }
 
-    public function CheckAccount(string $config_table) {                
-      $accounts = sqli()->select_col('account_id', $config_table, "WHERE param = 'exchange' ");  // any default
-      foreach ($accounts as $acc_id)
-        if ($acc_id == $this->account_id) return;
-
-      if (is_array($accounts) && count($accounts) > 0) { 
-          $this->account_id = $accounts[0];
-          $this->LogMsg("#DBG: assigned default account_id %d", $this->account_id);
-      }    
-      else    
-          throw new Exception("In table '$config_table' not found exchange parameter.");
-          
+    public function CheckAccount(string $config_table) {
+        $plain_table = trim($config_table, '`');
+        $account_id = sqli()->select_value('account_id', 'config__table_map', "WHERE table_name = '$plain_table' LIMIT 1");
+        if (!$account_id) {
+            throw new Exception("In config__table_map not found account_id for '$plain_table'.");
+        }
+        if ($this->account_id != $account_id) {
+            $this->account_id = intval($account_id);
+            $this->LogMsg("#DBG: assigned account_id %d from table_map", $this->account_id);
+        }
     }
 
 
@@ -372,7 +370,9 @@ class TradingEngine {
             throw new Exception("Initialize: no DB connection");
            
 
-        $this->host_id = $mysqli->select_value('id', 'config__hosts', "WHERE host = '{$hostname}'");
+        $this->host_id = (int)$mysqli->select_value('id', 'config__hosts', "WHERE host = '{$hostname}'");
+        $max_hosts = max(2, (int)(getenv('MAX_HOSTS') ?: 2));
+        $this->host_id = $this->host_id % $max_hosts; // keep slot in [0, MAX_HOSTS-1]
 
         $prefix = strtolower("{$this->exchange}__");
         $this->EnsurePairsMapView($mysqli, $prefix);
@@ -415,7 +415,11 @@ class TradingEngine {
         }  
 
         // selecting historical DB
-        $mysqli_df = $this->sqli('datafeed');       
+        $mysqli_df = $this->sqli('datafeed');
+        if (!is_object($mysqli_df)) {
+            $this->LogMsg("~C91#WARN:~C00 datafeed DB unavailable, using trading DB for historical data");
+            $mysqli_df = $this->sqli();
+        }
 
         $test_table =  strtolower("{$this->exchange}.ticker_map");        
         $exch = strtolower($this->exchange);        
@@ -487,8 +491,6 @@ class TradingEngine {
             if ($mm)
                 $mm->AddBatch($batch);
         }         
-
-        
 
     }
     public function IsAmountSmall(int $pair_id, float $amount, float $price = 0, float $min_cost = 0): bool {
@@ -1356,11 +1358,19 @@ class TradingEngine {
         $this->pending_orders->LoadFromDB($strict_all);
         $this->lost_orders->LoadFromDB($strict_all);
     }
-    public function ProcessMM() {
+    public function ProcessMM(int $pair_id = 0) {
+        if ($pair_id > 0) {
+            $mm = $this->market_makers[$pair_id] ?? null;
+            if (!$mm) return;
+            $this->TradeCore()->LogMM("~C93#PROCESS_MM_FAST:~C00 pair_id=%d (WS fill trigger, fills=%d)",
+                $pair_id, $this->ws_filled_pairs[$pair_id] ?? 1);
+            $mm->Process();
+            return;
+        }
         $this->TradeCore()->LogMM("~C93#PROCESS_MM:~C00 count configured %d", count($this->market_makers));
         foreach ($this->market_makers as $mm)
             $mm->Process();
-      }
+    }
     public function ProcessRescuer() {
         $lists = [$this->pending_orders, $this->matched_orders, $this->archive_orders ];
         foreach ($lists as $list) 
