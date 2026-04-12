@@ -1,8 +1,20 @@
 version: 1
 exchange: deribit
-default_profile: main
+default_profile: testnet
 profiles:
     main:
         api_base: https://www.deribit.com
+        ws_public:
+            - wss://www.deribit.com/ws/api/v2
+        ws_private:
+            - wss://www.deribit.com/ws/api/v2
+        ws_endpoint_strategy: primary_only
+        ws_disabled: false
     testnet:
         api_base: https://test.deribit.com
+        ws_public:
+            - wss://test.deribit.com/ws/api/v2
+        ws_private:
+            - wss://test.deribit.com/ws/api/v2
+        ws_endpoint_strategy: primary_only
+        ws_disabled: false

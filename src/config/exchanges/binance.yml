@@ -3,8 +3,32 @@ exchange: binance
 default_profile: main
 profiles:
     main:
-        public_api: https://api.binance.com/
+        public_api:  https://api.binance.com/
         private_api: https://api2.binance.com/
+        # REST servers tried by SwitchAPIServer on timeout (ordered by preference).
+        # api3-api5 are China-only mirrors; api1/api2 are globally accessible.
+        api_servers:
+            - https://api.binance.com/
+            - https://api1.binance.com/
+            - https://api2.binance.com/
+        ws_public:
+            - wss://stream.binance.com:9443/stream
+            - wss://stream1.binance.com:9443/stream
+            - wss://stream2.binance.com:9443/stream
+        # ws_private: Binance WebSocket API server for user-data streams via listenToken.
+        # Uses JSON-RPC method userDataStream.subscribe with the token in params.
+        # Events arrive as {"subscriptionId":N,"event":{"e":"executionReport",...}}.
+        ws_private:
+            - wss://ws-api.binance.com:443/ws-api/v3
+        ws_endpoint_strategy: failover
+        ws_disabled: false
     testnet:
-        public_api: https://testnet.binance.vision/
+        spot_only: true  # testnet has no margin/sapi endpoints; spot trading only
+        public_api:  https://testnet.binance.vision/
         private_api: https://testnet.binance.vision/
+        ws_public:
+            - wss://testnet.binance.vision/stream
+        ws_private:
+            - wss://testnet.binance.vision/ws
+        ws_endpoint_strategy: primary_only
+        ws_disabled: false

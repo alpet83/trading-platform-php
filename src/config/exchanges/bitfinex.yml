@@ -3,5 +3,21 @@ exchange: bitfinex
 default_profile: main
 profiles:
     main:
-        public_api: https://api-pub.bitfinex.com/
+        public_api:  https://api-pub.bitfinex.com/
         private_api: https://api.bitfinex.com/
+        ws_public:
+            - wss://api-pub.bitfinex.com/ws/2
+        ws_private:
+            - wss://api.bitfinex.com/ws/2
+        ws_endpoint_strategy: primary_only
+        ws_disabled: false
+    paper:
+        public_api:  https://api-pub.bitfinex.com/
+        private_api: https://api.bitfinex.com/
+        ws_public:
+            - wss://api-pub.bitfinex.com/ws/2
+        ws_private:
+            - wss://api.bitfinex.com/ws/2
+        ws_endpoint_strategy: primary_only
+        ws_disabled: false
+        paper_mode: true

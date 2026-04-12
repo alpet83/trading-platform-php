@@ -54,7 +54,7 @@
     }
 
 
-    final class BitMEXEngine extends RestAPIEngine {
+    final class BitMEXEngine extends WebsockAPIEngine {
 
         const API_BASE_MAIN    = 'https://www.bitmex.com/';
         const API_BASE_TESTNET = 'https://testnet.bitmex.com/';
@@ -77,6 +77,13 @@
 
         private   $trades_buff = [];
 
+        // -------------------------------------------------------------------------
+        // WebSocket transport state (WSSC)
+        // -------------------------------------------------------------------------
+        private   $ws_client      = null;
+        private string $ws_last_opcode  = 'text';
+        private bool   $ws_last_had_data = false;
+
 
 
         public function __construct(object $core) {            
@@ -90,10 +97,7 @@
             if (strval($auth['source'] ?? '') === 'env')
                 $this->LogMsg("#ENV: Used API Key {$this->apiKey}");
 
-            $use_testnet = strtolower(trim((string)(getenv('BMX_TESTNET') ?: '0')));
-            $profile_name = trim((string)(getenv('BMX_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: ''));
-            if (!strlen($profile_name))
-                $profile_name = in_array($use_testnet, ['1', 'true', 'yes', 'on'], true) ? 'testnet' : 'main';
+            $profile_name = trim((string)(getenv('BMX_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: 'main'));
 
             $profile_file = trim((string)(getenv('BMX_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bitmex.yml'));
             $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
@@ -116,6 +120,268 @@
 
         public function  Initialize() {
             parent::Initialize();
+            $core      = $this->TradeCore();
+            $cfg       = $core->configuration;
+            $cfg_table = trim($cfg->config_table, '`');
+            if ($cfg_table !== '') {
+                $core->Engine()->sqli()->try_query(
+                    "INSERT IGNORE INTO `$cfg_table` (param, value) VALUES ('exchange_profile', 'main')"
+                );
+            }
+            $profile_name = $cfg->GetValue('exchange_profile', null) ?? 'main';
+            $this->active_profile = $profile_name;
+            $profile_file = trim((string)(getenv('BMX_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bitmex.yml'));
+            $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
+                'api_base' => self::API_BASE_MAIN,
+            ]);
+            $api_base = trim((string)(getenv('BMX_API_BASE_URL') ?: ($profile['api_base'] ?? '')));
+            if (!strlen($api_base)) $api_base = self::API_BASE_MAIN;
+            if ('/' !== substr($api_base, -1)) $api_base .= '/';
+            $this->public_api  = $api_base;
+            $this->private_api = $api_base;
+            $this->LogMsg('#CFG: BitMEX profile=%s, api=%s', $profile_name, $api_base);
+            $this->wsLoadConfig($profile);
+            if ($this->ws_active)
+                $this->wsReconnect('initial');
+        }
+
+        // =========================================================================
+        // WebSocket transport — identical WSSC pattern to BybitEngine
+        // =========================================================================
+
+        protected function wsConnect(string $url): bool {
+            try {
+                $config = new \WSSC\Components\ClientConfig();
+                $config->setTimeout(10);
+                $client = new \WSSC\WebSocketClient($url, $config);
+                if ($client->isConnected()) {
+                    $this->ws_client = $client;
+                    $this->ws_client->setTimeout(0, 10000); // 10 ms read timeout
+                    $this->ws_last_had_data = false;
+                    $this->wsOnConnected();
+                    return true;
+                }
+            } catch (\Throwable $E) {
+                $this->LogMsg("~C91#WS_CONNECT_FAIL:~C00 %s", $E->getMessage());
+            }
+            $this->ws_client = null;
+            return false;
+        }
+
+        protected function wsClose(): void {
+            $this->ws_client = null;
+        }
+
+        protected function wsSend(string $data): bool {
+            if (!$this->ws_client) return false;
+            try {
+                $this->ws_client->send($data);
+                return true;
+            } catch (\Throwable $E) {
+                $this->LogMsg("~C91#WS_SEND_FAIL:~C00 %s", $E->getMessage());
+                return false;
+            }
+        }
+
+        protected function wsReceive(): ?string {
+            if (!$this->ws_client) return null;
+            try {
+                $raw = $this->ws_client->receive();
+            } catch (\Throwable $E) {
+                $this->ws_last_had_data = false;
+                return null;
+            }
+            $this->ws_last_opcode = $this->ws_client->getLastOpcode() ?? 'text';
+            $result = (is_string($raw) && $raw !== '') ? $raw : null;
+            $this->ws_last_had_data = ($result !== null);
+            return $result;
+        }
+
+        protected function wsLastOpcode(): string {
+            return $this->ws_last_opcode;
+        }
+
+        protected function wsUnreaded(): int {
+            return ($this->ws_client && $this->ws_last_had_data) ? 1 : 0;
+        }
+
+        protected function wsIsConnected(): bool {
+            return $this->ws_client !== null && $this->ws_client->isConnected();
+        }
+
+        protected function wsPing(): void {
+            // BitMEX accepts raw text "ping" → replies with raw "pong"
+            if ($this->ws_client)
+                $this->ws_client->send('ping');
+        }
+
+        protected function wsPong(string $payload = ''): void {
+            // BitMEX server-initiated ping is rare; send raw pong back
+            if ($this->ws_client)
+                $this->ws_client->send('pong');
+        }
+
+        // =========================================================================
+        // WebSocket protocol — BitMEX private stream
+        // =========================================================================
+
+        protected function wsRequiresAuth(): bool {
+            return true;
+        }
+
+        protected function wsBuildAuthMessage(): string {
+            // BitMEX WS auth: HMAC-SHA256(secret, "GET/realtime" + expires)
+            // expires = Unix timestamp in seconds (not ms)
+            $expires  = time() + 25;
+            $sig_str  = 'GET/realtime' . $expires;
+            $secret   = base64_decode(implode('', $this->secretKey));
+            $sig      = hash_hmac('sha256', $sig_str, $secret);
+            return json_encode([
+                'op'   => 'authKeyExpires',
+                'args' => [$this->apiKey, $expires, $sig],
+            ]);
+        }
+
+        protected function wsSubscribeAll(): void {
+            if (!$this->ws_authenticated) {
+                $auth_msg = $this->wsBuildAuthMessage();
+                if ($this->wsSend($auth_msg))
+                    $this->LogMsg("~C93#WS_AUTH:~C00 auth message sent");
+                return;
+            }
+            $syms = array_keys($this->pairs_map_rev ?? []);
+            $quote_args = array_map(fn($s) => 'quote:' . $s, $syms);
+            $args = array_merge(['order'], $quote_args);
+            $msg = json_encode(['op' => 'subscribe', 'args' => $args]);
+            $this->wsSend($msg);
+            $this->LogMsg("~C93#WS_SUBSCRIBE:~C00 subscribed to order + %d quote topics", count($syms));
+            $this->ws_subscribe_after = 0;
+        }
+
+        protected function wsDispatch(mixed $data): void {
+            // Raw pong from server (response to our text "ping")
+            if ($data === 'pong') {
+                $this->ws_last_ping = time();
+                return;
+            }
+
+            // Status / error frame: {"status": 400, "error": "..."}
+            if (isset($data->status) && $data->status >= 400) {
+                $err = $data->error ?? json_encode($data);
+                $this->LogMsg("~C91#WS_ERROR:~C00 %s", $err);
+                return;
+            }
+
+            // Auth confirmation: {"success": true, "request": {"op": "authKeyExpires", ...}}
+            if (isset($data->success) && isset($data->request->op) && $data->request->op === 'authKeyExpires') {
+                if ($data->success) {
+                    $this->ws_authenticated = true;
+                    $this->LogMsg("~C92#WS_AUTH_OK:~C00 BitMEX WS authenticated");
+                    // Immediately subscribe after successful auth
+                    $syms = array_keys($this->pairs_map_rev ?? []);
+                    $quote_args = array_map(fn($s) => 'quote:' . $s, $syms);
+                    $args = array_merge(['order'], $quote_args);
+                    $msg = json_encode(['op' => 'subscribe', 'args' => $args]);
+                    $this->wsSend($msg);
+                    $this->LogMsg("~C93#WS_SUBSCRIBE:~C00 subscribed to order + %d quote topics", count($syms));
+                    $this->ws_subscribe_after = 0;
+                } else {
+                    $ret = $data->error ?? json_encode($data);
+                    $this->LogMsg("~C91#WS_AUTH_FAIL:~C00 %s", $ret);
+                    $this->wsReconnect('auth rejected');
+                }
+                return;
+            }
+
+            // Subscribe confirmation: {"success": true, "subscribe": "order", ...}
+            if (isset($data->success) && isset($data->subscribe)) {
+                $this->LogMsg("~C93#WS_SUB_CONFIRM:~C00 %s", json_encode($data));
+                return;
+            }
+
+            // Welcome info frame: {"info": "...", "version": "..."}
+            if (isset($data->info)) {
+                $this->LogMsg("~C93#WS_INFO:~C00 %s", $data->info);
+                return;
+            }
+
+            // Order table push: {"table": "order", "action": "insert"|"update"|"partial", "data": [...]}
+            if (isset($data->table) && $data->table === 'order' && isset($data->data)) {
+                $action = $data->action ?? 'update';
+                foreach ((array)$data->data as $order)
+                    if (is_object($order))
+                        $this->wsOnOrderUpdate($order, $action);
+                $this->ws_priv_packets++;
+                return;
+            }
+
+            // Quote table push: {"table": "quote", "action": "insert", "data": [{"symbol":"XBTUSD","bidPrice":...,"askPrice":...}]}
+            if (isset($data->table) && $data->table === 'quote' && isset($data->data)) {
+                foreach ((array)$data->data as $rec) {
+                    if (!is_object($rec)) continue;
+                    $symbol = strval($rec->symbol ?? '');
+                    if (!isset($this->pairs_map_rev[$symbol])) continue;
+                    $pair_id = $this->pairs_map_rev[$symbol];
+                    $bid = floatval($rec->bidPrice ?? 0);
+                    $ask = floatval($rec->askPrice ?? 0);
+                    if ($bid > 0 && $ask > 0 && $ask >= $bid) {
+                        $tinfo = &$this->pairs_info[$pair_id];
+                        $tinfo->bid_price  = $bid;
+                        $tinfo->ask_price  = $ask;
+                        $tinfo->last_price = ($bid + $ask) / 2;
+                        $tinfo->OnUpdate();
+                        $this->ws_ticker_t = time();
+                    }
+                }
+                $this->ws_pub_packets++;
+                return;
+            }
+
+            $table = $data->table ?? ($data->op ?? '');
+            if ($table !== '')
+                $this->LogMsg("~C93#WS_UNKNOWN:~C00 table=%s", $table);
+        }
+
+        private function wsOnOrderUpdate(\stdClass $order, string $action = 'update'): void {
+            // 'partial' is the initial snapshot — treat as inserts, not updates
+            // 'insert' = new order placed; 'update' = status/qty changed
+            // For 'update' BitMEX sends only changed fields; we need clOrdID or orderID to route
+            if (!isset($order->orderID) && !isset($order->clOrdID)) {
+                $this->LogMsg("~C91#WS_ORDER_SKIP:~C00 order frame without ID in action=%s", $action);
+                return;
+            }
+
+            // Ensure required fields for UpdateOrder are present; skip non-actionable status-less updates
+            if (!isset($order->ordStatus)) {
+                // quantity or price-only update — not relevant for fixed/signal logic
+                return;
+            }
+
+            if (!isset($order->symbol))
+                return;
+
+            $target = 'clOrdID@unknown'; // routing sentinel
+            if (isset($order->clOrdID) && strlen($order->clOrdID) > 0)
+                $target = $order->clOrdID;
+            elseif (isset($order->orderID))
+                $target = $order->orderID; // fallback: route by exchange ID
+
+            $changed  = $this->UpdateOrder($target, $order, $action === 'partial', 'ws');
+            $symbol   = strval($order->symbol);
+            $status   = $this->DecodeOrderStatus(strval($order->ordStatus));
+
+            $this->LogMsg("~C94#WS_ORDER:~C00 %s [%s] action=%s status=%s matched=%.6f changed=%s",
+                $symbol,
+                $order->clOrdID ?? $order->orderID ?? '?',
+                $action,
+                $status,
+                floatval($order->cumQty ?? 0),
+                $changed ? 'yes' : 'no');
+
+            if ($changed && ($status === 'filled' || $status === 'partially_filled')) {
+                if (isset($this->pairs_map_rev[$symbol]))
+                    $this->wsMarkFilledPair($this->pairs_map_rev[$symbol]);
+            }
         }
 
         public function CreateOrderList(string $name, bool $fixed = false): OrderList {
@@ -167,16 +433,17 @@
         public function CheckAPIKeyRights(): bool {
             $core = $this->TradeCore();
             $json = $this->RequestPrivateAPI('api/v1/apiKey', ['count' => 1], 'GET');
+            $ctx = $this->AuthContext();
             if (false === $json || '' === trim(strval($json)))
-                $this->ThrowInvalidBitMEXApiKey('#FATAL: BitMEX /apiKey request failed or returned empty response');
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX /apiKey request failed [%s]', $ctx));
 
             $data = json_decode($json, true);
             if (!is_array($data))
-                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX /apiKey response is invalid: %s', substr(strval($json), 0, 200)));
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX /apiKey response is invalid [%s]: %s', $ctx, substr(strval($json), 0, 200)));
 
             if (isset($data['error'])) {
                 $msg = strval($data['error']['message'] ?? 'BitMEX API key rejected');
-                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key rejected: %s', $msg));
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key rejected [%s]: %s', $ctx, $msg));
             }
 
             $rows = isset($data[0]) ? $data : [$data];
@@ -191,19 +458,19 @@
             if (null === $entry && count($rows) > 0)
                 $entry = $rows[0];
             if (null === $entry)
-                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key %s was not found in /apiKey response', $this->MaskApiKey()));
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key not found in /apiKey response [%s]', $ctx));
 
             $enabled     = (bool)($entry['enabled'] ?? false);
             $permissions = (array)($entry['permissions'] ?? []);
             $perms_str   = implode(', ', $permissions) ?: '(none)';
-            $core->LogMsg("~C96#INFO(CheckApiKey):~C00 key=%s enabled=%s permissions=[%s]",
-                $this->MaskApiKey(), $enabled ? 'true' : 'false', $perms_str);
+            $core->LogMsg("~C96#INFO(CheckApiKey):~C00 [%s] enabled=%s permissions=[%s]",
+                $ctx, $enabled ? 'true' : 'false', $perms_str);
 
             if (!$enabled)
-                $this->ThrowInvalidBitMEXApiKey('#FATAL: BitMEX API key is disabled on exchange side');
+                $this->ThrowInvalidBitMEXApiKey(sprintf('#FATAL: BitMEX API key disabled [%s]', $ctx));
 
             if (!in_array('order', $permissions, true)) {
-                $core->LogMsg("~C93#AUTH_LIMIT:~C00 BitMEX API key %s has no 'order' permission, permissions=[%s]", $this->MaskApiKey(), $perms_str);
+                $core->LogMsg("~C93#AUTH_LIMIT:~C00 BitMEX key has no 'order' permission [%s], permissions=[%s]", $ctx, $perms_str);
                 return false;
             }
 
@@ -211,7 +478,7 @@
         }
 
         private function IsBitMEXTestnetMode(): bool {
-            return $this->IsTruthyEnvFlag('BMX_TESTNET') || $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
+            return $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
         }
 
         private function ThrowInvalidBitMEXApiKey(string $message): void {
@@ -255,7 +522,7 @@
             $msg = preg_replace('/\s+/', ' ', $body);
             $msg = substr((string)$msg, 0, 300);
 
-            $core->LogError("~C91#KYC_BLOCK:~C00 BitMEX blocked %s (HTTP %d). Account verification/KYC or API permissions may be missing. Body: %s", $api_path, $rcode, $msg);
+            $core->LogError("~C91#KYC_BLOCK:~C00 BitMEX blocked %s (HTTP %d) [%s]. Account verification/KYC or API permissions may be missing. Body: %s", $api_path, $rcode, $this->AuthContext(), $msg);
         }
 
         public function Finalize(bool $eod)     {

@@ -7,7 +7,7 @@
     define('BYBIT_DEFAULT_CATEGORY', 'linear');
     define('BYBIT_DEFAULT_SETTLE_COIN', 'USDT');
 
-    final class BybitEngine extends RestAPIEngine {
+    final class BybitEngine extends WebsockAPIEngine {
 
         const API_BASE_MAIN    = 'https://api.bybit.com/';
         const API_BASE_DEMO    = 'https://api-demo.bybit.com/';
@@ -28,6 +28,17 @@
 
         protected $last_load = ['orders' => 0, 'tickers' => 0, 'positions' => 0];
 
+        // WS transport state (arthurkushman/php-wss)
+        private   ?\WSSC\WebSocketClient $ws_client          = null;
+        private   string                 $ws_last_opcode     = 'text';
+        // Set after each wsReceive(); true = last read returned data (more may follow)
+        private   bool                   $ws_last_had_data   = false;
+
+        // Secondary public WebSocket (market tickers — separate URL from private)
+        private   ?\WSSC\WebSocketClient $ws_client_pub      = null;
+        private   bool                   $ws_pub_connected   = false;
+        private   bool                   $ws_dispatch_is_pub = false; // set by wsOnExtraCycle before dispatch
+
         public function __construct(object $core) {
             parent::__construct($core);
             $this->exchange = 'Bybit';
@@ -42,15 +53,7 @@
             if (!strlen($this->api_secret_raw))
                 throw new Exception('#FATAL: Bybit API secret is empty');
 
-            $profile_name = trim((string)(getenv('BYBIT_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: ''));
-            if (!strlen($profile_name)) {
-                $use_testnet = strtolower(trim((string)(getenv('BYBIT_TESTNET') ?: '0')));
-                $testnet_mode = strtolower(trim((string)(getenv('BYBIT_TESTNET_MODE') ?: 'demo')));
-                if (in_array($use_testnet, ['1', 'true', 'yes', 'on'], true))
-                    $profile_name = in_array($testnet_mode, ['testnet', 'legacy'], true) ? 'testnet' : 'demo';
-                else
-                    $profile_name = 'main';
-            }
+            $profile_name = trim((string)(getenv('BYBIT_PROFILE') ?: getenv('EXCHANGE_PROFILE_NAME') ?: 'main'));
 
             $profile_file = trim((string)(getenv('BYBIT_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bybit.yml'));
             $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
@@ -223,19 +226,42 @@
         public function Initialize() {
             parent::Initialize();
             $this->PlatformStatus();
+            $core      = $this->TradeCore();
+            $cfg       = $core->configuration;
+            $cfg_table = trim($cfg->config_table, '`');
+            if ($cfg_table !== '') {
+                $core->Engine()->sqli()->try_query(
+                    "INSERT IGNORE INTO `$cfg_table` (param, value) VALUES ('exchange_profile', 'main')"
+                );
+            }
+            $profile_name = $cfg->GetValue('exchange_profile', null) ?? 'main';
+            $this->active_profile = $profile_name;
+            $profile_file = trim((string)(getenv('BYBIT_PROFILE_FILE') ?: getenv('EXCHANGE_PROFILE_FILE') ?: 'config/exchanges/bybit.yml'));
+            $profile = $this->LoadExchangeProfile($profile_file, $profile_name, [
+                'api_base' => self::API_BASE_MAIN,
+            ]);
+            $api_base = trim((string)(getenv('BYBIT_API_BASE_URL') ?: ($profile['api_base'] ?? '')));
+            if (!strlen($api_base)) $api_base = self::API_BASE_MAIN;
+            if ('/' !== substr($api_base, -1)) $api_base .= '/';
+            $this->public_api  = $api_base;
+            $this->private_api = $api_base;
+            $this->LogMsg('#CFG: Bybit profile=%s, api=%s', $profile_name, $api_base);
+            $this->wsLoadConfig($profile);
+            if ($this->ws_active)
+                $this->wsReconnect('initial');
         }
 
         public function CheckAPIKeyRights(): bool {
             $core = $this->TradeCore();
-            $key_mask = $this->MaskApiKey();
-            $auth_url = rtrim((string)$this->private_api, '/') . '/v5/user/query-api';
-            $core->LogMsg('~C93#AUTH_CHECK:~C00 endpoint=%s key=%s source=%s', $auth_url, $key_mask, $this->auth_source);
+            $ctx = $this->AuthContext();
+            $core->LogMsg('~C93#AUTH_CHECK:~C00 %s source=%s', $ctx, $this->auth_source);
 
             $json = $this->RequestPrivateAPI('/v5/user/query-api', []);
             $obj = json_decode($json);
             if ($this->IsRequestFailed($obj)) {
-                $this->SetLastErrorEx($obj, 'Bybit private auth check failed', -1);
-                $this->ThrowInvalidBybitApiKey(sprintf('#FATAL: Bybit private auth check failed: %s', strval($obj->retMsg ?? $json)));
+                $msg = strval($obj->retMsg ?? $json);
+                $this->SetLastErrorEx($obj, sprintf('Bybit private auth check failed [%s]: %s', $ctx, $msg), -1);
+                $this->ThrowInvalidBybitApiKey(sprintf('#FATAL: Bybit private auth check failed [%s]: %s', $ctx, $msg));
             }
 
             $permissions = [];
@@ -257,7 +283,7 @@
             $readonly = isset($obj->result->readOnly) ? strval($obj->result->readOnly) : 'n/a';
             $readonly_flag = in_array(strtolower(trim($readonly)), ['1', 'true', 'yes', 'on'], true);
 
-            $core->LogMsg('~C92#AUTH_OK:~C00 Bybit key %s validated, readOnly=%s, permissions: %s', $key_mask, $readonly, $perm_text);
+            $core->LogMsg('~C92#AUTH_OK:~C00 Bybit validated [%s], readOnly=%s, permissions: %s', $ctx, $readonly, $perm_text);
 
             if ($readonly_flag)
                 return false;
@@ -266,7 +292,7 @@
         }
 
         private function IsBybitTestnetMode(): bool {
-            return $this->IsTruthyEnvFlag('BYBIT_TESTNET') || $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
+            return $this->UrlLooksLikeTestnet($this->public_api) || $this->UrlLooksLikeTestnet($this->private_api);
         }
 
         private function ThrowInvalidBybitApiKey(string $message): void {
@@ -730,6 +756,51 @@
             return -1;
         }
 
+        // Total notional value of all open positions (sum of positionValue from REST).
+        // Updated in LoadPositions(); persists for WS-active cycles where REST is skipped.
+        private float $last_pos_notional = 0.0;
+
+        private function FetchAndSetWalletFunds(): void {
+            $core = $this->TradeCore();
+            // Try UNIFIED first (newer accounts), fall back to CONTRACT (classic derivatives).
+            foreach (['UNIFIED', 'CONTRACT'] as $acc_type) {
+                $wjson = $this->RequestPrivateAPI('/v5/account/wallet-balance', ['accountType' => $acc_type]);
+                $wobj  = $wjson ? json_decode($wjson) : null;
+                if ($wobj && !$this->IsRequestFailed($wobj)) {
+                    $wlist = $wobj->result->list ?? [];
+                    if (is_array($wlist) && count($wlist) > 0) {
+                        $wa = $wlist[0];
+                        $total_eq  = floatval($wa->totalEquity         ?? $wa->totalWalletBalance ?? 0);
+                        $btc_price = $this->get_btc_price();
+                        if ($total_eq > 0) {
+                            $core->total_funds = $total_eq;
+                            $core->total_btc   = $btc_price > 0 ? $total_eq / $btc_price : 0;
+                            // funds_usage = position_notional / equity * 100 (>100% when leveraged).
+                            // Use last_pos_notional from LoadPositions(); fallback to 0 on first cycle.
+                            $core->used_funds = 100.0 * $this->last_pos_notional / $total_eq;
+                            $core->LogMsg('~C94#WALLET:~C00 accountType=%s equity=%.2f pos_notional=%.2f usage=%.1f%%',
+                                $acc_type, $total_eq, $this->last_pos_notional, $core->used_funds);
+                        } else {
+                            $core->LogMsg('~C93#WALLET_WARN:~C00 accountType=%s total_eq=0, raw=%s',
+                                $acc_type, substr($wjson, 0, 200));
+                        }
+                        break;
+                    } else {
+                        $core->LogMsg('~C93#WALLET_WARN:~C00 accountType=%s empty list, raw=%s',
+                            $acc_type, substr($wjson, 0, 200));
+                    }
+                } else {
+                    $err = $wobj ? json_encode($wobj) : ('no response: ' . $this->curl_last_error);
+                    $core->LogMsg('~C91#WALLET_ERR:~C00 accountType=%s failed: %s', $acc_type, substr($err, 0, 300));
+                }
+            }
+        }
+
+        public function LoadTrades(): int {
+            $this->FetchAndSetWalletFunds();
+            return parent::LoadTrades();
+        }
+
         public function LoadPositions() {
             parent::LoadPositions();
             $core = $this->TradeCore();
@@ -754,6 +825,7 @@
             }
 
             $current_pos = [];
+            $total_pos_value = 0.0;
             $list = $obj->result->list ?? [];
             if (is_array($list))
                 foreach ($list as $rec) {
@@ -767,13 +839,19 @@
                     if ($size == 0)
                         continue;
 
+                    // positionValue = |size| * markPrice (provided by Bybit for linear)
+                    $total_pos_value += abs(floatval($rec->positionValue ?? 0));
+
                     $side = strtolower(strval($rec->side ?? 'buy'));
                     if ('sell' === $side)
                         $size *= -1;
 
                     $pair_id = $this->pairs_map_rev[$symbol];
-                    $current_pos[$pair_id] = $size;
+                    $current_pos[$pair_id] = ($current_pos[$pair_id] ?? 0) + $size;
                 }
+
+            // Store for FetchAndSetWalletFunds() which runs in LoadTrades() each cycle.
+            $this->last_pos_notional = $total_pos_value;
 
             $core->ImportPositions($current_pos);
             $this->last_load['positions'] = time();
@@ -918,6 +996,282 @@
 
             return $info;
         }
+
+        // -------------------------------------------------------------------------
+        // WebsockAPIEngine transport — arthurkushman/php-wss (WSSC)
+        // -------------------------------------------------------------------------
+
+        protected function wsConnect(string $url): bool {
+            try {
+                $config = new \WSSC\Components\ClientConfig();
+                $config->setTimeout(10); // connect timeout
+                $client = new \WSSC\WebSocketClient($url, $config);
+                if ($client->isConnected()) {
+                    $this->ws_client = $client;
+                    // WSSC does not expose the raw socket — use short read timeout
+                    // instead of stream_set_blocking() to avoid starving the bot loop.
+                    $this->ws_client->setTimeout(0, 10000); // 10 ms read timeout
+                    $this->ws_last_had_data = false;
+                    $this->wsOnConnected();
+
+                    // Also connect the public market-data stream (tickers)
+                    $pub_url = $this->wsNextEndpoint('public');
+                    if ($pub_url !== null)
+                        $this->wsConnectPublic($pub_url);
+
+                    return true;
+                }
+            } catch (\Throwable $E) {
+                $this->LogMsg("~C91#WS_CONNECT_FAIL:~C00 %s", $E->getMessage());
+            }
+            $this->ws_client = null;
+            return false;
+        }
+
+        private function wsConnectPublic(string $url): void {
+            try {
+                $config = new \WSSC\Components\ClientConfig();
+                $config->setTimeout(10);
+                $client = new \WSSC\WebSocketClient($url, $config);
+                if ($client->isConnected()) {
+                    $this->ws_client_pub = $client;
+                    $this->ws_client_pub->setTimeout(0, 10000);
+                    $this->ws_pub_connected = true;
+                    // Bybit public endpoint — no auth, subscribe immediately
+                    $syms = array_keys($this->pairs_map_rev ?? []);
+                    if (!empty($syms)) {
+                        $args = array_map(fn($s) => 'tickers.' . $s, $syms);
+                        $this->ws_client_pub->send(json_encode(['op' => 'subscribe', 'args' => $args]));
+                        $this->LogMsg("~C93#WS_PUB_SUBSCRIBE:~C00 Bybit public tickers subscribed (%d symbols)", count($syms));
+                    }
+                    return;
+                }
+            } catch (\Throwable $E) {
+                $this->LogMsg("~C91#WS_PUB_CONNECT_FAIL:~C00 %s", $E->getMessage());
+            }
+            $this->ws_client_pub   = null;
+            $this->ws_pub_connected = false;
+        }
+
+        protected function wsClose(): void {
+            $this->ws_client     = null;
+            $this->ws_client_pub = null;
+            $this->ws_pub_connected = false;
+        }
+
+        protected function wsSend(string $data): bool {
+            if (!$this->ws_client) return false;
+            try {
+                $this->ws_client->send($data);
+                return true;
+            } catch (\Throwable $E) {
+                $this->LogMsg("~C91#WS_SEND_FAIL:~C00 %s", $E->getMessage());
+                return false;
+            }
+        }
+
+        protected function wsReceive(): ?string {
+            if (!$this->ws_client) return null;
+            try {
+                $raw = $this->ws_client->receive();
+            } catch (\Throwable $E) {
+                $this->ws_last_had_data = false;
+                return null;
+            }
+            $this->ws_last_opcode = $this->ws_client->getLastOpcode() ?? 'text';
+            $result = (is_string($raw) && $raw !== '') ? $raw : null;
+            $this->ws_last_had_data = ($result !== null);
+            return $result;
+        }
+
+        protected function wsLastOpcode(): string {
+            return $this->ws_last_opcode;
+        }
+
+        protected function wsUnreaded(): int {
+            // WSSC does not expose the raw socket for peeking.
+            // Return 1 when the last receive returned data (more frames may follow);
+            // the drainWsBuffer loop always attempts at least one read on its own.
+            return ($this->ws_client && $this->ws_last_had_data) ? 1 : 0;
+        }
+
+        protected function wsIsConnected(): bool {
+            return $this->ws_client !== null && $this->ws_client->isConnected();
+        }
+
+        protected function wsPing(): void {
+            // Bybit v5: send {"op":"ping"} as heartbeat
+            if ($this->ws_client)
+                $this->ws_client->send(json_encode(['op' => 'ping']));
+            if ($this->ws_client_pub) {
+                try { $this->ws_client_pub->send(json_encode(['op' => 'ping'])); } catch (\Throwable $_) {}
+            }
+        }
+
+        protected function wsPong(string $payload = ''): void {
+            if ($this->ws_client)
+                $this->ws_client->send(json_encode(['op' => 'pong']));
+        }
+
+        // -------------------------------------------------------------------------
+        // WebsockAPIEngine protocol — Bybit v5 private stream
+        // -------------------------------------------------------------------------
+
+        protected function wsRequiresAuth(): bool {
+            return true;
+        }
+
+        protected function wsBuildAuthMessage(): string {
+            // Bybit v5 WS auth: HMAC-SHA256("GET/realtime" + expires)
+            // expires = current_ms + 10_000 (10 s into the future)
+            $expires = intval(round(microtime(true) * 1000)) + 10000;
+            $sig_str = 'GET/realtime' . $expires;
+            $sig = hash_hmac('sha256', $sig_str, $this->api_secret_raw);
+            return json_encode([
+                'op'   => 'auth',
+                'args' => [$this->apiKey, $expires, $sig],
+            ]);
+        }
+
+        protected function wsSubscribeAll(): void {
+            if (!$this->ws_authenticated) {
+                $auth_msg = $this->wsBuildAuthMessage();
+                if ($this->wsSend($auth_msg))
+                    $this->LogMsg("~C93#WS_AUTH:~C00 auth message sent");
+                return;
+            }
+            $msg = json_encode(['op' => 'subscribe', 'args' => ['order']]);
+            $this->wsSend($msg);
+            $this->LogMsg("~C93#WS_SUBSCRIBE:~C00 subscribed to order topic");
+            $this->ws_subscribe_after = 0;
+        }
+
+        protected function wsDispatch(mixed $data): void {
+            // Pong response
+            if (isset($data->op) && $data->op === 'pong') {
+                $this->ws_last_ping = time();
+                return;
+            }
+
+            // Server-initiated ping — respond on the correct connection
+            if (isset($data->op) && $data->op === 'ping') {
+                $this->ws_last_ping = time();
+                $target = $this->ws_dispatch_is_pub ? $this->ws_client_pub : $this->ws_client;
+                if ($target) try { $target->send(json_encode(['op' => 'pong'])); } catch (\Throwable $_) {}
+                return;
+            }
+
+            // Auth response: {"op":"auth","success":true}
+            if (isset($data->op) && $data->op === 'auth') {
+                if (!empty($data->success)) {
+                    $this->ws_authenticated = true;
+                    $this->LogMsg("~C92#WS_AUTH_OK:~C00 Bybit WS authenticated");
+                    // Immediately subscribe after successful auth
+                    $msg = json_encode(['op' => 'subscribe', 'args' => ['order']]);
+                    $this->wsSend($msg);
+                    $this->ws_subscribe_after = 0;
+                } else {
+                    $ret = $data->ret_msg ?? json_encode($data);
+                    $this->LogMsg("~C91#WS_AUTH_FAIL:~C00 %s", $ret);
+                    $this->wsReconnect('auth rejected');
+                }
+                return;
+            }
+
+            // Subscribe confirmation
+            if (isset($data->op) && $data->op === 'subscribe') {
+                $this->LogMsg("~C93#WS_SUB_CONFIRM:~C00 %s", json_encode($data));
+                return;
+            }
+
+            // Order push: {"topic":"order","data":[...]}
+            if (isset($data->topic) && $data->topic === 'order' && isset($data->data)) {
+                foreach ((array)$data->data as $order)
+                    if (is_object($order))
+                        $this->wsOnOrderUpdate($order);
+                return;
+            }
+
+            // Public tickers push: {"topic":"tickers.BTCUSDT","data":{"bid1Price":"...","ask1Price":"...","lastPrice":"...",...}}
+            if (isset($data->topic) && str_starts_with($data->topic, 'tickers.') && isset($data->data)) {
+                $symbol = substr($data->topic, 8); // strip "tickers."
+                if (isset($this->pairs_map_rev[$symbol])) {
+                    $pair_id = $this->pairs_map_rev[$symbol];
+                    $d   = $data->data;
+                    $bid = floatval($d->bid1Price ?? 0);
+                    $ask = floatval($d->ask1Price ?? 0);
+                    if ($bid > 0 && $ask > 0 && $ask >= $bid) {
+                        $tinfo = &$this->pairs_info[$pair_id];
+                        $tinfo->bid_price  = $bid;
+                        $tinfo->ask_price  = $ask;
+                        $tinfo->last_price = floatval($d->lastPrice ?? 0) ?: ($bid + $ask) / 2;
+                        $tinfo->OnUpdate();
+                        $this->ws_ticker_t = time();
+                    }
+                }
+                return;
+            }
+
+            $topic = $data->topic ?? ($data->op ?? '');
+            if ($topic !== '')
+                $this->LogMsg("~C93#WS_UNKNOWN:~C00 topic=%s", $topic);
+        }
+
+        protected function wsOnExtraCycle(): void {
+            if (!$this->ws_client_pub) return;
+
+            // Drain public client frames (tickers)
+            $t_start = microtime(true);
+            do {
+                try {
+                    $raw = $this->ws_client_pub->receive();
+                } catch (\Throwable $_) {
+                    // WSSC throws on read timeout (10 ms) — same as private client; just stop draining
+                    break;
+                }
+                if (!is_string($raw) || $raw === '') break;
+
+                $this->ws_recv_packets++;
+                $this->ws_recv_bytes  += strlen($raw);
+                $this->ws_pub_packets++;
+                $this->ws_last_data_t  = time();
+
+                if (isset($raw[0]) && ('{' === $raw[0] || '[' === $raw[0])) {
+                    $data = json_decode($raw, false);
+                    if (is_object($data) || is_array($data)) {
+                        $this->ws_dispatch_is_pub = true;
+                        $this->wsDispatch($data);
+                        $this->ws_dispatch_is_pub = false;
+                    }
+                }
+            } while ((microtime(true) - $t_start) < 0.5);
+
+            // Reconnect if public client actually disconnected
+            if (!$this->ws_client_pub->isConnected()) {
+                $this->ws_pub_connected = false;
+                $this->LogMsg("~C91#WS_PUB_DROPPED:~C00 public stream disconnected — reconnecting");
+                $pub_url = $this->wsNextEndpoint('public');
+                if ($pub_url !== null) $this->wsConnectPublic($pub_url);
+            }
+        }
+
+        private function wsOnOrderUpdate(\stdClass $order): void {
+            $changed = $this->UpdateOrder($order);
+            $symbol  = strval($order->symbol ?? '');
+            $status  = strval($order->orderStatus ?? '');
+            $this->LogMsg("~C94#WS_ORDER:~C00 %s [%s] status=%s filled=%.6f changed=%s",
+                $symbol,
+                $order->orderLinkId ?? '?',
+                $status,
+                floatval($order->cumExecQty ?? 0),
+                $changed ? 'yes' : 'no');
+
+            if ($changed && ($status === 'Filled' || $status === 'PartiallyFilled')) {
+                if (isset($this->pairs_map_rev[$symbol]))
+                    $this->wsMarkFilledPair($this->pairs_map_rev[$symbol]);
+            }
+        }
+
 
     }; // BybitEngine
 

@@ -300,4 +300,72 @@
             return $var->get();
         }
 
+        /**
+         * Сериализует текущее состояние контекста в plain-объект для записи в exec_context.
+         * Должен вызываться после ExtSigVerify() + ignore_by формирования, но ДО try-catch заявки.
+         */
+        public function toSnapshot(string $action = 'pending', string $action_detail = ''): stdClass {
+            $snap = new stdClass();
+            $snap->ts        = date_ms(SQL_TIMESTAMP3);
+            $snap->action    = $action;         // 'trade', 'wait', 'skip', 'block', 'ignore'
+            $snap->detail    = $action_detail;  // причина ожидания или тег игнора
+            $snap->pair      = $this->tinfo->pair ?? '';
+            $snap->pair_id   = $this->pair_id;
+
+            // --- позиция ---
+            $snap->curr_pos     = (float)$this->curr_pos;
+            $snap->target_pos   = (float)$this->target_pos;
+            $snap->bias         = (float)$this->bias;
+            $snap->amount       = (float)$this->amount;
+            $snap->cost         = (float)$this->cost;
+            $snap->pos_offset   = (float)($this->pos_offset ?? 0);
+            $snap->trade_dir    = $this->trade_dir_sign();
+
+            // --- цена ---
+            $snap->price        = (float)$this->price;
+            $snap->btc_price    = (float)$this->btc_price;
+
+            // --- лимиты ---
+            $snap->min_cost     = (float)$this->min_cost;
+            $snap->max_cost     = (float)$this->max_cost;
+            $snap->cost_limit   = (float)$this->cost_limit;
+            $snap->min_amount   = (float)$this->min_amount;
+            $snap->max_amount   = is_callable($this->max_amount) ? 0.0 : (float)$this->max_amount;
+
+            // --- сигнал ---
+            $sig = $this->ext_sig;
+            if (is_object($sig)) {
+                $snap->signal = (object)[
+                    'id'         => (int)$sig->id,
+                    'cur_delta'  => (float)($this->cur_delta ?? 0),
+                    'tgt_delta'  => (float)($this->tgt_delta ?? 0),
+                    'alt_bias'   => (float)($this->alt_bias ?? 0),
+                ];
+            } else {
+                $snap->signal = null;
+            }
+
+            // --- батч ---
+            $batch = $this->batch;
+            if (is_object($batch)) {
+                $snap->batch = (object)[
+                    'id'         => (int)$batch->id,
+                    'lock'       => (int)$batch->lock,
+                    'start_pos'  => (float)$batch->start_pos,
+                    'target_pos' => (float)$batch->target_pos,
+                    'exec_amount'=> (float)$batch->exec_amount,
+                ];
+            } else {
+                $snap->batch = null;
+            }
+
+            // --- причины игнора ---
+            $snap->ignore_by = array_map(
+                fn($r) => ['code' => $r[0], 'reason' => $r[1]],
+                $this->ignore_by
+            );
+
+            return $snap;
+        }
+
     } // end of class TradingContext

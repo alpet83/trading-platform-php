@@ -10,6 +10,12 @@ profiles:
     recv_window: 5000
     allow_spot_fallback: false
     require_private_auth_check: true
+    ws_public:
+        - wss://stream.bybit.com/v5/public/linear
+    ws_private:
+        - wss://stream.bybit.com/v5/private
+    ws_endpoint_strategy: failover
+    ws_disabled: false
 
   demo:
     api_base: https://api-demo.bybit.com/
@@ -18,6 +24,12 @@ profiles:
     recv_window: 5000
     allow_spot_fallback: false
     require_private_auth_check: true
+    ws_public:
+        - wss://stream.bybit.com/v5/public/linear   # demo has no own public stream; use mainnet market data
+    ws_private:
+        - wss://stream-demo.bybit.com/v5/private
+    ws_endpoint_strategy: primary_only
+    ws_disabled: false
 
   testnet:
     api_base: https://api-testnet.bybit.com/
@@ -26,3 +38,9 @@ profiles:
     recv_window: 5000
     allow_spot_fallback: false
     require_private_auth_check: true
+    ws_public:
+        - wss://stream-testnet.bybit.com/v5/public/linear
+    ws_private:
+        - wss://stream-testnet.bybit.com/v5/private
+    ws_endpoint_strategy: primary_only
+    ws_disabled: false

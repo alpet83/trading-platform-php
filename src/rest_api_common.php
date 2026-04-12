@@ -38,6 +38,7 @@
         // endpoints
         protected   $public_api    = 'http://localhost/';
         protected   $private_api   = 'http://localhost/';
+        protected   string $active_profile = 'main';
         protected   $btc_price     = 0;
         protected   $btc_history   = []; // map of date => price
         protected   $last_request  = '';
@@ -52,6 +53,13 @@
         public      $rate_reset = 0;
         public      ?bool $api_key_trade_allowed = null;
         public      int $api_key_rights_checked_at = 0;
+
+        // Server failover state — populated by LoadServerList() via exchange profile 'api_servers' key.
+        protected   array $api_servers  = [];
+        protected   array $server_errors = [];
+
+        // TraceRoute cache: [host => ['at' => unix_ts, 'out' => string]]
+        protected   array $trace_cache   = [];
 
 
         public static function CurlInstance() {
@@ -84,8 +92,116 @@
             return $nonce;      
         }
 
-        protected function SwitchAPIServer(string $current) {
-            return false;
+        // Load REST server list from the exchange profile passed to LoadExchangeProfile().
+        // Must be called after public_api / private_api are set (i.e. after testnet overrides).
+        // Falls back to [public_api, private_api] when 'api_servers' key is absent from profile.
+        protected function LoadServerList(array $profile): void {
+            $from_profile = $profile['api_servers'] ?? [];
+            $servers = is_array($from_profile) ? array_values(array_filter($from_profile)) : [];
+            if (empty($servers))
+                $servers = array_values(array_unique([$this->public_api, $this->private_api]));
+            $this->api_servers = $servers;
+            foreach ($servers as $srv) {
+                if (!isset($this->server_errors[$srv]))
+                    $this->server_errors[$srv] = 0;
+            }
+            $this->LogMsg("~C96#INIT:~C00 loaded %d REST servers: %s",
+                count($servers), implode(', ', $servers));
+        }
+
+        // Record a QoS-relevant failure for a server URL.
+        // Suitable for: connect-timeouts, HTTP 429 / 5xx.
+        // Not for application-level rejections (e.g. Binance -2015 auth error).
+        protected function RegisterServerError(string $url, string $reason): void {
+            if (!isset($this->server_errors[$url]))
+                $this->server_errors[$url] = 0;
+            $this->server_errors[$url]++;
+            $this->LogMsg("~C91#QoS:~C00 server %s error #%d [%s]",
+                $url, $this->server_errors[$url], $reason);
+        }
+
+        // Switch the failing endpoint to the candidate with the fewest recorded QoS errors.
+        // Only updates the specific property (public_api or private_api) that matches $current.
+        protected function SwitchAPIServer(string $current): mixed {
+            $this->RegisterServerError($current, 'connect-timeout');
+
+            $servers = !empty($this->api_servers)
+                ? $this->api_servers
+                : array_values(array_unique([$this->public_api, $this->private_api]));
+
+            $best        = null;
+            $best_errors = PHP_INT_MAX;
+            foreach ($servers as $srv) {
+                if ($srv === $current) continue;
+                $errs = $this->server_errors[$srv] ?? 0;
+                if ($errs < $best_errors) {
+                    $best_errors = $errs;
+                    $best        = $srv;
+                }
+            }
+            if ($best === null) return false; // only one distinct server, nothing to switch to
+
+            $from_errors = $this->server_errors[$current] ?? 0;
+            $this->LogMsg("~C91#WARN:~C00 SwitchAPIServer: %s (errors=%d) \u2192 %s (errors=%d)",
+                $current, $from_errors, $best, $best_errors);
+
+            foreach (['public_api', 'private_api'] as $key) {
+                if ($this->$key === $current) {
+                    $this->LogMsg("~C91#WARN:~C00 switching~C91 $key~C00 from %s to %s", $this->$key, $best);
+                    $this->$key = $best;
+                }
+            }
+            return $best;
+        }
+
+        // Route diagnostic for $host, result cached 600 s.
+        // Shows default gateway + per-destination routing decision from /proc/net/route.
+        // Traceroute intermediate hops are usually invisible inside Docker/NAT (ICMP filtered upstream),
+        // so we limit to 2 hops and reduce timeout — avoids blocking 10 s with all * * *.
+        // $host MUST come from internal config, never from user/exchange input.
+        protected function TraceRoute(string $host, int $max_hops = 5): string {
+            $now = time();
+            if (isset($this->trace_cache[$host]) && ($now - $this->trace_cache[$host]['at']) < 600)
+                return $this->trace_cache[$host]['out'];
+
+            $h     = escapeshellarg($host);
+            $lines = [];
+
+            // Parse /proc/net/route (no external tools required).
+            // Columns: Iface Destination Gateway Flags ... Mask
+            // Values are hex little-endian 32-bit integers.
+            $default_gw = '';
+            $proc_route = @file('/proc/net/route', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (is_array($proc_route)) {
+                array_shift($proc_route); // drop header
+                foreach ($proc_route as $row) {
+                    $cols = preg_split('/\s+/', trim($row));
+                    if (count($cols) < 8) continue;
+                    [$iface, $dest_hex, $gw_hex] = $cols;
+                    $flags = hexdec($cols[3]);
+                    // RTF_UP=0x01 RTF_GATEWAY=0x02 — default route: dest=0, flags has GATEWAY
+                    if ($dest_hex === '00000000' && ($flags & 0x02)) {
+                        // hex little-endian → IP
+                        $gw_bytes = array_map('hexdec', str_split($gw_hex, 2));
+                        $default_gw = sprintf("%d.%d.%d.%d via %s",
+                            $gw_bytes[3], $gw_bytes[2], $gw_bytes[1], $gw_bytes[0], $iface);
+                        break;
+                    }
+                }
+            }
+            if ($default_gw !== '') $lines[] = "default-gw: $default_gw";
+
+            // Quick traceroute — 2 hops, 6 s timeout
+            $out = [];
+            exec("timeout 6 traceroute -n -T -p 443 -m 2 $h 2>&1", $out);
+            if (empty($out))
+                exec("timeout 6 traceroute -n -m 2 $h 2>&1", $out);
+            if (!empty($out))
+                $lines[] = implode("\n", array_slice($out, 0, 3));
+
+            $result = implode("\n", $lines) ?: '(route info unavailable)';
+            $this->trace_cache[$host] = ['at' => $now, 'out' => $result];
+            return $result;
         }
 
         protected function EncodeParams(&$params, &$headers, $method) {
@@ -199,9 +315,16 @@
 
         protected function MaskApiKey(?string $api_key = null): string {
             $api_key = trim(strval($api_key ?? $this->apiKey ?? ''));
-            if (strlen($api_key) <= 8)
-                return strlen($api_key) > 0 ? $api_key : 'short-key';
-            return substr($api_key, 0, 4) . '...' . substr($api_key, -4);
+            if (strlen($api_key) === 0) return 'no-key';
+            if (strlen($api_key) <= 4) return $api_key;
+            return substr($api_key, 0, 3) . '***';
+        }
+
+        protected function AuthContext(): string {
+            return sprintf('profile=%s api=%s key=%s',
+                $this->active_profile,
+                rtrim($this->private_api, '/'),
+                $this->MaskApiKey());
         }
 
         protected function SecretToString($secret): string {
@@ -460,7 +583,8 @@
                 $error = curl_error($ch);
                 $this->curl_last_error = $error;
                 $rcode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-                $this->curl_response = array('code' => $rcode);
+                $local_ip = curl_getinfo($ch, CURLINFO_LOCAL_IP);
+                $this->curl_response = array('code' => $rcode, 'local_ip' => $local_ip);
                 if (strpos($error, 'Connection timed out') !== false)
                     $this->SwitchAPIServer($endpoint);
             }
@@ -470,7 +594,11 @@
                 $header = substr($result, 0, $header_size);
                 $result = substr($result, $header_size);
                 $rcode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-                $this->curl_response = array('headers' => parse_headers($header), 'body' => $result, 'code' => $rcode);
+                $local_ip = curl_getinfo($ch, CURLINFO_LOCAL_IP);
+                $this->curl_response = array('headers' => parse_headers($header), 'body' => $result, 'code' => $rcode, 'local_ip' => $local_ip);
+                // HTTP 429 (rate-limited) and 5xx (server error) indicate poor server health
+                if ($rcode === 429 || ($rcode >= 500 && $rcode < 600))
+                    $this->RegisterServerError($endpoint, "HTTP $rcode");
             }
 
 
