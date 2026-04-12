@@ -72,10 +72,43 @@ Frequent runtime/API suffixes:
 
 Additional exchange-specific analytical/aux tables may appear (`__summary`, `__wallet_history`, `__funding`, `__trades`, etc.) and can be enabled incrementally.
 
+## Runtime bot table template: `src/sql/bot_tables.sql`
+
+New bot-scoped tables that must exist both at creation time **and** at runtime are defined
+as templates in `src/sql/bot_tables.sql`.  
+The placeholder `#exchange` is substituted at execution time with the actual exchange prefix
+(e.g. `bybit_bot`, `bitmex`).
+
+```sql
+-- example entry in bot_tables.sql
+CREATE TABLE IF NOT EXISTS `#exchange__exec_context` (
+    account_id   INT NOT NULL,
+    pair_id      INT NOT NULL,
+    ts           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    context_json MEDIUMTEXT NOT NULL,
+    PRIMARY KEY (account_id, pair_id),
+    KEY idx_ts (ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+**Two code paths load the template — both must stay in sync:**
+
+| Path | When | How |
+|------|------|-----|
+| `TradingCore::EnsureBotTables()` | Bot startup (`Initialize()`) | `str_replace('#exchange', $engine->exchange, ...)` |
+| `BotCreator::Create()` (lib/bot_creator.php) | Web UI bot creation | same substitution, runs in same DB transaction |
+
+**Rule:** When adding a new bot-scoped table, add only one `CREATE TABLE IF NOT EXISTS \`#exchange__...\`` block to `bot_tables.sql`.  
+Do **not** duplicate it in `bot_creator.php`'s `$tables_to_create` array — that array is for
+tables whose DDL cannot share the unified template pattern.
+
 ## Practical bootstrap strategy
 
 1. Apply mandatory baseline tables.
-2. Use instance API bot creation flow to create per-bot config and major per-prefix tables.
-3. Validate runtime and only then add extra analytical tables from the dump.
+2. Use instance API bot creation flow to create per-bot config and major per-prefix tables
+   (this also applies `bot_tables.sql` via `BotCreator::Create()`).
+3. Validate runtime — `TradingCore::EnsureBotTables()` will idempotently ensure any
+   template tables that survived restarts or were added after creation.
+4. Only then add extra analytical tables from the dump.
 
 This keeps bootstrap small while preserving a canonical source of truth in `trading-structure.sql`.

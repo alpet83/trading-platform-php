@@ -1,4 +1,4 @@
-# GitHub Copilot — Project Instructions: sigsys-ts
+# GitHub Copilot — Project Instructions: trading-platform-php (RUNTIME / WORK COPY)
 
 > Loaded into every Copilot Agent session.
 > Keep concise; store only durable project rules and decision guidance here.

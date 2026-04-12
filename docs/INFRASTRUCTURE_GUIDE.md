@@ -26,6 +26,7 @@
 | **Test HA failover scenarios** | [TESTING_HA_REPLICATION.md](./TESTING_HA_REPLICATION.md) |
 | **bot-manager + Pass integration** | [BOT_MANAGER_AND_PASS.md](./BOT_MANAGER_AND_PASS.md) |
 | **Container naming reference** | [CONTAINER_NAMING.md](./CONTAINER_NAMING.md) |
+| **Exchange API key IP whitelist & egress routing** | [EXCHANGE_API_KEY_NETWORKING.md](./EXCHANGE_API_KEY_NETWORKING.md) |
 
 ---
 

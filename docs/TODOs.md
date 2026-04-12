@@ -166,6 +166,111 @@
 
 ---
 
+## 🔧 REFACTORING PLAN - Масштабные рефакторинги
+
+### 1. Переименование БД сигнального сервера: `trading` → `sigsys`
+
+**Проблема.** Сигнальный сервер (sigsys-ts / signals-server) использует БД с именем `trading` —
+совпадает с основной trading-БД платформы. Это источник путаницы: в docker-окружении хост и
+имя БД сходятся в одном параметре, что уже приводило к передаче имени хоста вместо имени БД
+(`init_remote_db('trd-web.trd_default')` вместо `init_remote_db('trading')`).
+
+**Целевое имя:** `sigsys`
+
+**Scope изменений:**
+- `docker-compose.yml` / `.envs/` — переменные `SIGNALS_DB_NAME`, `DATABASE_URL` для sigsys-контейнеров
+- `src/lib/db_config.php` (runtime stub в контейнере) — добавить секцию `sigsys`
+- `src/lib/auth_check.php` — `db_candidates` уже включает `sigsys` (добавлено 54f80fc); убрать `trading` из списка после миграции
+- `sigsys-ts/backend/` и PHP `signals-server/` — все места с `init_remote_db('trading')` или `DATABASE_URL` указывающим на trading
+- `docker/mariadb-init/` — создание схемы и пользователя для `sigsys`
+- Тесты и документация
+
+**Порядок выполнения:**
+1. Добавить алиас `sigsys` рядом с `trading` (уже готово в `auth_check.php`)
+2. Создать БД `sigsys` как копию `trading` (для сигнальных таблиц)
+3. Переключить sigsys-ts backend на новую БД, убедиться что `chat_users` / сигнальные таблицы есть там
+4. Удалить `trading` из списка кандидатов в `auth_check.php`
+5. Удалить старую `trading`-БД на сигнальном сервере (или отключить от него)
+
+---
+
+### 2. Разделение исходников `src/` по подкаталогам
+
+**Проблема.** Все ~40 PHP-файлов лежат в корне `src/` вперемешку: ядро системы, движки бирж,
+вспомогательные утилиты, CLI-инструменты. Навигация затруднена, зависимости неочевидны.
+
+**Предлагаемая структура:**
+
+```
+src/
+├── core/               # Ядро: абстрактный движок и цикл
+│   ├── trading_core.php
+│   ├── trading_engine.php
+│   ├── trading_loop.php
+│   ├── trading_common.php
+│   ├── trading_context.php
+│   ├── trade_config.php
+│   ├── trade_logging.php
+│   ├── exec_opt.php
+│   └── bot_globals.php
+│
+├── engines/            # Реализации конкретных бирж
+│   ├── rest_api_common.php
+│   ├── ws_api_common.php
+│   ├── impl_binance.php
+│   ├── impl_bitmex.php
+│   ├── impl_bybit.php
+│   ├── impl_bitfinex.php
+│   └── impl_deribit.php
+│
+├── orders/             # Ордера и батчи
+│   ├── orders_lib.php
+│   ├── orders_batch.php
+│   └── market_maker.php
+│
+├── feeds/              # Позиции, сигналы, тикеры
+│   ├── pos_feed.php
+│   ├── ext_signals.php
+│   ├── pairs_map.php
+│   ├── ticker_info.php
+│   └── last_pos.php
+│
+├── reporting/          # Репортинг и логи
+│   ├── reporting.php
+│   └── log_cleanup.php
+│
+├── infra/              # Инфраструктура: БД, события, бэкапы
+│   ├── db_client.php
+│   ├── event_sender.php
+│   ├── backup_tables.php
+│   ├── db_backup.php
+│   └── datafeed_manager.php
+│
+├── lib/                # (уже существует) утилиты и конфигурация
+├── cli/                # (уже существует) CLI-инструменты
+├── web-ui/             # (уже существует) веб-интерфейс
+│
+├── bot_manager.php     # Точка входа менеджера ботов
+├── bot_instance.php    # Точка входа экземпляра бота
+├── common.php          # Глобальный bootstrap
+└── compos.php          # Composer autoload wrapper
+```
+
+**Scope изменений:**
+- Переместить файлы по каталогам
+- Обновить все `require`/`include` (их много в `common.php`, `bot_instance.php`, `bot_manager.php`)
+- Обновить пути в `Dockerfile` и скриптах запуска (`run-bot.sh`)
+- Обновить пути в `src/config/` если там есть абсолютные ссылки
+
+**Порядок выполнения:**
+1. Аудит всех `require`/`require_once`/`include` — построить граф зависимостей
+2. Начать с `engines/` — наименее связанный с bootstrap-файлами слой
+3. Затем `orders/`, `feeds/`, `reporting/`
+4. Последним — `core/` (максимальное число входящих зависимостей)
+5. `common.php` обновить последним как центральный регистр include'ов
+
+---
+
 ## 📋 Deferred из предыдущего списка
 
 - [ ] Replace PNG rendering paths that currently depend on php-gd with SVG rendering in bot/report images after system stabilization.
