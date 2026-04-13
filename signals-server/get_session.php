@@ -8,7 +8,7 @@
     error_reporting(E_ERROR | E_PARSE);
     mysqli_report(MYSQLI_REPORT_ERROR);  
 
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) 
         die("#FATAL: DB inaccessible!\n");    
     

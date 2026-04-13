@@ -37,10 +37,10 @@ consumed by the NestJS overlay (`signals-server-ts`).
 Import the schema prototype to create the required tables:
 
 ```bash
-mysql -u root -p trading < trading_proto.sql
+mysql -u root -p sigsys < trading_proto.sql
 ```
 
-The database name is `trading` by default. Adjust in `db_config.php` if needed.
+The database name is `sigsys` by default. Adjust in `db_config.php` if needed.
 
 ## Configuration
 

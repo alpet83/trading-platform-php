@@ -16,7 +16,7 @@
 
     require_once DB_CONFIG;
 
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) {
         http_response_code(500);
         printf("FATAL: DB inaccessible!");
@@ -28,8 +28,8 @@
     $debug = rqs_param("debugging", false);
     error_reporting(E_ERROR | E_PARSE | E_WARNING);
 ?>
-<!DOCTYPE html>
-<HTML>
+    <!DOCTYPE html>
+    <HTML>
     <HEAD>
     <TITLE><?php echo $title; ?></TITLE>   
     <script type="text/javascript">      
@@ -54,7 +54,7 @@
     }
     </script>
     </HEAD>
-<BODY onLoad='onLoad()'>
+    <BODY onLoad='onLoad()'>
 <?php
     if (session_status() == PHP_SESSION_NONE) 
         session_start();
@@ -101,7 +101,7 @@
     if (is_null($id)) 
         log_cmsg("#STRANGE: user id for %s not retrieved", $user_name);
 
-?>  </PRE>      
+    ?>  </PRE>      
     <h2>Server time:<?php echo gmdate('H:i:s') ?></h2>
     <h3>Session ID: <?php echo $_SESSION['session_id']; ?></h3>
     <h3>Auth token: <?php echo $atok; ?></h3>        
@@ -128,7 +128,7 @@
     }
     sync_session();
     die('.');
-LOGIN:
+    LOGIN:
     $user_name = rqs_param('login', false, 'none');
     
     if (!$user_name) {
@@ -200,8 +200,8 @@ LOGIN:
     
     die('.');
 
-LOGIN_FORM:      
+    LOGIN_FORM:      
 ?>
-<form action="tele_login.php" method="POST">
+    <form action="tele_login.php" method="POST">
     Telegram login<input type="text" name="login" value="@user"><input type="submit" value="Login">  
-</form>  
+    </form>  

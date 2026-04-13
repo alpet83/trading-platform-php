@@ -54,11 +54,11 @@
     function connect_mysql()
     {
     global $mysqli, $db_configs;
-    $db_name = getenv('SIGNALS_LEGACY_DB_NAME') ?: 'trading';
+    $db_name = getenv('SIGNALS_LEGACY_DB_NAME') ?: 'sigsys';
     $db_host = getenv('SIGNALS_LEGACY_DB_HOST') ?: 'signals-legacy-db';
     $db_sock = getenv('MYSQL_SOCKET_PATH') ?: '/run/mysqld/mysqld.sock';
-    $db_user = getenv('SIGNALS_LEGACY_DB_USER') ?: (defined('MYSQL_USER') ? MYSQL_USER : ($db_configs[$db_name][0] ?? ($db_configs['trading'][0] ?? 'trading')));
-    $db_pass = getenv('SIGNALS_LEGACY_DB_PASSWORD') ?: (defined('MYSQL_PASSWORD') ? MYSQL_PASSWORD : ($db_configs[$db_name][1] ?? ($db_configs['trading'][1] ?? '')));
+    $db_user = getenv('SIGNALS_LEGACY_DB_USER') ?: (defined('MYSQL_USER') ? MYSQL_USER : ($db_configs[$db_name][0] ?? ($db_configs['sigsys'][0] ?? ($db_configs['trading'][0] ?? 'trading'))));
+    $db_pass = getenv('SIGNALS_LEGACY_DB_PASSWORD') ?: (defined('MYSQL_PASSWORD') ? MYSQL_PASSWORD : ($db_configs[$db_name][1] ?? ($db_configs['sigsys'][1] ?? ($db_configs['trading'][1] ?? ''))));
      if ($db_sock && file_exists($db_sock)) {
        try {
          $mysqli = new mysqli_ex(null, $db_user, $db_pass, $db_name, null, $db_sock);

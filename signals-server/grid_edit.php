@@ -236,9 +236,9 @@
     }
 
 ?>
-<?php if ($output_format !== 'json'): ?>
-<!DOCTYPE html>
-<?php endif; ?>
+    <?php if ($output_format !== 'json'): ?>
+    <!DOCTYPE html>
+    <?php endif; ?>
 <?php
     $minute = date('i') * 1;
 
@@ -253,7 +253,7 @@
     mysqli_report(MYSQLI_REPORT_OFF);
     $tstart = pr_time();
     log_msg("#START: connecting to DB...");
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     $table_name = 'signals';
     
     if (!$mysqli)
@@ -466,7 +466,7 @@
     }  
     echo "-->\n";
 ?>
-<html>
+    <html>
     <head>
     <title>Grid Editor <?php echo $setup; ?></title> 
     <style type='text/css'>

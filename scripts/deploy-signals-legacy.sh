@@ -33,7 +33,7 @@ if [ ! -f "secrets/signals_db_config.php" ]; then
   log "#INFO: created secrets/signals_db_config.php from template"
 fi
 
-SIGNALS_LEGACY_PORT_VALUE="${SIGNALS_LEGACY_PORT:-8090}"
+SIGNALS_LEGACY_PORT_VALUE="${SIGNALS_LEGACY_PORT:-8480}"
 if [ -f ".env" ]; then
   line="$(grep '^SIGNALS_LEGACY_PORT=' .env || true)"
   if [ -n "$line" ]; then

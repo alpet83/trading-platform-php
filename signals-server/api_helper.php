@@ -57,7 +57,7 @@
             return $cached;
         }
 
-        foreach (['signals_system', 'trading'] as $db_name) {
+        foreach (['signals_system', 'sigsys', 'trading'] as $db_name) {
             $mysqli = init_remote_db($db_name);
             if (!$mysqli instanceof mysqli_ex) {
                 continue;

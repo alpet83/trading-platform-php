@@ -3,14 +3,14 @@
     include_once('lib/config.php');
     include_once('lib/db_tools.php');
 
-  if (file_exists('/usr/local/etc/php/db_config.php'))
+    if (file_exists('/usr/local/etc/php/db_config.php'))
     require_once('/usr/local/etc/php/db_config.php');
-  else
+    else
     require_once('lib/db_config.php');
 
-  mysqli_report(MYSQLI_REPORT_OFF);
-  $mysqli = init_remote_db('trading');
-  if (!$mysqli)
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $mysqli = init_remote_db('sigsys');
+    if (!$mysqli)
     die("#FATAL: cannot connect to DB!\n");
     
     $verbose = false;  

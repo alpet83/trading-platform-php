@@ -158,6 +158,34 @@ const MYSQL_REPLICA = '$MARIADB_HOSTNAME';
 \$db_alt_server = MYSQL_REPLICA;
 EOF
 
+cat > "$LIB_DIR/hosts_cfg.php" <<EOF
+<?php
+
+if (!defined('SIGNALS_API_URL')) {
+  define('SIGNALS_API_URL', rtrim((string)(getenv('SIGNALS_API_URL') ?: getenv('TRADEBOT_PHP_HOST') ?: 'http://signals-legacy'), '/'));
+}
+
+if (!function_exists('signals_api_url')) {
+  function signals_api_url(string \$path = ''): string {
+    \$base = rtrim((string)SIGNALS_API_URL, '/');
+    \$path = ltrim(\$path, '/');
+    return \$path === '' ? \$base : \$base . '/' . \$path;
+  }
+}
+
+if (!function_exists('signals_api_host')) {
+  function signals_api_host(): string {
+    \$host = parse_url((string)SIGNALS_API_URL, PHP_URL_HOST);
+    if (!is_string(\$host) || \$host === '') {
+      return 'signals-legacy';
+    }
+    return \$host;
+  }
+}
+
+\$msg_servers = [SIGNALS_API_URL];
+EOF
+
 cat > "$INIT_DIR/10-create-trading-role.sql" <<EOF
 CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;
 CREATE DATABASE IF NOT EXISTS \`datafeed\`;
@@ -184,6 +212,7 @@ else
 fi
 
 echo "#INFO: generated $SECRETS_DIR/db_config.php"
+echo "#INFO: generated $LIB_DIR/hosts_cfg.php"
 echo "#INFO: generated $INIT_DIR/10-create-trading-role.sql"
 echo "#INFO: generated $INIT_DIR/20-bootstrap-core.sql (if source dump exists)"
 echo "#INFO: generated $LIB_DIR/.allowed_ip.lst"

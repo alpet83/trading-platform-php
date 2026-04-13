@@ -170,6 +170,8 @@
 
 ### 1. Переименование БД сигнального сервера: `trading` → `sigsys`
 
+**Статус:** ✅ **PHASE 2 COMPLETED** (2026-04-13)
+
 **Проблема.** Сигнальный сервер (sigsys-ts / signals-server) использует БД с именем `trading` —
 совпадает с основной trading-БД платформы. Это источник путаницы: в docker-окружении хост и
 имя БД сходятся в одном параметре, что уже приводило к передаче имени хоста вместо имени БД
@@ -177,20 +179,29 @@
 
 **Целевое имя:** `sigsys`
 
-**Scope изменений:**
-- `docker-compose.yml` / `.envs/` — переменные `SIGNALS_DB_NAME`, `DATABASE_URL` для sigsys-контейнеров
-- `src/lib/db_config.php` (runtime stub в контейнере) — добавить секцию `sigsys`
-- `src/lib/auth_check.php` — `db_candidates` уже включает `sigsys` (добавлено 54f80fc); убрать `trading` из списка после миграции
-- `sigsys-ts/backend/` и PHP `signals-server/` — все места с `init_remote_db('trading')` или `DATABASE_URL` указывающим на trading
-- `docker/mariadb-init/` — создание схемы и пользователя для `sigsys`
-- Тесты и документация
+**Phase 1 (Completed):**
+- ✅ Обновлены `docker-compose.signals-legacy.yml` переменные на `sigsys` (2 места)
+- ✅ Добавлена секция `$db_configs['sigsys']` в `secrets/signals_db_config.php.example` с алиасом `trading`
+- ✅ Расширен список кандидатов БД в `signals-server/api_helper.php` и `trade_ctrl_bot.php`
+- ✅ Создан тройной fallback chain для username/password поиска (sigsys-первый)
+- ✅ Windows cmd->ps1 вrappers добавлены для развёртывания
 
-**Порядок выполнения:**
-1. Добавить алиас `sigsys` рядом с `trading` (уже готово в `auth_check.php`)
-2. Создать БД `sigsys` как копию `trading` (для сигнальных таблиц)
-3. Переключить sigsys-ts backend на новую БД, убедиться что `chat_users` / сигнальные таблицы есть там
-4. Удалить `trading` из списка кандидатов в `auth_check.php`
-5. Удалить старую `trading`-БД на сигнальном сервере (или отключить от него)
+**Phase 2 (Completed - 2026-04-13):**
+- ✅ Мигрировано 17 PHP файлов `signals-server/` с `init_remote_db('trading')` → `init_remote_db('sigsys')`
+  - Затронуты файлы: get_user_rights.php, get_signals.php, pairs_map.php, api/users/*.php, parsepos.php и др.
+- ✅ Обновлена документация в `api_usage.markdown` (4 примера кода)
+- ✅ Синхронизированы изменения в обоих деревьях (runtime и clean test tree)
+- ✅ Ошибка в tele_hook.php обновлена: `DB trad­ing` → `DB sigsys`
+
+**Совместимость (Preserved):**
+- Алиас `trading` остаётся в `secrets/signals_db_config.php.example` для миграционного периода
+- Fallback chain в `api_helper.php` и `trade_ctrl_bot.php` гарантирует работу обоих имён
+- Основная trading-БД платформы остаётся нетронутой (scope ограничён только legacy signals)
+
+**Phase 3 (Pending - аліас removal):**
+- После production validation: убрать `trading` из кандидатов использования в fallback chain
+- Полная миграция данных legacy signals (если требуется переимущество старых данных)
+- Обновление документации (docs/TODOs.md и guides)
 
 ---
 

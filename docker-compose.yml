@@ -1,3 +1,5 @@
+name: trd
+
 services:
   mariadb:
     image: mariadb:11

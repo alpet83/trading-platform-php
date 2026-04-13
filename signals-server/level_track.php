@@ -138,7 +138,7 @@
     return 0;
     }
 
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli)
      die("#FATAL: cannot connect to DB!\n");
 
@@ -247,7 +247,7 @@
     }
     
 ?>
-<html>
+    <html>
     <head>
     <style type='text/css'>
     td { padding-left: 4pt;
@@ -284,7 +284,7 @@
 ?>
 
     
-<form name='level' method='POST' action='level_track.php'>    
+    <form name='level' method='POST' action='level_track.php'>    
     <table border=0>
     <tr><td>Symbol/pair:<td>     
 <?php

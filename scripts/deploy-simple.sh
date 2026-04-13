@@ -12,6 +12,7 @@ DEPLOY_TIMEOUT_SECONDS="${DEPLOY_TIMEOUT_SECONDS:-180}"
 DEPLOY_DB_WAIT_INTERVAL="${DEPLOY_DB_WAIT_INTERVAL:-3}"
 WEB_PORT_VALUE="${WEB_PORT:-8088}"
 WEB_PUBLISH_IP_VALUE="${WEB_PUBLISH_IP:-127.0.0.1}"
+FULL_DEPLOY_SERVICES="${FULL_DEPLOY_SERVICES:-web bots-hive datafeed phpmyadmin}"
 
 if [ "$DEPLOY_DB_WAIT_INTERVAL" -le 0 ] 2>/dev/null; then
   DEPLOY_DB_WAIT_INTERVAL=3
@@ -226,6 +227,24 @@ wait_for_db_health() {
   return 1
 }
 
+wait_for_service_running() {
+  service="$1"
+  elapsed=0
+  while [ "$elapsed" -lt "$DEPLOY_TIMEOUT_SECONDS" ]; do
+    cid="$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" 2>/dev/null | head -n1)"
+    if [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)" = "true" ]; then
+      log "#INFO: $service is running"
+      return 0
+    fi
+    sleep "$DEPLOY_DB_WAIT_INTERVAL"
+    elapsed=$((elapsed + DEPLOY_DB_WAIT_INTERVAL))
+  done
+
+  log "#WARN: service start timeout for $service. Last logs:"
+  docker-compose -f "$COMPOSE_FILE" logs --tail 40 "$service" || true
+  return 1
+}
+
 test_web_endpoints() {
   # 1) base bootstrap admin page
   docker-compose -f "$COMPOSE_FILE" exec -T web php -r '
@@ -276,20 +295,27 @@ main() {
   log "#STEP 2/7: bootstrap runtime and generate secrets/db_config.php with random trading password"
   sh shell/bootstrap_container_env.sh
 
-  log "#STEP 3/7: build images for mariadb/web"
-  docker-compose -f "$COMPOSE_FILE" build mariadb web
+  log "#STEP 3/8: build images for mariadb/web/bots-hive/datafeed"
+  docker-compose -f "$COMPOSE_FILE" build mariadb web bots-hive datafeed
 
-  log "#STEP 4/7: start mariadb"
+  log "#STEP 4/8: start mariadb"
   docker-compose -f "$COMPOSE_FILE" up -d mariadb
 
-  log "#STEP 5/7: wait for mariadb health"
+  log "#STEP 5/8: wait for mariadb health"
   wait_for_db_health || fail "mariadb was not healthy within ${DEPLOY_TIMEOUT_SECONDS}s"
 
-  log "#STEP 6/7: start web(api + admin ui)"
-  docker-compose -f "$COMPOSE_FILE" up -d web
+  log "#STEP 6/8: start full service group"
+  docker-compose -f "$COMPOSE_FILE" up -d $FULL_DEPLOY_SERVICES
 
-  log "#STEP 7/7: test admin/api endpoints"
+  for service in web bots-hive datafeed; do
+    wait_for_service_running "$service" || fail "$service was not running within ${DEPLOY_TIMEOUT_SECONDS}s"
+  done
+
+  log "#STEP 7/8: test admin/api endpoints"
   test_web_endpoints || fail "web endpoint checks failed"
+
+  log "#STEP 8/8: show running services"
+  docker-compose -f "$COMPOSE_FILE" ps mariadb web bots-hive datafeed phpmyadmin || true
 
   log ""
   log "#SUCCESS: simple deploy completed"

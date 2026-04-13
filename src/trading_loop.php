@@ -280,17 +280,12 @@
             
             $batch_price = $price; // or find last batch
             $batch_btc_price = $btc_price; // this value reqired for fixed c2a conversions
-            $avg_price = false;
-
-            if ($tinfo->is_quanto) {
-                $avg_price = $this->last_batch_price($pair_id); // load averaged price                   
-                if (is_float($avg_price) && $avg_price > 0) 
-                    $batch_price = $avg_price;      
-
-                $last_btc_price = $this->last_batch_btc_price($pair_id);
-                if ($last_btc_price > 0) 
-                    $batch_btc_price = $last_btc_price;
-            }  
+            [$batch_price, $batch_btc_price] = $this->resolvePositionAnchorPrices(
+                $pair_id,
+                $tinfo,
+                $batch_price,
+                $batch_btc_price
+            );
 
             $engine->SetLastError('');
 

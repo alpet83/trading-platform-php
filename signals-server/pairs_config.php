@@ -11,7 +11,7 @@
     $log_file = fopen(__DIR__."/logs/pairs_config.log", 'a');
 
     mysqli_report(MYSQLI_REPORT_OFF);
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) 
         error_exit("~C91#FATAL:~C00 DB inaccessible!\n");
 
@@ -42,8 +42,8 @@
     }
         
 ?>
-<!DOCTYPE html>
-<HTML>
+    <!DOCTYPE html>
+    <HTML>
     <HEAD>
     <TITLE><?php echo $title; ?></TITLE>   
     <style type='text/css'>

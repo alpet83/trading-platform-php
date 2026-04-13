@@ -16,10 +16,10 @@
     $log_file = fopen("logs/tele_hook.log", 'a');
     error_reporting(E_ERROR | E_PARSE);
     $db_server = [null];
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     error_reporting(E_ERROR | E_WARNING | E_PARSE);
     if (!is_object($mysqli))
-        error_exit("~C91#FATAL:~C00 DB `trading` inaccessible!");
+        error_exit("~C91#FATAL:~C00 DB `sigsys` inaccessible!");
     
     function process_send(mixed $res): bool {
         global $mysqli, $history;

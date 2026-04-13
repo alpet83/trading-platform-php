@@ -22,12 +22,12 @@
         return [MYSQL_USER, MYSQL_PASSWORD];
 
       if (isset($db_configs[$db_name]) && is_array($db_configs[$db_name]))
-        return [$db_configs[$db_name][0] ?? 'trading', $db_configs[$db_name][1] ?? ''];
+        return [$db_configs[$db_name][0] ?? 'sigsys', $db_configs[$db_name][1] ?? ''];
 
-      if (isset($db_configs['trading']) && is_array($db_configs['trading']))
-        return [$db_configs['trading'][0] ?? 'trading', $db_configs['trading'][1] ?? ''];
+      if (isset($db_configs['sigsys']) && is_array($db_configs['sigsys']))
+        return [$db_configs['sigsys'][0] ?? 'sigsys', $db_configs['sigsys'][1] ?? ''];
 
-      return ['trading', ''];
+      return ['sigsys', ''];
     }
 
     $color_scheme = 'cli';
@@ -46,7 +46,7 @@
     $attach = rqs_param('attach', null, '');
     $chat = rqs_param('channel', 'default');
 
-    [$db_user, $db_pass] = resolve_trade_event_db_creds('trading');
+    [$db_user, $db_pass] = resolve_trade_event_db_creds('sigsys');
     $db_host = getenv('SIGNALS_LEGACY_DB_HOST') ?: 'signals-legacy-db';
     $db_sock = getenv('MYSQL_SOCKET_PATH') ?: '/run/mysqld/mysqld.sock';
     try {

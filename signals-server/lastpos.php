@@ -27,7 +27,7 @@
 
     include_once('/usr/local/etc/php/db_config.php');
     mysqli_report(MYSQLI_REPORT_OFF);
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) {
       error_log("#DB-SERVER: $db_alt_server");
       if (is_array($db_profile))

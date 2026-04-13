@@ -13,7 +13,7 @@
     error_reporting(E_ERROR | E_PARSE | E_WARNING);
 
     $uid = rqs_param('id', 0) * 1;  
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) {
         http_response_code(500);
         printf("FATAL: DB inaccessible!");

@@ -53,7 +53,7 @@ function Ensure-ExternalRepos {
             continue
         }
         if (Test-Path $destPath) {
-            Info "#WARN: $destPath exists but is not a git repo — skipping clone"
+            Info "#WARN: $destPath exists but is not a git repo - skipping clone"
             continue
         }
         Info "#INFO: cloning $($repo.Url) -> $destPath"
@@ -67,7 +67,7 @@ function Ensure-ExternalRepos {
 function Verify-DatafeedManagerSource {
     $managerPath = Join-Path $ProjectRoot "../datafeed/src/datafeed_manager.php"
     if (-not (Test-Path $managerPath)) {
-        Info "#INFO: datafeed manager not found — running Ensure-ExternalRepos first..."
+        Info "#INFO: datafeed manager not found - running Ensure-ExternalRepos first..."
         Ensure-ExternalRepos
         if (-not (Test-Path $managerPath)) {
             Fail "datafeed manager still missing after repo clone: $managerPath"
@@ -242,6 +242,25 @@ $externalReposBase = if ($env:EXTERNAL_REPOS_DIR) {
 $AlpetLibsPath       = [System.IO.Path]::GetFullPath((Join-Path $externalReposBase "alpet-libs-php"))
 $AlpetLibsPathDocker = $AlpetLibsPath -replace '\\', '/'
 $ProjectRootDocker   = ([System.IO.Path]::GetFullPath($ProjectRoot)) -replace '\\', '/'
+$FullDeployServices = @('web','bots-hive','datafeed','phpmyadmin')
+
+function Wait-ServiceRunning([string]$ServiceName) {
+  $attempts = [Math]::Ceiling($DbWaitTimeoutSec / $DbWaitIntervalSec)
+  for ($i = 0; $i -lt $attempts; $i++) {
+    $cid = (& docker-compose -f $ComposeFile ps -q $ServiceName 2>$null | Select-Object -First 1)
+    if (-not [string]::IsNullOrWhiteSpace($cid)) {
+      $state = (& docker inspect -f '{{.State.Running}}' $cid 2>$null)
+      if ($state -eq 'true') {
+        Info "#INFO: $ServiceName is running"
+        return $true
+      }
+    }
+    Start-Sleep -Seconds $DbWaitIntervalSec
+  }
+
+  Invoke-Compose @("-f", $ComposeFile, "logs", "--tail", "40", $ServiceName)
+  return $false
+}
 
 Info "#STEP 0/8: ensure external repos (alpet-libs-php, datafeed)"
 Ensure-ExternalRepos
@@ -276,15 +295,15 @@ docker run --rm `
     alpine:3.20 sh -lc "apk add --no-cache git openssl >/dev/null; git config --global --add safe.directory /alpet-libs; git config --global --add safe.directory /alpet-libs/.git; sh shell/bootstrap_container_env.sh"
 if ($LASTEXITCODE -ne 0) { Fail "Bootstrap stage failed" }
 
-Info "#STEP 4/8: build images for mariadb/web"
-Invoke-Compose @("-f", $ComposeFile, "build", "mariadb", "web")
+Info "#STEP 4/9: build images for mariadb/web/bots-hive/datafeed"
+Invoke-Compose @("-f", $ComposeFile, "build", "mariadb", "web", "bots-hive", "datafeed")
 if ($LASTEXITCODE -ne 0) { Fail "Build stage failed" }
 
-Info "#STEP 5/8: start mariadb"
+Info "#STEP 5/9: start mariadb"
 Invoke-Compose @("-f", $ComposeFile, "up", "-d", "mariadb")
 if ($LASTEXITCODE -ne 0) { Fail "Failed to start mariadb" }
 
-Info "#STEP 6/8: wait for mariadb health"
+Info "#STEP 6/9: wait for mariadb health"
 $ok = $false
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
     $oldNativeErrPref = $PSNativeCommandUseErrorActionPreference
@@ -313,11 +332,17 @@ if (-not $ok) {
 }
 Info "#INFO: mariadb is healthy"
 
-Info "#STEP 7/8: start web (api + admin ui)"
-Invoke-Compose @("-f", $ComposeFile, "up", "-d", "web")
-if ($LASTEXITCODE -ne 0) { Fail "Failed to start web" }
+Info "#STEP 7/9: start full service group"
+Invoke-Compose @("-f", $ComposeFile, "up", "-d")
+if ($LASTEXITCODE -ne 0) { Fail "Failed to start full service group" }
 
-Info "#STEP 8/8: test admin/api endpoints"
+foreach ($service in @('web','bots-hive','datafeed')) {
+  if (-not (Wait-ServiceRunning $service)) {
+    Fail "$service was not running within ${DbWaitTimeoutSec}s"
+  }
+}
+
+Info "#STEP 8/9: test admin/api endpoints"
 Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "web", "php", "-r", "if(@file_get_contents('http://127.0.0.1/basic-admin.php')===false){fwrite(STDERR,'basic-admin probe failed\n'); exit(1);} echo 'basic-admin-ok\n';")
 if ($LASTEXITCODE -ne 0) { Fail "basic-admin endpoint probe failed" }
 
@@ -326,6 +351,9 @@ if ($LASTEXITCODE -ne 0) { Fail "api endpoint probe failed" }
 
 Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "web", "php", "-r", "`$s=@file_get_contents('http://127.0.0.1/bot/get_vwap.php?pair_id=3&limit=5&exchange=bitmex'); if(`$s===false){fwrite(STDERR,'warn: get_vwap probe unavailable\n'); exit(0);} echo 'get-vwap-probe=' . substr(trim(`$s),0,80) . '\n';")
 if ($LASTEXITCODE -ne 0) { Fail "get_vwap endpoint probe failed" }
+
+Info "#STEP 9/9: show running services"
+Invoke-Compose @("-f", $ComposeFile, "ps", "mariadb", "web", "bots-hive", "datafeed", "phpmyadmin")
 
 Info ""
 Info "#SUCCESS: simple deploy completed"

@@ -552,12 +552,13 @@
                 $status = '';           
                 $out = [];
                 $fcolor = sprintf('#%02x%02x%02x', ...$this->report_color);
+                $draw_script = '/app/src/web-ui/draw_chart.php';
                 if (5 == $d && $hour > 15) {
                     $period = 'Weekly';  
-                    exec("php web-ui/draw_chart.php $exch weekly $acc_id", $out);
+                    exec("php $draw_script $exch weekly $acc_id 2>&1", $out);
                 }  
                 else
-                    exec("php web-ui/draw_chart.php $exch daily $acc_id $fcolor", $out);
+                    exec("php $draw_script $exch daily $acc_id $fcolor 2>&1", $out);
                 
                 $fname = "default.png";
                 $log = '';           

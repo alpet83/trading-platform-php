@@ -28,7 +28,7 @@
     }
 
     mysqli_report(MYSQLI_REPORT_OFF);
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     if (!$mysqli) {
         http_response_code(500);
         echo json_encode([

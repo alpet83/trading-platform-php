@@ -36,7 +36,7 @@ TS wrappers:
 - PHP method: `GET` only
 - SQL: `SELECT chat_id, user_name, rights, enabled FROM chat_users`
 - Response transform: `chat_id -> id`, `rights CSV -> string[]`
-- db_tools usage: `init_remote_db('trading')`, `$mysqli->query(...)`
+- db_tools usage: `init_remote_db('sigsys')`, `$mysqli->query(...)`
 
 ### 3.2 Create user
 - TS route: `POST /external/user`
@@ -51,7 +51,7 @@ TS wrappers:
 - Duplicate check: by `chat_id` OR `user_name`
 - Existing user behavior: returns HTTP `201` with `{ success: true, user: ... }` (no insert)
 - Insert SQL: `INSERT INTO chat_users (chat_id, user_name, rights, enabled) ...`
-- db_tools usage: `init_remote_db('trading')`, `select_value(...)`, `try_query(...)`
+- db_tools usage: `init_remote_db('sigsys')`, `select_value(...)`, `try_query(...)`
 
 ### 3.3 Update user
 - TS route: `POST /external/user/update`
@@ -63,7 +63,7 @@ TS wrappers:
 - Required fields: `id`, `rights`, `enabled`
 - Note: `user_name` is sent by TS but not used in PHP SQL update
 - SQL: `UPDATE chat_users SET rights = ..., enabled = ... WHERE chat_id = ...`
-- db_tools usage: `init_remote_db('trading')`, `select_row(...)`, `try_query(...)`
+- db_tools usage: `init_remote_db('sigsys')`, `select_row(...)`, `try_query(...)`
 
 ### 3.4 Delete user
 - TS route: `DELETE /external/user/:id`
@@ -73,7 +73,7 @@ TS wrappers:
 - PHP file: `src/api/users/delete/index.php`
 - PHP method: `POST` only
 - SQL: `DELETE FROM chat_users WHERE chat_id = ...`
-- db_tools usage: `init_remote_db('trading')`, `select_row(...)`, `try_query(...)`
+- db_tools usage: `init_remote_db('sigsys')`, `select_row(...)`, `try_query(...)`
 
 ## 4) NestJS route chain
 
@@ -86,7 +86,7 @@ Controller `user.external.controller.ts` exposes:
 
 ## 5) Important notes
 
-1. `api/users/*` fully depends on MariaDB table `chat_users` in DB `trading`.
+1. `api/users/*` fully depends on MariaDB table `chat_users` in DB `sigsys`.
 2. Access requires BOTH valid Bearer token and `admin` right for `X-User-Id`.
 3. Potential mismatch in TS create flow:
    - `createUser()` sends `X-User-Id = proto.id` (created user id), not current admin id.

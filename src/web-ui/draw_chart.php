@@ -1,31 +1,45 @@
 <?php // content="text/plain; charset=utf-8"
     // Этот скрипт рендерит график баланса аккаунта на бирже, с учетом депозитов и выводов. Опционально можно выбирать валюту вывода из USD и BTC
     $path = __DIR__;
-    $src_dir = dirname($path);
+    $src_dir = dirname($path); // убирает web-ui
     chdir($path);
     $runtime_dir = '/app/var/';
     $data_dir = is_dir($runtime_dir) ? "$runtime_dir/charts/" : "$path/data/";
     set_include_path(".:$path/lib:$src_dir/lib:/usr/sbin/lib"); 
     
-        $project_ttf_dir = dirname($path).'/fonts/';
-        $ttf_fontfile = 'arial.ttf';
-        $ttf_candidates = [
-            $project_ttf_dir,
-            '/var/www/html/jpgraph/fonts/',
-            '/usr/share/fonts/truetype/',
+        $project_ttf_dir = $src_dir.'/fonts/';
+        $project_ttf_real = realpath($src_dir.'/fonts');
+        if (is_string($project_ttf_real) && $project_ttf_real !== '')
+            $project_ttf_dir = rtrim($project_ttf_real, '/').'/';
+        $font_candidates = [
+            $project_ttf_dir.'arial.ttf',
+            '/var/www/html/jpgraph/fonts/arial.ttf',
+            '/usr/share/fonts/truetype/arial.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
         ];
-        $ttf_dir = '/usr/share/fonts/truetype/';
-        foreach ($ttf_candidates as $candidate) {
-            if (!is_string($candidate) || '' === $candidate)
-                continue;
-            if (file_exists($candidate.$ttf_fontfile) || is_dir($candidate)) {
-                $ttf_dir = $candidate;
+        $ttf_file = '';
+        foreach ($font_candidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && file_exists($candidate)) {
+                $ttf_file = $candidate;
                 break;
             }
         }
-        define('TTF_DIR', $ttf_dir);
 
-    const TTF_FONTFILE = "arial.ttf";
+        if ($ttf_file === '') {
+            $ttf_dir = '/usr/share/fonts/truetype/';
+            $ttf_fontfile = 'arial.ttf';
+        }
+        else {
+            $ttf_dir = dirname($ttf_file).'/';
+            $ttf_fontfile = basename($ttf_file);
+        }
+
+        if (!defined('TTF_DIR'))
+            define('TTF_DIR', $ttf_dir);
+        if (!defined('TTF_FONTFILE'))
+            define('TTF_FONTFILE', $ttf_fontfile);
     
     ob_start();
 
@@ -70,6 +84,8 @@
         $acc_id = $argv[3];
       if (isset($argv[4]))
         $fcolor = $argv[4];
+      if (isset($argv[5]) && is_string($argv[5]) && trim($argv[5]) !== '')
+        $data_dir = rtrim(trim($argv[5]), '/').'/';
     
     }
     elseif (isset($_SERVER['REMOTE_ADDR'])) {
@@ -85,6 +101,10 @@
         $offline_mode = false;       
     } else
         die("#FATAL: invalid environment!");  
+
+    $reports_env = getenv('REPORTS_DIR');
+    if (is_string($reports_env) && trim($reports_env) !== '')
+        $data_dir = rtrim(trim($reports_env), '/').'/';
 
     $www = $_SERVER['DOCUMENT_ROOT'];   
     $root = $offline_mode ? "$runtime_dir/log" : "$www/bot/log"; 

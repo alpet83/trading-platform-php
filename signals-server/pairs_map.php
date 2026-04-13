@@ -4,7 +4,7 @@
     
     mysqli_report(MYSQLI_REPORT_OFF);  
     include_once('/usr/local/etc/php/db_config.php');
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
 
     if (!$mysqli)
         die("#FATAL: no access to local DB @ $db_alt_server\n");

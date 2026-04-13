@@ -50,7 +50,7 @@
     $ts = gmdate('Y-m-d H:i:s', strtotime($params->timestamp));    
     log_cmsg("~C97#START:~C00 connecting to DB...");
     mysqli_report(MYSQLI_REPORT_OFF);
-    $mysqli = init_remote_db('trading');
+    $mysqli = init_remote_db('sigsys');
     $table_name = 'signals';
     $symbol = $params->symbol;        
     
