@@ -106,9 +106,22 @@ final class DeribitEngine extends WebsockAPIEngine {
         // Upgrade any remaining tables with integer order_no (e.g. mm_limit, mm_exec)
         // created by MarketMaker via OrdersBlock which bypasses CreateOrderList.
         $prefix = strtolower($this->exchange) . '__';
-        foreach (['mm_limit', 'mm_exec', 'archive_orders', 'lost_orders',
+        foreach (['mm_limit', 'mm_exec', 'mm_asks', 'mm_bids', 'archive_orders', 'lost_orders',
                   'matched_orders', 'pending_orders', 'mixed_orders', 'other_orders'] as $tbl) {
             $this->UpgradeOrderNoColumnIfNeeded($prefix . $tbl);
+        }
+    }
+
+    protected function WarmupOptionalOrderTables(): void {
+        // Force-create optional MM order tables even when MM is disabled,
+        // so schema patching remains deterministic across deployments.
+        foreach (['mm_exec', 'mm_limit', 'mm_asks', 'mm_bids'] as $name) {
+            try {
+                $probe = new OrdersBlock($this, $name, false);
+                unset($probe);
+            } catch (Throwable $e) {
+                $this->LogError("~C91#WARN(WarmupOptionalOrderTables):~C00 failed warmup %s: %s", $name, $e->getMessage());
+            }
         }
     }
 
@@ -128,7 +141,7 @@ final class DeribitEngine extends WebsockAPIEngine {
 
     private function UpgradeOrderNoColumnIfNeeded(string $table_name): void {
         $order_tables = ['archive_orders', 'lost_orders', 'matched_orders', 'pending_orders',
-                         'mixed_orders', 'other_orders', 'mm_limit', 'mm_exec'];
+                         'mixed_orders', 'other_orders', 'mm_limit', 'mm_exec', 'mm_asks', 'mm_bids'];
         $base_name = strtolower((string)preg_replace('/^[a-z0-9]+__/', '', $table_name));
         if (!in_array($base_name, $order_tables, true)) {
             return;
@@ -800,7 +813,7 @@ final class DeribitEngine extends WebsockAPIEngine {
         return floatval($tinfo->FormatAmount($normalized * $sign));
     }
 
-    private function NormalizeMaxShow(TickerInfo $tinfo, mixed $hidden, float $amount): ?float {
+    private function NormalizeDisplayAmount(TickerInfo $tinfo, mixed $hidden, float $amount): ?float {
         if (is_bool($hidden)) {
             return null;
         }
@@ -814,13 +827,12 @@ final class DeribitEngine extends WebsockAPIEngine {
             return null;
         }
 
-        $max_show = $this->NormalizeOrderAmount($tinfo, $hidden_amount);
+        $display_amount = $this->NormalizeOrderAmount($tinfo, $hidden_amount);
         $order_amount = $this->NormalizeOrderAmount($tinfo, $amount);
-        if ($max_show <= 0 || $order_amount <= 0 || $max_show >= $order_amount) {
+        if ($display_amount <= 0 || $order_amount <= 0 || $display_amount >= $order_amount) {
             return null;
         }
-
-        return $max_show;
+        return $display_amount;
     }
 
     public function NativeAmount(int $pair_id, float $amount, float $ref_price, float $btc_price = 0) {
@@ -1290,10 +1302,9 @@ final class DeribitEngine extends WebsockAPIEngine {
         $info->amount = $this->NormalizeOrderAmount($tinfo, floatval($info->amount));
         $params = array('label' => $label, 'type' => 'limit', 'instrument_name' => $instr_name,
                         'price' => strval($info->price), 'amount' => $tinfo->FormatAmount($info->amount));
-
-        $max_show = $this->NormalizeMaxShow($tinfo, $hidden, floatval($info->amount));
-        if (null !== $max_show) {
-            $params['max_show'] = $tinfo->FormatAmount($max_show);
+        $display_amount = $this->NormalizeDisplayAmount($tinfo, $hidden, floatval($info->amount));
+        if (null !== $display_amount) {
+            $params['display_amount'] = $tinfo->FormatAmount($display_amount);
         }
 
         $core->LogObj($params, '   ', '~C93 order submit params:~C97');
@@ -1303,7 +1314,6 @@ final class DeribitEngine extends WebsockAPIEngine {
         } else {
             $json = $this->RequestPrivateAPI('/api/v2/private/sell', $params, 'GET');
         }
-
         $res = json_decode($json);
         if (is_object($res) && isset($res->result) && isset($res->result->order)) {
             $order = $res->result->order;

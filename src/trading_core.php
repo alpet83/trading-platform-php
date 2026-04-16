@@ -641,10 +641,13 @@ class TradingCore {
     public function SignalFeed(): ?SignalFeed {
         return $this->signal_feed;
     }
-
     /**
-     * Выполняет CREATE TABLE IF NOT EXISTS для всех бот-специфичных таблиц,
-     * описанных в sql/bot_tables.sql, подставляя exchange-префикс вместо #exchange.
+     * Выполняет CREATE TABLE IF NOT EXISTS для всех бот-специфичных таблиц.
+     *
+     * Источники DDL:
+     *  - templates/bot_tables.sql       : non-order tables
+     *  - templates/bot_orders_table.sql : all order tables (single source of truth)
+     *
      * Вызывается однократно в конце Initialize().
      */
     public function EnsureBotTables(): void {
@@ -653,29 +656,51 @@ class TradingCore {
             $this->LogError("~C91#ERROR:~C00 EnsureBotTables skipped, due DB not ready");
             return;
         }
-        $engine  = $this->Engine();
-        $prefix  = strtolower($engine->exchange);
+
+        $engine = $this->Engine();
+        $prefix = strtolower($engine->exchange);
+
         $tpl_path = __DIR__ . '/../templates/bot_tables.sql';
         if (!file_exists($tpl_path)) {
             $this->LogError("~C91#WARN:~C00 EnsureBotTables: template not found: %s", $tpl_path);
             return;
         }
+
         $sql_raw = file_get_contents($tpl_path);
         $sql_all = str_replace('#exchange', $prefix, $sql_raw);
-
-        // Split on ; and run each non-empty statement.
-        // Note: no special handling for -- comments needed — MySQL handles them natively.
         $rql = explode(';', $sql_all);
-        $this->LogMsg("~C96#INIT:~C00 EnsureBotTables: %d statements", count($rql));
+        $this->LogMsg("~C96#INIT:~C00 EnsureBotTables(non-order): %d statements", count($rql));
+
         foreach ($rql as $stmt) {
             $stmt = trim($stmt);
             if ($stmt === '') {
                 continue;
             }
             if (!$mysqli->try_query($stmt)) {
-                $this->LogError("~C91#ERROR:~C00 EnsureBotTables failed: %s", $mysqli->error);
-            } else {
-                $this->LogMsg("~C96#INIT:~C00 EnsureBotTables: statement OK");
+                $this->LogError("~C91#ERROR:~C00 EnsureBotTables failed (bot_tables.sql): %s", $mysqli->error);
+            }
+        }
+
+        $orders_tpl_path = __DIR__ . '/../templates/bot_orders_table.sql';
+        if (!file_exists($orders_tpl_path)) {
+            $this->LogError("~C91#WARN:~C00 EnsureBotTables: orders template not found: %s", $orders_tpl_path);
+            return;
+        }
+
+        $orders_tpl = file_get_contents($orders_tpl_path);
+        $order_tables = [
+            'archive_orders', 'lost_orders', 'matched_orders', 'pending_orders', 'other_orders',
+            'mm_asks', 'mm_bids', 'mm_exec', 'mm_limit',
+        ];
+
+        foreach ($order_tables as $order_table) {
+            $ddl = str_replace(
+                ['#exchange', '#order_table'],
+                [$prefix, $order_table],
+                $orders_tpl
+            );
+            if (!$mysqli->try_query($ddl)) {
+                $this->LogError("~C91#ERROR:~C00 EnsureBotTables failed (bot_orders_table.sql/%s): %s", $order_table, $mysqli->error);
             }
         }
 
@@ -698,12 +723,13 @@ class TradingCore {
         }
         $engine  = $this->Engine();
         $table   = $engine->TableName('exec_context');
+        $engine  = $this->Engine();
+        $table   = $engine->TableName('exec_context');
         if (!$mysqli->table_exists($table)) {
             return;
         }
 
         $snap = $ctx->toSnapshot($action, $detail);
-        $json = $mysqli->real_escape_string(json_encode($snap, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         $acc  = (int)$engine->account_id;
         $pid  = (int)$ctx->pair_id;
 

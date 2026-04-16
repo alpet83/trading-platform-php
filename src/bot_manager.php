@@ -398,25 +398,39 @@
             if (!strlen($api_key_name)) {
                 if ('bitmex' === $exch)
                     $api_key_name = 'BMX_API_KEY';
+                elseif ('deribit' === $exch)
+                    $api_key_name = 'DBT_API_KEY';
                 else
                     $api_key_name = strtoupper($exch) . '_API_KEY';
             }
             if (!strlen($api_key_sec)) {
                 if ('bitmex' === $exch)
                     $api_key_sec = 'BMX_API_SECRET';
+                elseif ('deribit' === $exch)
+                    $api_key_sec = 'DBT_API_SECRET';
                 else
                     $api_key_sec = strtoupper($exch) . '_API_SECRET';
             }
 
-            if (strlen($this->api_key) < 4 || !strlen($this->api_secret_plaintext ?? '')) {        
-                log_cmsg("~C94 #DBG:~C00 API key or secret not cached, trying retrieve and set env[$api_key_name], secret separator [$separator]");        
+            if (strlen($this->api_key) < 4 || !strlen($this->api_secret_plaintext ?? '')) {
+                log_cmsg("~C94 #DBG:~C00 API key or secret not cached, trying retrieve and set env[%s], secret separator [%s]", $api_key_name, $separator);
 
                 global $credentials_source;
                 if ('db' === $credentials_source)
                     $this->loadApiFromDb($separator);
                 else
                     $this->loadApiFromPass($exch, $separator);
-            }       
+            }
+
+            if (strlen($this->api_key) < 4 || !strlen($this->api_secret_plaintext ?? '')) {
+                $key_len = strlen(strval($this->api_key));
+                $sec_len = strlen(strval($this->api_secret_plaintext ?? ''));
+                log_cmsg("~C91 #ERROR:~C00 skip start %s: API credentials are incomplete (exchange=%s, source=%s, key_env=%s, secret_env=%s, key_len=%d, secret_len=%d)",
+                    $this->Name(), $exch, strval($credentials_source ?? 'n/a'), $api_key_name, $api_key_sec, $key_len, $sec_len);
+                send_event("ALERT", "BOT Manager skip start $name: missing API credentials for $exch");
+                return false;
+            }
+
             $ds = [["pipe", "r"], ["pipe", "w"], ["pipe", "w"]];
             $env_vars = getenv();
             $env_vars['impl_name'] = $this->impl_name;
@@ -429,18 +443,25 @@
                 // Backward/compat alias for older scripts/configs.
                 if ('bitmex' === $exch)
                     $env_vars['BITMEX_API_KEY'] = $this->api_key;
+                elseif ('deribit' === $exch)
+                    $env_vars['DERIBIT_API_KEY'] = $this->api_key; // compat alias
+
                 // Pass plaintext secret as base64 via ENV (never touches disk)
                 if (strlen($this->api_secret_plaintext ?? '') > 0) {
                     $encoded_secret = base64_encode($this->api_secret_plaintext);
                     $env_vars[$api_key_sec] = $encoded_secret;
                     if ('bitmex' === $exch)
                         $env_vars['BITMEX_API_SECRET'] = $encoded_secret;
+                    elseif ('deribit' === $exch)
+                        $env_vars['DERIBIT_API_SECRET'] = $encoded_secret; // compat alias
                     $env_vars['__CREDS_FROM_ENV'] = '1';
                 } else {
                     // Fallback to old base64-chunked version for backward compatibility
                     $env_vars[$api_key_sec] = $this->api_secret;
                     if ('bitmex' === $exch)
                         $env_vars['BITMEX_API_SECRET'] = $this->api_secret;
+                    elseif ('deribit' === $exch)
+                        $env_vars['DERIBIT_API_SECRET'] = $this->api_secret; // compat alias
                 }
             }  
 
@@ -479,12 +500,28 @@
                 if (is_string($stdout_out) && strlen($stdout_out) > 0)
                     @file_put_contents($this->stdout_log_file, $stdout_out, FILE_APPEND);
 
-                if ($st['running']) 
+                if ($st['running'])
                     return true;
                 else {
-                    log_cmsg("~C91 #ERROR:~C00 failed run instance $cmd");
-                    var_dump($st);                 
-                }            
+                    $diag_tail = '';
+                    if (is_string($this->stdout_log_file) && strlen($this->stdout_log_file) > 0 && is_file($this->stdout_log_file)) {
+                        $raw = @file_get_contents($this->stdout_log_file);
+                        if (is_string($raw) && strlen($raw) > 0) {
+                            $diag_tail = substr($raw, -1800);
+                            $diag_tail = trim(str_replace([""], [''], $diag_tail));
+                        }
+                    }
+                    log_cmsg("~C91 #ERROR:~C00 failed run instance %s (bot=%s, pid=%s, exit=%s, signal=%s)",
+                        $cmd,
+                        $this->Name(),
+                        strval($st['pid'] ?? 'n/a'),
+                        strval($st['exitcode'] ?? 'n/a'),
+                        strval($st['termsig'] ?? 'n/a')
+                    );
+                    if (strlen($diag_tail) > 0)
+                        log_cmsg("~C93 #DIAG:~C00 bot start output tail (%s):
+%s", $this->Name(), $diag_tail);
+                }
             }  
 
             send_event("ALERT", "BOT Manager failed starting bot $name ");

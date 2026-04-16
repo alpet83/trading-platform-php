@@ -40,24 +40,12 @@ trigger_error('Missing runtime library: $lib_file', E_USER_ERROR);
 EOF
 }
 
-write_wrapper_file() {
-  target="$1"
-  relative_target="$2"
-
-  cat > "$target" <<EOF
-<?php
-// AUTO-GENERATED RUNTIME WRAPPER. DO NOT COMMIT.
-
-require_once(__DIR__ . '/$relative_target');
-EOF
-}
-
 write_proxy_file "$SRC_DIR/common.php" "common.php" "../lib/common.php"
 write_proxy_file "$SRC_DIR/esctext.php" "esctext.php" "../lib/esctext.php"
+write_proxy_file "$LIB_DIR/common.php" "common.php" "../../lib/common.php"
+write_proxy_file "$LIB_DIR/esctext.php" "esctext.php" "../../lib/esctext.php"
 write_proxy_file "$LIB_DIR/db_tools.php" "db_tools.php" "../../lib/db_tools.php"
 write_proxy_file "$LIB_DIR/basic_html.php" "basic_html.php" "../../lib/basic_html.php"
 write_proxy_file "$LIB_DIR/table_render.php" "table_render.php" "../../lib/table_render.php"
-write_wrapper_file "$LIB_DIR/common.php" "../common.php"
-write_wrapper_file "$LIB_DIR/esctext.php" "../esctext.php"
 
 echo "#INFO: generated runtime proxy files in src/ and src/lib/"

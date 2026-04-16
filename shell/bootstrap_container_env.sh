@@ -143,7 +143,6 @@ if [ -f "$ROOT_DIR/.env" ]; then
     fi
   } | awk 'NF && !seen[$0]++' > "$ALLOW_FILE"
 fi
-
 cat > "$SECRETS_DIR/db_config.php" <<EOF
 <?php
 
@@ -156,8 +155,37 @@ foreach (['binance', 'bitmex', 'bitfinex', 'bybit', 'deribit'] as \$db_name)
 \$db_servers = ['$MARIADB_HOSTNAME'];
 const MYSQL_REPLICA = '$MARIADB_HOSTNAME';
 \$db_alt_server = MYSQL_REPLICA;
-EOF
 
+if (!defined('CLICKHOUSE_HOST'))
+    define('CLICKHOUSE_HOST', getenv('CLICKHOUSE_HOST') ?: '127.0.0.1');
+if (!defined('CLICKHOUSE_REPLICA'))
+    define('CLICKHOUSE_REPLICA', getenv('CLICKHOUSE_REPLICA') ?: false);
+if (!defined('CLICKHOUSE_USER'))
+    define('CLICKHOUSE_USER', getenv('CLICKHOUSE_USER') ?: 'default');
+if (!defined('CLICKHOUSE_PASS'))
+    define('CLICKHOUSE_PASS', getenv('CLICKHOUSE_PASS') ?: '');
+
+
+if (!function_exists('clickhouse_cfg')) {
+    function clickhouse_cfg(string \$const_name, string \$env_name = '', \$default = null) {
+        if (defined(\$const_name)) {
+            \$value = constant(\$const_name);
+            if (\$value !== null && \$value !== '' && \$value !== false) {
+                return \$value;
+            }
+        }
+
+        if (\$env_name !== '') {
+            \$env_value = getenv(\$env_name);
+            if (\$env_value !== false && \$env_value !== '') {
+                return \$env_value;
+            }
+        }
+
+        return \$default;
+    }
+}
+EOF
 cat > "$LIB_DIR/hosts_cfg.php" <<EOF
 <?php
 
@@ -185,6 +213,7 @@ if (!function_exists('signals_api_host')) {
 
 \$msg_servers = [SIGNALS_API_URL];
 EOF
+
 
 cat > "$INIT_DIR/10-create-trading-role.sql" <<EOF
 CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;

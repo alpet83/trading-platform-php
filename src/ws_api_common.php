@@ -244,13 +244,23 @@ abstract class WebsockAPIEngine extends RestAPIEngine {
         // 1. Ping keepalive ------------------------------------------------
         $ping_elps = time() - $this->ws_last_ping;
         if ($ping_elps > $this->ws_ping_interval) {
+            $ping_err = null;
+            set_error_handler(static function ($severity, $message) use (&$ping_err) {
+                $ping_err = $message;
+                return true;
+            });
             try {
                 $this->ws_last_ping = time() - 20; // write before send: prevent re-entry DDoS
                 $this->wsPing();
             } catch (Throwable $E) {
+                $ping_err = $E->getMessage();
+            } finally {
+                restore_error_handler();
+            }
+            if ($ping_err !== null) {
                 $this->ws_exceptions++;
-                $this->LogMsg("~C91#WS_PING_FAIL:~C00 %s (exceptions total: %d)", $E->getMessage(), $this->ws_exceptions);
-                if ($ping_elps >= 60 || $this->ws_exceptions > 5) {
+                $this->LogMsg("~C91#WS_PING_FAIL:~C00 %s (exceptions total: %d)", $ping_err, $this->ws_exceptions);
+                if (str_contains(strtolower($ping_err), 'broken pipe') || $ping_elps >= 60 || $this->ws_exceptions > 5) {
                     $this->ws_exceptions = 0;
                     $this->wsReconnect('ping failed / exception storm');
                     return;

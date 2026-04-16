@@ -8,12 +8,19 @@
     require_once('signal_views.php');
     
     $output_format = detect_output_format();
+    $user_rights = 'view,trade,admin';
+    $user_id = 0;
     if (php_sapi_name() != 'cli') {
         if ($output_format === 'json') {
             require_once('api_helper.php');
             $user_rights = get_user_rights();
+            $headers = function_exists('getallheaders') ? array_change_key_case(getallheaders(), CASE_LOWER) : [];
+            $user_id = intval($headers['x-user-id'] ?? 0);
         } else {
             require_once('lib/auth_check.php');
+            if (isset($_SESSION['user_id'])) {
+                $user_id = intval($_SESSION['user_id']);
+            }
         }
     }
     
@@ -283,30 +290,33 @@
     update_positions($mysqli, $setup, $processed_data['accum_map'], $source, $signal, $filter);
     
     if ($qview) ob_end_clean();
-    
+
     if ($delete && !isset($processed_data['accum_map'][$delete]))
         $processed_data['accum_map'][$delete] = 0;
-    
+
     $work_t = pr_time() - $tstart;
     log_msg(sprintf("#END: work_t = %.1f sec, CWD: %s, LOG_FILE %s", $work_t, getcwd(), SIGNALS_LOG));
-    
+
     $display_data = prepare_display_data($processed_data, $colors, $btc_pair_id, $eth_pair_id, $setup, $work_t);
-    
+
     // Вывод
     function response($output_format, $content, $code = 200) {
-        if ($output_format === 'json') {
+        if ($output_format === 'json' && ob_get_level() > 0) {
             ob_clean();
         }
-    
-        http_response_code($code);
+
+        if (!headers_sent()) {
+            http_response_code($code);
+        }
         echo $content;
-    
-        if ($output_format === 'json') {
+
+        if ($output_format === 'json' && ob_get_level() > 0) {
             ob_end_flush();
         }
-    
+
         exit;
     }
+
     
     $output = render_output(
         $output_format,

@@ -111,6 +111,11 @@ class TradingEngine {
         return new OrderList($this, $name, $fixed);
     }
 
+    // Optional hook for exchange-specific warmup of extra order tables
+    // (e.g. MM tables that may not be instantiated when feature is disabled).
+    protected function WarmupOptionalOrderTables(): void {
+    }
+
     public function sqli(string $kind = ''): ?mysqli_ex {
         $mysqli = $this->TradeCore()->CheckDBConnection($kind);
         if (is_null($mysqli) && '' == $kind)
@@ -483,6 +488,9 @@ class TradingEngine {
         if (!$mysqli->try_query($query)) {         
             throw new Exception("Failed create/replace view {$prefix}__mixed_orders: ".$mysqli->error);
         }
+        // Ensure exchange-specific optional order tables are materialized early,
+        // so schema patches can be applied even when optional modules are disabled.
+        $this->WarmupOptionalOrderTables();
         $this->ConfigureMM(); 
 
         foreach ($this->batch_map as $batch_id => $batch) {        

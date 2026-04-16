@@ -1,6 +1,7 @@
 #!/usr/bin/php
 <?php
     include_once('lib/common.php');
+    include_once('lib/esctext.php');
     include_once('trading_common.php');
     include_once('lib/db_config.php');
 

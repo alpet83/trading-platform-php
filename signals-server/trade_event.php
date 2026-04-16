@@ -13,21 +13,66 @@
     function resolve_trade_event_db_creds(string $db_name): array {
       global $db_configs;
 
-      $user = getenv('SIGNALS_LEGACY_DB_USER');
-      $pass = getenv('SIGNALS_LEGACY_DB_PASSWORD');
-      if ($user !== false && $user !== '')
-        return [$user, $pass !== false ? $pass : ''];
+      $candidates = [];
+
+      $env_user = getenv('SIGNALS_LEGACY_DB_USER');
+      $env_pass = getenv('SIGNALS_LEGACY_DB_PASSWORD');
+      if ($env_user !== false && $env_user !== '')
+        $candidates[] = [$env_user, $env_pass !== false ? $env_pass : ''];
 
       if (defined('MYSQL_USER') && defined('MYSQL_PASSWORD'))
-        return [MYSQL_USER, MYSQL_PASSWORD];
+        $candidates[] = [MYSQL_USER, MYSQL_PASSWORD];
 
       if (isset($db_configs[$db_name]) && is_array($db_configs[$db_name]))
-        return [$db_configs[$db_name][0] ?? 'sigsys', $db_configs[$db_name][1] ?? ''];
+        $candidates[] = [$db_configs[$db_name][0] ?? 'sigsys', $db_configs[$db_name][1] ?? ''];
 
       if (isset($db_configs['sigsys']) && is_array($db_configs['sigsys']))
-        return [$db_configs['sigsys'][0] ?? 'sigsys', $db_configs['sigsys'][1] ?? ''];
+        $candidates[] = [$db_configs['sigsys'][0] ?? 'sigsys', $db_configs['sigsys'][1] ?? ''];
 
-      return ['sigsys', ''];
+      $candidates[] = ['sigsys', ''];
+
+      // De-duplicate candidates while preserving order.
+      $unique = [];
+      $seen = [];
+      foreach ($candidates as $item) {
+        $u = strval($item[0] ?? '');
+        $p = strval($item[1] ?? '');
+        $key = $u . "\0" . $p;
+        if (isset($seen[$key]))
+          continue;
+        $seen[$key] = true;
+        $unique[] = [$u, $p];
+      }
+
+      return $unique;
+    }
+
+    function connect_trade_event_db(array $cred_candidates, string $db_host, string $db_name, string $db_sock): mysqli_ex {
+      $last_error = null;
+      foreach ($cred_candidates as $pair) {
+        $db_user = strval($pair[0] ?? '');
+        $db_pass = strval($pair[1] ?? '');
+
+        try {
+          if ($db_sock && file_exists($db_sock))
+            return new mysqli_ex(null, $db_user, $db_pass, $db_name, null, $db_sock);
+          return new mysqli_ex($db_host, $db_user, $db_pass, $db_name);
+        }
+        catch (Throwable $E) {
+          // Socket auth can fail when DB lives on a different container; retry over TCP.
+          try {
+            return new mysqli_ex($db_host, $db_user, $db_pass, $db_name);
+          }
+          catch (Throwable $E2) {
+            $last_error = $E2;
+          }
+        }
+      }
+
+      if ($last_error)
+        throw $last_error;
+
+      throw new RuntimeException('No DB credentials candidates available');
     }
 
     $color_scheme = 'cli';
@@ -46,17 +91,15 @@
     $attach = rqs_param('attach', null, '');
     $chat = rqs_param('channel', 'default');
 
-    [$db_user, $db_pass] = resolve_trade_event_db_creds('sigsys');
+    $db_creds = resolve_trade_event_db_creds('sigsys');
     $db_host = getenv('SIGNALS_LEGACY_DB_HOST') ?: 'signals-legacy-db';
+    $db_name = getenv('SIGNALS_LEGACY_DB_NAME') ?: 'trading';
     $db_sock = getenv('MYSQL_SOCKET_PATH') ?: '/run/mysqld/mysqld.sock';
     try {
-      if ($db_sock && file_exists($db_sock))
-        $mysqli = new mysqli_ex(null, $db_user, $db_pass, 'trading', null, $db_sock);
-      else
-        $mysqli = new mysqli_ex($db_host, $db_user, $db_pass, 'trading');
+      $mysqli = connect_trade_event_db($db_creds, $db_host, $db_name, $db_sock);
     }
     catch (Throwable $E) {
-      $mysqli = new mysqli_ex($db_host, $db_user, $db_pass, 'trading');
+      die ('cannot connect to DB server: '.$E->getMessage());
     }
     if ($mysqli->connect_error)
       die ('cannot connect to DB server: '.$mysqli->connect_error);
@@ -119,42 +162,87 @@
       $hid = 9;
     }
 
+    // USE channel IDs from channels table
+    if ($chat) {
+      if (isset($chat_map[$chat]))
+        $chat = $chat_map[$chat];
+      else if (is_numeric($chat))
+        ;
+      else
+        $chat = null;
+    }
 
+    if ($tag && $event && $hid) {
+      if (is_string($attach) && strlen($attach) > 0) {
+        // Direct attach text from request (already decoded)
+        $attach = urldecode($attach);
+      } elseif (isset($_FILES[$fname])) {
+        $file_path = $_FILES[$fname]['tmp_name'];
+        // save attach file as binary text
+        $attach = file_get_contents($file_path);
+        // log_cmsg("#INFO: got attached file %s, type %s, size = %d", $_FILES[$fname]['name'], $_FILES[$fname]['type'], strlen($attach));
+      }
 
-    if (is_null($attach)) // accepted only string encoded data
-        $attach = 'null';
-    else {
-        $attach = base64_decode($attach);
-        $ref  = rqs_param('hash', 'nope');
-        $hash = md5($attach);   
-        if ($ref == $hash)
-            $ref = 'SO_GOOD';
-        else 
-            $ref = "sender hash = $ref!";
-        log_cmsg("~C95 #PERF:~C00 processing attach data, MD5 = $hash $ref...");   
-        $attach =  "'". $mysqli->real_escape_string ($attach). "'";
-    }  
+      if ($attach) {
+        // $attach = str_ireplace("\n", '\n', $attach);  // prevent SQL errors 
+        if (false !== strpos($attach, "\x00")) {
+          // use base64 to avoid SQL binary issues
+          // log_cmsg("#WARN: got binary attach, encoded to BASE64");
+          $attach = 'BASE64:' . base64_encode($attach);
+        }
+        // Prevent SQL errors on utf8 bytes
+        $attach = $mysqli->real_escape_string($attach);  
+      }
 
-    $chat_id = $chat_map[$chat] ?? 0;
+      // TODO: review default event level here
+      $ins = "INSERT INTO events (ts,id_task,id_host,tag,event,event_level,chat_id,attach,flags) 
+              VALUES ('$ts',$pid, $hid, '$tag', '$event',0, " .
+                ($chat ? "$chat" : "NULL") . ",".
+                ($attach ? "'$attach'" : "NULL") . ",".
+                "$flags)";
+      // log_cmsg("#DBG: query = %s", $ins);
+      $ok = $mysqli->query($ins);      
+      if (!$ok) { 
+        die(tss().". #FAIL($idx/$pid): event to DB cannot be inserted: ".$mysqli->error . ", query = ".$ins."\n");
+      }
 
-    $query = "INSERT IGNORE INTO `events`\n (tag, host, event, `value`, flags, attach, chat)\n";
-    $query .= "VALUES('$tag', $hid, '$event', $value, $flags, $attach, $chat_id)";
+      if ($value) {
+        $ins = "INSERT INTO host_stats (id_host,tag,value) VALUES ($hid,'$tag', $value)
+              ON DUPLICATE KEY UPDATE value = VALUES(value), ts = CURRENT_TIMESTAMP()";
+        // log_cmsg("#DBG: query = %s", $ins);
+        $ok = $mysqli->query($ins);
+        if (!$ok) { 
+          die(tss().". #FAIL($idx/$pid): host stats to DB cannot be inserted: ".$mysqli->error . ", query = ".$ins."\n");
+        }      
+      }
 
-    $cut = substr($query, 0, 180);
-    log_cmsg("#DBG: Trying query, flags = 0x%02x:\n %s\n", $flags, $cut);
+      //if ($hid > 0) {
+      //    $ok = $mysqli->query("UPDATE hosts SET ts = '$ts' WHERE id = $hid"); 
+      //}
 
-    $res = $mysqli->try_query($query);
-    if ($res) {
-      $ar = $mysqli->affected_rows;
-      log_cmsg("~C92#SUCCES:~C00 affected rows $ar from $host");
-      printf("#SUCCESS: added $ar event $idx/$pid");
-    }  
-    else {
-      $err = $mysqli->error;
-      log_cmsg("~C91#FAILED:~C00 error %s\n query: $query", $err);
-      printf("#ERROR: mysqli failed %s for event $idx/$pid\n", $err);
-    } 
+      $eid = intval($mysqli->insert_id ?? 0);
+      if ($eid <= 0) {
+        // Some MariaDB setups report insert_id=0 for explicit replication flows.
+        $eid = intval($mysqli->select_value('id', 'events', "WHERE ts = '$ts' AND id_task = $pid AND id_host = $hid AND tag = '$tag' AND event = '$event' ORDER BY id DESC"));
+      }
 
-    $mysqli->close();
-
-?>
+      if ($eid > 0) {
+        printf(tss().". #SUCCESS($idx/$pid): event '$tag' added to DB with id = %d, host id = %d, task id = %d
+", $eid, $hid, $pid);
+        // in no valid condition event should be duplicated:
+        $mysqli->query("DELETE FROM events WHERE id = $eid-1 AND ts = '$ts' AND id_task = $pid and id_host = $hid and tag = '$tag' and event = '$event'");
+      }
+      else {
+        // Keep API response non-fatal: event row is already inserted.
+        printf(tss().". #WARN($idx/$pid): event inserted, but row id cannot be resolved
+");
+      }
+    } else {
+      // if no one host found, insert with fake host id = 0
+      $ins = "INSERT INTO events (ts,id_task,id_host,tag,event,flags) VALUES ('$ts',$pid, 0, '$tag', '$event',$flags)";
+      $ok = $mysqli->query($ins);
+      if ($ok) 
+        printf(tss().". #WARN($idx/$pid): unknown host ID. Event inserted to DB with fake host id = 0\n");
+      else
+        die(tss().". #FAIL($idx/$pid): event cannot be inserted to DB with host id = 0\n");
+    }

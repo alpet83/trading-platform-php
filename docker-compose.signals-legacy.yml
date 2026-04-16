@@ -8,8 +8,8 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       MARIADB_DATABASE: ${SIGNALS_LEGACY_DB_NAME:-sigsys}
-      MARIADB_USER: ${SIGNALS_LEGACY_DB_USER:-${MARIADB_USER:-trading}}
-      MARIADB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-${MARIADB_PASSWORD:-legacy_change_me}}
+      MARIADB_USER: ${SIGNALS_LEGACY_DB_USER:-trading}
+      MARIADB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-legacy_change_me}
       MARIADB_ROOT_PASSWORD: ${SIGNALS_LEGACY_DB_ROOT_PASSWORD:-${MARIADB_ROOT_PASSWORD:-legacy_root_change_me}}
     command:
       - --character-set-server=utf8mb4
@@ -18,7 +18,7 @@ services:
     volumes:
       - signals-legacy-db-data:/var/lib/mysql
       - signals-legacy-db-socket:/run/mysqld
-      - ./signals-server/trading_proto.sql:/docker-entrypoint-initdb.d/10-trading_proto.sql:ro
+      - ./signals-server/db_proto.sql:/docker-entrypoint-initdb.d/10-db_proto.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -45,8 +45,8 @@ services:
       MYSQL_SOCKET_PATH: ${MYSQL_SOCKET_PATH:-/run/mysqld/mysqld.sock}
       SIGNALS_LEGACY_DB_HOST: ${SIGNALS_LEGACY_DB_HOST:-signals-legacy-db}
       SIGNALS_LEGACY_DB_NAME: ${SIGNALS_LEGACY_DB_NAME:-sigsys}
-      SIGNALS_LEGACY_DB_USER: ${SIGNALS_LEGACY_DB_USER:-${MARIADB_USER:-trading}}
-      SIGNALS_LEGACY_DB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-${MARIADB_PASSWORD:-legacy_change_me}}
+      SIGNALS_LEGACY_DB_USER: ${SIGNALS_LEGACY_DB_USER:-trading}
+      SIGNALS_LEGACY_DB_PASSWORD: ${SIGNALS_LEGACY_DB_PASSWORD:-legacy_change_me}
       TELEGRAM_API_KEY: ${TELEGRAM_API_KEY:-}
       TELEGRAM_API_TOKEN_FILE: ${TELEGRAM_API_TOKEN_FILE:-/etc/api-token}
       BOT_SERVER_HOST: ${BOT_SERVER_HOST:-bot}

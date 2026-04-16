@@ -1231,8 +1231,14 @@ final class BitfinexEngine extends WebsockAPIEngine {
                 if (0 == $info->order_no) {
                     $info->status = 'lost,n/e';
                 } // not exists on exchange!
-                $info->Unregister(null, 'LoadOrder/lost');
-                $info->Register($this->archive_orders);
+                
+                // Check if already in archive to avoid duplicate re-registration
+                $already_in_archive = isset($this->archive_orders[$info->id]);
+                
+                if (!$already_in_archive) {
+                    $info->Unregister(null, 'LoadOrder/lost');
+                    $info->Register($this->archive_orders);
+                }
             } else {
                 unset($lost_orders[$info->id]);
             }

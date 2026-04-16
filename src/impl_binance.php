@@ -580,8 +580,9 @@ final class BinanceEngine extends WebsockAPIEngine {
         $info->updated = date_ms(SQL_TIMESTAMP_MS, max(time_ms(), $result->transactTime - $this->time_bias));
         $info->order_no = $result->orderId;
         $info->matched = $result->executedQty;
-        if ($info->matched > 0) {
-            $info->avg_price = $result->cummulativeQuoteQty / $info->matched;
+        $matched_qty = (float)$info->matched;
+        if ($matched_qty > 0.0) {
+            $info->avg_price = $result->cummulativeQuoteQty / $matched_qty;
         }
 
         $info->status = strtolower($result->status); // new as active
@@ -662,8 +663,9 @@ final class BinanceEngine extends WebsockAPIEngine {
         $info->order_no = $order->orderId;
         $this->updated_orders[$info->id] = $info;
 
-        if ($info->matched) {
-            $info->avg_price = $order->cummulativeQuoteQty / $info->matched;
+        $matched_qty = (float)$info->matched;
+        if ($matched_qty > 0.0) {
+            $info->avg_price = $order->cummulativeQuoteQty / $matched_qty;
         }
 
         if ($is_changed) {

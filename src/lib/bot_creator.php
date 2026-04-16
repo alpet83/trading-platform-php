@@ -92,7 +92,7 @@ if (!function_exists('bot_create')) {
             }
         }
 
-        // --- runtime tables — all DDL lives in templates/bot_tables.sql ---
+        // --- runtime tables (non-order tables) ---
         $tpl_path = __DIR__ . '/../../templates/bot_tables.sql';
         if (!file_exists($tpl_path)) {
             $mysqli->try_query('ROLLBACK');
@@ -103,10 +103,35 @@ if (!function_exists('bot_create')) {
         $sql_all = str_replace('#exchange', $bot_prefix, $sql_raw);
         foreach (explode(';', $sql_all) as $stmt) {
             $stmt = trim($stmt);
-            if ($stmt === '' || str_starts_with($stmt, '--')) continue;
+            if ($stmt === '') continue;
             if ($mysqli->try_query($stmt) === false) {
                 $mysqli->try_query('ROLLBACK');
                 return ['ok' => false, 'code' => 500, 'error' => "Failed (bot_tables.sql): " . $mysqli->error];
+            }
+        }
+
+        // --- order tables (single source of truth in bot_orders_table.sql) ---
+        $orders_tpl_path = __DIR__ . '/../../templates/bot_orders_table.sql';
+        if (!file_exists($orders_tpl_path)) {
+            $mysqli->try_query('ROLLBACK');
+            return ['ok' => false, 'code' => 500, 'error' => 'bot_orders_table.sql template not found at: ' . $orders_tpl_path];
+        }
+
+        $orders_tpl = (string)file_get_contents($orders_tpl_path);
+        $order_tables = [
+            'archive_orders', 'lost_orders', 'matched_orders', 'pending_orders', 'other_orders',
+            'mm_asks', 'mm_bids', 'mm_exec', 'mm_limit',
+        ];
+
+        foreach ($order_tables as $order_table) {
+            $ddl = str_replace(
+                ['#exchange', '#order_table'],
+                [$bot_prefix, $order_table],
+                $orders_tpl
+            );
+            if ($mysqli->try_query($ddl) === false) {
+                $mysqli->try_query('ROLLBACK');
+                return ['ok' => false, 'code' => 500, 'error' => "Failed (bot_orders_table.sql/$order_table): " . $mysqli->error];
             }
         }
 

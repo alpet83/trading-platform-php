@@ -577,7 +577,6 @@
                 return false;
             if ($acc_id != $this->account_id)
                 return false;
-
             $info = $this->FindOrder($order_id, $pair_id);
             if (!$info) {
                 if (!isset($this->external_orders[$order_id]))
@@ -589,22 +588,30 @@
 
             $was_fixed = $info->IsFixed();
             unset($this->external_orders[$order_id]);
-
             $cur_status = $this->NormalizeOrderStatus(strval($order->orderStatus ?? 'active'));
-            if ($force_active && $info->IsFixed()) {
-                $core->LogOrder('~C91#WARN:~C00 fixed order %s restored to active state', $info);
+            $utime = intval($order->updatedTime ?? 0) - $this->time_bias;
+            if ($utime <= 0)
+                $utime = time_ms();
+
+            $local_utime = strtotime_ms($info->updated);
+            if (!is_numeric($local_utime))
+                $local_utime = 0;
+            $is_remote_active = in_array($cur_status, ['active', 'partially_filled'], true);
+            $is_fresh_update = ($local_utime <= 0) || ($utime > $local_utime);
+
+            if ($force_active && $info->IsFixed() && $is_remote_active && $is_fresh_update) {
+                $core->LogOrder('~C91#WARN:~C00 fixed order %s restored to active state by fresh exchange update', $info);
                 $info->Unregister(null, 'fixed-to-active');
                 $info->flags &= ~OFLAG_FIXED;
                 $info->status = 'active';
                 $info->ts_fix = null;
+            } elseif ($info->IsFixed() && $is_remote_active && !$is_fresh_update) {
+                $core->LogOrder('~C93#DBG:~C00 skip stale active update for fixed order %s, remote_ut=%d local_ut=%d', $info, $utime, $local_utime);
+                return false;
             }
 
-            if (in_array($cur_status, ['active', 'partially_filled'], true))
+            if ($is_remote_active)
                 $this->open_orders[$order_id] = true;
-
-            $utime = intval($order->updatedTime ?? 0) - $this->time_bias;
-            if ($utime <= 0)
-                $utime = time_ms();
 
             $matched = floatval($order->cumExecQty ?? 0);
             $amount = floatval($order->qty ?? $info->amount);

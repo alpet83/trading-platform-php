@@ -49,5 +49,6 @@ src/vendor/
 docs/COMMIT_PROTOCOL.md
 docs/DOCKER_ROUTE.md
 docs/EXCHANGE_API_KEY_NETWORKING.md
-
-docker-compose.override.yml
+docs/cqds*
+docs/containerization_phases.md
+templates/trading-structure-obsolete.sql
