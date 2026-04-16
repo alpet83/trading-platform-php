@@ -174,7 +174,7 @@ DB compatibility note (required for Bybit reintegration):
 
 1. trading.pairs_map must contain column bybit_pair varchar(32) NULL;
 2. baseline mappings must be present: BTCUSD -> BTCUSDT and ETHUSD -> ETHUSDT;
-3. keep signals-server/trading_proto.sql in sync with live schema before rollout.
+3. keep signals-server/db_proto.sql in sync with live schema before rollout.
 
 ---
 

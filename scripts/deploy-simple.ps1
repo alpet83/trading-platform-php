@@ -1,6 +1,7 @@
 param(
   [string]$ProjectRoot = "P:/opt/docker/trading-platform-php",
   [string]$ComposeFile = "docker-compose.yml",
+  [string]$LegacyComposeFile = "docker-compose.signals-legacy.yml",
   [int]$DbWaitTimeoutSec = 180,
   [int]$DbWaitIntervalSec = 3,
   [bool]$CleanStart = $true,
@@ -11,6 +12,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Info($msg) { Write-Host $msg }
 function Fail($msg) { throw $msg }
@@ -105,6 +110,24 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
   [System.IO.File]::WriteAllText($Path, $content, $utf8NoBom)
 }
 
+function Get-EnvValue([string]$Path, [string]$Key) {
+  if (-not (Test-Path $Path)) {
+    return $null
+  }
+
+  $content = Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue
+  if ($null -eq $content) {
+    return $null
+  }
+
+  $pattern = "(?m)^" + [regex]::Escape($Key) + "=(.*)$"
+  $match = [regex]::Match($content, $pattern)
+  if (-not $match.Success) {
+    return $null
+  }
+  return $match.Groups[1].Value.Trim()
+}
+
 function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
   if (-not (Test-Path $Path)) {
     Info "#WARN: $Path not found, skip $Key update"
@@ -130,6 +153,20 @@ function Set-OverrideValue([string]$Path, [string]$Key, [string]$Value) {
   [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $utf8NoBom)
 }
 
+function Get-OverrideValue([string]$Path, [string]$Key) {
+  if (-not (Test-Path $Path)) {
+    return $null
+  }
+
+  $lines = Get-Content -Path $Path -ErrorAction SilentlyContinue
+  foreach ($line in $lines) {
+    if ($line -match "^\s*" + [regex]::Escape($Key) + ":\s*(.+?)\s*$") {
+      return $Matches[1].Trim()
+    }
+  }
+  return $null
+}
+
 function Prepare-DeployPasswords {
   $mode = $GeneratePasswords
   if ($mode -eq "auto") {
@@ -144,11 +181,6 @@ function Prepare-DeployPasswords {
       $mode = "no"
       Info "#INFO: non-interactive session; skip password generation (use -GeneratePasswords yes to force)."
     }
-  }
-
-  if ($mode -eq "no") {
-    Info "#INFO: password preflight skipped by user choice"
-    return
   }
 
   $envPathLocal = Join-Path $ProjectRoot $EnvFile
@@ -170,6 +202,44 @@ function Prepare-DeployPasswords {
       [System.IO.File]::WriteAllText($envPathLocal, $minimalEnv + "`n", $utf8NoBom)
       Info "#INFO: created minimal $EnvFile"
     }
+  }
+
+  if ($mode -eq "no") {
+    $overridePathLocal = Join-Path $ProjectRoot $OverrideFile
+
+    $rootPwd = Get-OverrideValue -Path $overridePathLocal -Key 'MARIADB_ROOT_PASSWORD'
+    if (-not $rootPwd) { $rootPwd = Get-EnvValue -Path $envPathLocal -Key 'MARIADB_ROOT_PASSWORD' }
+
+    $tradingPwd = Get-OverrideValue -Path $overridePathLocal -Key 'MARIADB_PASSWORD'
+    if (-not $tradingPwd) { $tradingPwd = Get-EnvValue -Path $envPathLocal -Key 'MARIADB_PASSWORD' }
+
+    $replPwd = Get-OverrideValue -Path $overridePathLocal -Key 'MARIADB_REPL_PASSWORD'
+    if (-not $replPwd) { $replPwd = Get-EnvValue -Path $envPathLocal -Key 'MARIADB_REPL_PASSWORD' }
+
+    $remotePwd = Get-OverrideValue -Path $overridePathLocal -Key 'MARIADB_REMOTE_PASSWORD'
+    if (-not $remotePwd) { $remotePwd = Get-EnvValue -Path $envPathLocal -Key 'MARIADB_REMOTE_PASSWORD' }
+
+    if ($rootPwd) {
+      Set-EnvValue -Path $envPathLocal -Key 'MARIADB_ROOT_PASSWORD' -Value $rootPwd
+      Set-OverrideValue -Path $overridePathLocal -Key 'MARIADB_ROOT_PASSWORD' -Value $rootPwd
+    }
+    if ($tradingPwd) {
+      Set-EnvValue -Path $envPathLocal -Key 'MARIADB_PASSWORD' -Value $tradingPwd
+      Set-EnvValue -Path $envPathLocal -Key 'TRADING_DB_PASSWORD' -Value $tradingPwd
+      Set-OverrideValue -Path $overridePathLocal -Key 'MARIADB_PASSWORD' -Value $tradingPwd
+      Set-OverrideValue -Path $overridePathLocal -Key 'DB_PASS' -Value $tradingPwd
+    }
+    if ($replPwd) {
+      Set-EnvValue -Path $envPathLocal -Key 'MARIADB_REPL_PASSWORD' -Value $replPwd
+      Set-OverrideValue -Path $overridePathLocal -Key 'MARIADB_REPL_PASSWORD' -Value $replPwd
+    }
+    if ($remotePwd) {
+      Set-EnvValue -Path $envPathLocal -Key 'MARIADB_REMOTE_PASSWORD' -Value $remotePwd
+      Set-OverrideValue -Path $overridePathLocal -Key 'MARIADB_REMOTE_PASSWORD' -Value $remotePwd
+    }
+
+    Info "#INFO: password preflight skipped by user choice (env/override credentials synchronized)"
+    return
   }
 
   $rootPwd = New-RandomPassword
@@ -231,6 +301,40 @@ function Invoke-NativeNoThrow([scriptblock]$Command) {
   return $LASTEXITCODE
 }
 
+function Sync-MariadbAppCredentials([string]$EnvPathLocal) {
+  $dbUser = Get-EnvValue -Path $EnvPathLocal -Key 'MARIADB_USER'
+  if (-not $dbUser) { $dbUser = 'trading' }
+
+  $dbPass = Get-EnvValue -Path $EnvPathLocal -Key 'TRADING_DB_PASSWORD'
+  if (-not $dbPass) { $dbPass = Get-EnvValue -Path $EnvPathLocal -Key 'MARIADB_PASSWORD' }
+
+  $rootPass = Get-EnvValue -Path $EnvPathLocal -Key 'MARIADB_ROOT_PASSWORD'
+  if (-not $dbPass) {
+    Info "#WARN: DB password is empty in $EnvFile; skip MariaDB app-user sync"
+    return
+  }
+
+  $dbUserSql = $dbUser.Replace("'", "''")
+  $dbPassSql = $dbPass.Replace("'", "''")
+  $sql = "CREATE USER IF NOT EXISTS '$dbUserSql'@'%' IDENTIFIED BY '$dbPassSql'; ALTER USER '$dbUserSql'@'%' IDENTIFIED BY '$dbPassSql'; FLUSH PRIVILEGES;"
+
+  $cmdWithRoot = "mariadb -uroot -p`"$rootPass`" -e `"$sql`""
+  $rc = Invoke-NativeNoThrow { Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "mariadb", "sh", "-lc", $cmdWithRoot) }
+  if ($rc -eq 0) {
+    Info "#INFO: ensured mariadb user password for '$dbUser'"
+    return
+  }
+
+  $cmdNoRoot = "mariadb -uroot -e `"$sql`""
+  $rc = Invoke-NativeNoThrow { Invoke-Compose @("-f", $ComposeFile, "exec", "-T", "mariadb", "sh", "-lc", $cmdNoRoot) }
+  if ($rc -eq 0) {
+    Info "#INFO: ensured mariadb user password for '$dbUser' (root socket auth)"
+    return
+  }
+
+  Info "#WARN: failed to enforce mariadb app-user password for '$dbUser'"
+}
+
 Set-Location $ProjectRoot
 
 # Resolve sibling-repos base dir and key paths
@@ -244,16 +348,15 @@ $AlpetLibsPathDocker = $AlpetLibsPath -replace '\\', '/'
 $ProjectRootDocker   = ([System.IO.Path]::GetFullPath($ProjectRoot)) -replace '\\', '/'
 $FullDeployServices = @('web','bots-hive','datafeed','phpmyadmin')
 
+
 function Wait-ServiceRunning([string]$ServiceName) {
   $attempts = [Math]::Ceiling($DbWaitTimeoutSec / $DbWaitIntervalSec)
+  $containerName = "$composeProjectName-$ServiceName"
   for ($i = 0; $i -lt $attempts; $i++) {
-    $cid = (& docker-compose -f $ComposeFile ps -q $ServiceName 2>$null | Select-Object -First 1)
-    if (-not [string]::IsNullOrWhiteSpace($cid)) {
-      $state = (& docker inspect -f '{{.State.Running}}' $cid 2>$null)
-      if ($state -eq 'true') {
-        Info "#INFO: $ServiceName is running"
-        return $true
-      }
+    $state = (& docker inspect -f '{{.State.Running}}' $containerName 2>$null)
+    if ($state -eq 'true') {
+      Info "#INFO: $ServiceName is running"
+      return $true
     }
     Start-Sleep -Seconds $DbWaitIntervalSec
   }
@@ -268,12 +371,18 @@ Ensure-ExternalRepos
 Verify-DatafeedManagerSource
 
 $publishIp = "127.0.0.1"
+$composeProjectName = "trd"
 $envPath = Join-Path $ProjectRoot ".env"
 if (Test-Path $envPath) {
     $envLine = Select-String -Path $envPath -Pattern '^WEB_PUBLISH_IP=' | Select-Object -First 1
     if ($envLine) {
         $publishIp = ($envLine.Line -replace '^WEB_PUBLISH_IP=', '').Trim()
         if ([string]::IsNullOrWhiteSpace($publishIp)) { $publishIp = "127.0.0.1" }
+    }
+    $cpLine = Select-String -Path $envPath -Pattern '^COMPOSE_PROJECT_NAME=' | Select-Object -First 1
+    if ($cpLine) {
+        $composeProjectName = ($cpLine.Line -replace '^COMPOSE_PROJECT_NAME=', '').Trim()
+        if ([string]::IsNullOrWhiteSpace($composeProjectName)) { $composeProjectName = "trd" }
     }
 }
 
@@ -331,10 +440,19 @@ if (-not $ok) {
     Fail "MariaDB was not healthy within ${DbWaitTimeoutSec}s"
 }
 Info "#INFO: mariadb is healthy"
+Sync-MariadbAppCredentials -EnvPathLocal $envPath
 
 Info "#STEP 7/9: start full service group"
 Invoke-Compose @("-f", $ComposeFile, "up", "-d")
 if ($LASTEXITCODE -ne 0) { Fail "Failed to start full service group" }
+
+if ($CleanStart -and (Test-Path $LegacyComposeFile)) {
+    Info "#STEP 7b/9: ensure legacy signals services are up"
+    Invoke-Compose @("-f", $ComposeFile, "-f", $LegacyComposeFile, "up", "-d", "signals-legacy-db", "signals-legacy")
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Failed to restore legacy signals services after clean start"
+    }
+}
 
 foreach ($service in @('web','bots-hive','datafeed')) {
   if (-not (Wait-ServiceRunning $service)) {

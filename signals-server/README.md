@@ -28,7 +28,7 @@ consumed by the NestJS overlay (`signals-server-ts`).
 | `trade_ctrl_bot.php` | Telegram bot command handler (long-polling daemon) |
 | `trade_ctrl_bot.sh` | Shell wrapper to run the bot daemon with auto-restart |
 | `trade_event.php` | Receives trade events from the trading engine |
-| `trading_proto.sql` | Database schema prototype |
+| `db_proto.sql` | Database schema prototype |
 | `docs.yaml` | OpenAPI spec for the signals API |
 | `api/users/` | REST endpoints for user management (create/update/delete) |
 
@@ -37,7 +37,7 @@ consumed by the NestJS overlay (`signals-server-ts`).
 Import the schema prototype to create the required tables:
 
 ```bash
-mysql -u root -p sigsys < trading_proto.sql
+mysql -u root -p sigsys < db_proto.sql
 ```
 
 The database name is `sigsys` by default. Adjust in `db_config.php` if needed.

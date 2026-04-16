@@ -137,6 +137,12 @@ check_web_probe() {
     fi
 }
 
+
+container_running_by_name() {
+    local name="$1"
+    [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" = "true" ]
+}
+
 main() {
     local compose_services core_tables_file
     local -a core_tables
@@ -299,6 +305,36 @@ main() {
         fi
     else
         fail 'datafeed wiring checks skipped because datafeed is not running'
+    fi
+
+
+    section 'DB Auth Consistency'
+    if service_running 'bots-hive'; then
+        if compose exec -T bots-hive sh -lc '[ -f /app/src/cli/check_db_auth.php ]'; then
+            if compose exec -T bots-hive sh -lc 'php /app/src/cli/check_db_auth.php --context=bots-hive' >/tmp/verify-simple-auth-bots.out 2>/tmp/verify-simple-auth-bots.err; then
+                ok 'bots-hive db auth validator passed'
+            else
+                fail 'bots-hive db auth validator detected conflicts'
+            fi
+        else
+            fail 'bots-hive missing /app/src/cli/check_db_auth.php'
+        fi
+    else
+        fail 'bots-hive db auth validator skipped because bots-hive is not running'
+    fi
+
+    if container_running_by_name 'sigsys'; then
+        if docker exec sigsys sh -lc '[ -f /app/src/cli/check_db_auth.php ]'; then
+            if docker exec sigsys sh -lc 'php /app/src/cli/check_db_auth.php --context=sigsys' >/tmp/verify-simple-auth-sigsys.out 2>/tmp/verify-simple-auth-sigsys.err; then
+                ok 'sigsys db auth validator passed'
+            else
+                fail 'sigsys db auth validator detected conflicts'
+            fi
+        else
+            fail 'sigsys missing /app/src/cli/check_db_auth.php'
+        fi
+    else
+        warn 'sigsys container is not running; sigsys db auth validator skipped'
     fi
 
     section 'Summary'

@@ -2,7 +2,7 @@
 
 Date: 2026-03-22
 
-## Extracted schema facts (from `trading_proto.sql`)
+## Extracted schema facts (from `db_proto.sql`)
 
 ## `chat_users`
 - `chat_id` bigint unsigned, PK

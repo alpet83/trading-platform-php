@@ -4,7 +4,9 @@ param(
   [string]$LegacyComposeFile = "docker-compose.signals-legacy.yml",
   [bool]$PrepareSecrets = $true,
   [int]$HealthTimeoutSec = 90,
-  [int]$HealthIntervalSec = 3
+  [int]$HealthIntervalSec = 3,
+  [ValidateSet("auto", "always", "never")]
+  [string]$PauseAtEnd = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,3 +88,20 @@ Info ""
 Info "#SUCCESS: legacy signals stack is up"
 Info "#URL legacy docs: $legacyUrl"
 Info "#NEXT: run scripts/deploy-simple.ps1 for trading group"
+
+
+$needPause = $false
+switch ($PauseAtEnd) {
+  "always" { $needPause = $true }
+  "never"  { $needPause = $false }
+  default  {
+    if (-not [Console]::IsInputRedirected) {
+      $needPause = $true
+    }
+  }
+}
+
+if ($needPause) {
+  Info ""
+  [void](Read-Host "#INFO: press Enter to close")
+}

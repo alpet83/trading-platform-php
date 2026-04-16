@@ -43,7 +43,7 @@ docker-compose -f docker-compose.yml -f docker-compose.signals-legacy.yml up -d
 
 This overlay now brings two dedicated legacy components:
 - `signals-legacy` (legacy PHP API runtime)
-- `signals-legacy-db` (dedicated MariaDB initialized from `signals-server/trading_proto.sql`)
+- `signals-legacy-db` (dedicated MariaDB initialized from `signals-server/db_proto.sql`)
 
 Published endpoint:
 - `http://127.0.0.1:${SIGNALS_LEGACY_PORT:-8090}`

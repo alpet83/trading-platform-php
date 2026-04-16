@@ -1,7 +1,6 @@
 # Container Bootstrap
 
 Date: 2026-03-28
-Project root: P:\opt\docker\trading-platform-php
 
 ## What was added
 
@@ -24,7 +23,7 @@ Project root: P:\opt\docker\trading-platform-php
 ## External dependency
 
 The runtime depends on shared PHP utility files from a separate repository:
-- `P:\GitHub\alpet-libs-php`
+- `alpet-libs-php`
 
 Deployment bootstrap can clone this repository via plain `git clone` and copy required files into `src`.
 
@@ -87,7 +86,7 @@ Windows host fallback:
 - `powershell -ExecutionPolicy Bypass -File .\shell\generate_bootstrap_schema.ps1`
 
 Notes:
-- `signals-server/` is now part of this repository layout, while old `P:/vps.alpet.me/sigsys*` paths are no longer the valid source for this project structure.
+- `signals-server/` is now part of this repository layout, while old `/vps.alpet.me/sigsys*` paths are no longer the valid source for this project structure.
 - Keep bootstrap minimal for instance API, then expand table set as runtime paths require.
 
 Important:
