@@ -24,9 +24,7 @@ if (!$mysqli) {
     exit;
 }
 
-// TODO: раскомментировать на проде и удалить захардкоженную дату
-//$start_from = time() - 86400 * 10;
-$start_from = strtotime('2025-08-30');
+$start_from = time() - 86400 * 10;
 $start_from = max($start_from, strtotime($from_ts));
 $from_ts = date('Y-m-d H:i', $start_from);
 

@@ -5,9 +5,9 @@
 
     define('SATOSHI_MULT', 0.00000001);
 
-    $exch = rqs_param('exchange', 'bitfinex');  
-    
-    // TODO: load pairs map total
+    $exch = rqs_param('exchange', 'bitfinex');
+
+    $pairs_map = [];
     $pairs_map[1] = 'btcusd';
     $pairs_map[3] = 'ethusd';
 
@@ -24,14 +24,25 @@
         file_put_contents(PAIRS_MAP_CACHE, json_encode($pmap_decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
       }
     }
-    $pmap = file_get_contents(PAIRS_MAP_CACHE);
-    $pmap = json_decode($pmap, true);
+
+    $pmap = [];
+    if (file_exists(PAIRS_MAP_CACHE)) {
+      $pmap_raw = file_get_contents(PAIRS_MAP_CACHE);
+      if (is_string($pmap_raw) && strlen($pmap_raw) > 0) {
+        $pmap_decoded = json_decode($pmap_raw, true);
+        if (is_array($pmap_decoded)) {
+          $pmap = $pmap_decoded;
+        }
+      }
+    }
+
     echo "<!--\n";
     // print_r($pmap);
     echo "-->";
-    foreach ($pmap as $pid => $prec) 
-    if (!isset($pairs_map[$pid]))
-        $pairs_map[$pid] = strtolower($prec[0]);
+
+    foreach ($pmap as $pid => $prec)
+    if (!isset($pairs_map[$pid]) && is_array($prec) && isset($prec[0]))
+        $pairs_map[$pid] = strtolower((string)$prec[0]);
 
     $pair_id = rqs_param('pair_id', 3);
     $pair = false;

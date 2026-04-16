@@ -170,10 +170,6 @@ function fmt_float(mixed $v, int $dec = 4): string {
     <title>MM Config — <?= htmlspecialchars($selectedBot) ?></title>
     <style>
         body { background: #1a1a2e; color: #e0e0e0; font-family: monospace; margin: 0; padding: 0; }
-        .tp-nav { display: flex; gap: 12px; padding: 8px 16px; background: #12122a; border-bottom: 1px solid #333; }
-        .tp-nav a { color: #88aaff; text-decoration: none; padding: 4px 10px; border-radius: 4px; }
-        .tp-nav a:hover { background: #22224a; }
-        .tp-nav a.active { background: #2a2a5a; color: #fff; font-weight: bold; }
         .container { padding: 16px; }
         h2 { color: #aaddff; margin-top: 0; }
         label { display: inline-block; min-width: 120px; color: #aaa; }
@@ -205,16 +201,7 @@ function fmt_float(mixed $v, int $dec = 4): string {
 </head>
 <body>
 
-<nav class="tp-nav">
-    <a href="index.php">Home</a>
-    <?php if ($is_admin || $is_trader): ?>
-    <a href="mm-config.php" class="active">MM Config</a>
-    <?php endif; ?>
-    <?php if ($is_admin): ?>
-    <a href="basic-admin.php">Admin</a>
-    <a href="sys-config.php">Platform Config</a>
-    <?php endif; ?>
-</nav>
+<?php require_once 'nav.php'; ?>
 
 <div class="container">
     <h2>Market Maker Configurator</h2>

@@ -56,7 +56,7 @@
     require_once $path.'/jpgraph-dark-theme.php';
 
     if (php_sapi_name() != 'cli')
-        require_once $path.'/lib/auth_check.php';
+        require_once $src_dir.'/lib/auth_check.php';
 
     ob_clean();
     $color_scheme = 'cli';
